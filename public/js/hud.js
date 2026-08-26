@@ -86,6 +86,17 @@ export class Hud {
     $('reload-note').classList.toggle('hidden', !reloading);
   }
 
+  setLoadout({ primaryName, primaryAmmo, secondaryAmmo, activeSlot, visible }) {
+    const bar = $('loadout-bar');
+    bar.classList.toggle('hidden', !visible);
+    if (!visible) return;
+    $('slot-primary-name').textContent = primaryName.toUpperCase();
+    $('slot-primary-ammo').textContent = primaryAmmo;
+    $('slot-secondary-ammo').textContent = secondaryAmmo;
+    $('slot-primary').classList.toggle('active', activeSlot === 'primary');
+    $('slot-secondary').classList.toggle('active', activeSlot === 'secondary');
+  }
+
   setCrosshairGap(pixels) {
     const gap = Math.round(pixels);
     if (gap === this.lastGap) return;

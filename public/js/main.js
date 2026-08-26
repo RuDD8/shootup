@@ -13,7 +13,7 @@ import {
 const AVATAR_GUN_LENGTH = { pistol: 0.5, assault: 1.0, shotgun: 1.05, sniper: 1.55 };
 import { deserializeArena } from '/shared/arena.js';
 import { stepPlayer, raycastWorld, rayCylinder } from '/shared/physics.js';
-import { WEAPONS, shotInterval } from '/shared/weapons.js';
+import { WEAPONS, shotInterval, DEFAULT_PRIMARY_WEAPON_ID } from '/shared/weapons.js';
 
 import { Net } from './net.js';
 import { InputController, KEY } from './input.js';
@@ -65,6 +65,10 @@ const state = {
   health: MAX_HEALTH,
   alive: false,
   weaponId: 'pistol',
+  primaryWeaponId: DEFAULT_PRIMARY_WEAPON_ID,
+  activeSlot: 'primary',
+  primaryAmmo: 30,
+  secondaryAmmo: 12,
   zooming: false,
   scores: new Map(),
   kills: new Map(),
@@ -82,7 +86,14 @@ const state = {
 
 let selectedMode = GAME_MODE.DUEL;
 
-const localGun = { ammo: 0, nextShotAt: 0, reloadEndsAt: 0, prevShoot: false };
+const localGun = {
+  ammo: 0,
+  primaryAmmo: 30,
+  secondaryAmmo: 12,
+  nextShotAt: 0,
+  reloadEndsAt: 0,
+  prevShoot: false,
+};
 
 const tmpOrigin = new THREE.Vector3();
 const tmpDir = new THREE.Vector3();
@@ -99,6 +110,86 @@ function weapon() {
 
 function isDM() {
   return state.mode === GAME_MODE.DEATHMATCH;
+}
+
+function syncActiveWeaponFromSlot() {
+  if (!isDM()) return;
+  if (state.activeSlot === 'primary') {
+    state.weaponId = state.primaryWeaponId;
+    localGun.ammo = localGun.primaryAmmo;
+  } else {
+    state.weaponId = 'pistol';
+    localGun.ammo = localGun.secondaryAmmo;
+  }
+}
+
+function updateLoadoutUI() {
+  if (!isDM() || state.phase !== 'game') {
+    hud.setLoadout({ visible: false });
+    return;
+  }
+  const primary = WEAPONS[state.primaryWeaponId] || WEAPONS.assault;
+  hud.setLoadout({
+    primaryName: primary.name,
+    primaryAmmo: localGun.primaryAmmo,
+    secondaryAmmo: localGun.secondaryAmmo,
+    activeSlot: state.activeSlot,
+    visible: true,
+  });
+}
+
+function updateWeaponPickUI() {
+  for (const btn of document.querySelectorAll('.pick-btn')) {
+    btn.classList.toggle('selected', btn.dataset.pw === state.primaryWeaponId);
+  }
+}
+
+function updateWeaponPickVisibility() {
+  const show =
+    isDM() &&
+    state.phase === 'game' &&
+    (state.matchState === MATCH_STATE.COUNTDOWN || !state.alive);
+  $('weapon-pick').classList.toggle('hidden', !show);
+}
+
+function sendPrimaryPick(id) {
+  if (!isDM()) return;
+  state.primaryWeaponId = id;
+  state.seq += 1;
+  net.send({
+    t: 'i',
+    s: state.seq,
+    k: 0,
+    y: Math.round(input.yaw * 1000) / 1000,
+    p: Math.round(input.pitch * 1000) / 1000,
+    pw: id,
+    sw: 0,
+  });
+  if (state.alive && state.activeSlot === 'primary') {
+    state.weaponId = id;
+    localGun.primaryAmmo = WEAPONS[id].magazine;
+    localGun.ammo = localGun.primaryAmmo;
+    localGun.reloadEndsAt = 0;
+    localGun.nextShotAt = 0;
+    viewModel.setWeapon(id);
+  }
+  updateWeaponPickUI();
+  updateLoadoutUI();
+}
+
+function switchToSlot(slot) {
+  if (!isDM() || !state.alive) return;
+  if (slot === state.activeSlot) return;
+
+  if (state.activeSlot === 'primary') localGun.primaryAmmo = localGun.ammo;
+  else localGun.secondaryAmmo = localGun.ammo;
+
+  state.activeSlot = slot;
+  syncActiveWeaponFromSlot();
+  localGun.reloadEndsAt = 0;
+  localGun.nextShotAt = 0;
+  viewModel.setWeapon(state.weaponId);
+  updateLoadoutUI();
 }
 
 function opponent() {
@@ -212,6 +303,10 @@ function updateLocalGun(mask) {
   if (localGun.reloadEndsAt) {
     if (now >= localGun.reloadEndsAt) {
       localGun.ammo = w.magazine;
+      if (isDM()) {
+        if (state.activeSlot === 'primary') localGun.primaryAmmo = localGun.ammo;
+        else localGun.secondaryAmmo = localGun.ammo;
+      }
       localGun.reloadEndsAt = 0;
     } else {
       return;
@@ -237,6 +332,10 @@ function updateLocalGun(mask) {
   }
 
   localGun.ammo -= 1;
+  if (isDM()) {
+    if (state.activeSlot === 'primary') localGun.primaryAmmo = localGun.ammo;
+    else localGun.secondaryAmmo = localGun.ammo;
+  }
   localGun.nextShotAt = now + shotInterval(w) * 1000;
   fireLocal();
 }
@@ -297,7 +396,18 @@ net.on('round', (msg) => {
     state.kills.set(entry.i, entry.kills || 0);
 
     if (entry.i === state.myId) {
-      state.weaponId = entry.w;
+      if (isDM()) {
+        state.primaryWeaponId = entry.pw || entry.w || DEFAULT_PRIMARY_WEAPON_ID;
+        state.activeSlot = entry.as === 2 ? 'secondary' : 'primary';
+        state.weaponId = entry.w;
+        localGun.primaryAmmo = WEAPONS[state.primaryWeaponId].magazine;
+        localGun.secondaryAmmo = WEAPONS.pistol.magazine;
+        localGun.ammo =
+          state.activeSlot === 'secondary' ? localGun.secondaryAmmo : localGun.primaryAmmo;
+      } else {
+        state.weaponId = entry.w;
+        localGun.ammo = weapon().magazine;
+      }
       state.local.x = entry.x;
       state.local.y = entry.y;
       state.local.z = entry.z;
@@ -325,19 +435,23 @@ net.on('round', (msg) => {
   state.shake = 0;
   effects.reset();
 
-  localGun.ammo = weapon().magazine;
   localGun.nextShotAt = 0;
   localGun.reloadEndsAt = 0;
   localGun.prevShoot = false;
+  if (!isDM()) localGun.ammo = weapon().magazine;
 
   viewModel.setWeapon(state.weaponId);
   hud.setGameMode(state.mode);
   hud.clearFeed();
+  updateLoadoutUI();
+  updateWeaponPickUI();
+  updateWeaponPickVisibility();
 
   if (isDM()) {
     hud.setDeathmatchLabel(state.dmMinutes);
     hud.updateDmLeaderboard(buildLeaderboard());
-    hud.banner(weapon().name.toUpperCase(), 'Deathmatch', 2.2);
+    const primary = WEAPONS[state.primaryWeaponId] || WEAPONS.assault;
+    hud.banner(primary.name.toUpperCase(), 'Deathmatch · pistol is [2]', 2.2);
   } else {
     const foe = opponent();
     hud.setNames(state.myName, foe ? foe.name : 'Rival');
@@ -469,7 +583,19 @@ function onSnapshot(msg) {
     state.alive = entry.al === 1;
     state.serverReloadTicks = entry.rl;
 
-    if (entry.w !== state.weaponId) {
+    if (isDM()) {
+      if (entry.pw) state.primaryWeaponId = entry.pw;
+      localGun.primaryAmmo = entry.pa ?? localGun.primaryAmmo;
+      localGun.secondaryAmmo = entry.sa ?? localGun.secondaryAmmo;
+      state.primaryAmmo = localGun.primaryAmmo;
+      state.secondaryAmmo = localGun.secondaryAmmo;
+      const newSlot = entry.as === 2 ? 'secondary' : 'primary';
+      if (newSlot !== state.activeSlot || entry.w !== state.weaponId) {
+        state.activeSlot = newSlot;
+        state.weaponId = entry.w;
+        viewModel.setWeapon(entry.w);
+      }
+    } else if (entry.w !== state.weaponId) {
       state.weaponId = entry.w;
       viewModel.setWeapon(entry.w);
     }
@@ -510,11 +636,17 @@ function onSnapshot(msg) {
     if (entry.rl > 0 && !localGun.reloadEndsAt) {
       localGun.reloadEndsAt = performance.now() + (entry.rl / 60) * 1000;
     }
-    if (entry.am < localGun.ammo) localGun.ammo = entry.am;
+    if (isDM()) {
+      localGun.ammo = entry.am;
+    } else if (entry.am < localGun.ammo) {
+      localGun.ammo = entry.am;
+    }
     if (entry.rl === 0 && entry.am > localGun.ammo && !localGun.reloadEndsAt) {
       localGun.ammo = entry.am;
     }
   }
+
+  updateWeaponPickVisibility();
 
   if (msg.ev && msg.ev.length) handleEvents(msg.ev);
 
@@ -567,10 +699,27 @@ function handleEvents(events) {
       hud.feed(`<b style="color:${killerColor}">${escapeHtml(killerName)}</b> → ${escapeHtml(victimName)}${tag}`);
       if (ev.p === state.myId) {
         state.shake = 2.4;
-        if (isDM()) hud.banner('ELIMINATED', 'Respawning…', 2.5);
+        if (isDM()) {
+          hud.banner('ELIMINATED', 'Pick a weapon · respawning…', 2.5);
+          updateWeaponPickVisibility();
+        }
       }
     } else if (ev.k === 'respawn') {
-      if (ev.p === state.myId) hud.banner('RESPAWNED', '', 1.2);
+      if (ev.p === state.myId) {
+        if (ev.pw) state.primaryWeaponId = ev.pw;
+        state.activeSlot = 'primary';
+        state.weaponId = state.primaryWeaponId;
+        localGun.primaryAmmo = WEAPONS[state.primaryWeaponId].magazine;
+        localGun.secondaryAmmo = WEAPONS.pistol.magazine;
+        localGun.ammo = localGun.primaryAmmo;
+        localGun.reloadEndsAt = 0;
+        localGun.nextShotAt = 0;
+        viewModel.setWeapon(state.weaponId);
+        updateLoadoutUI();
+        updateWeaponPickUI();
+        updateWeaponPickVisibility();
+        hud.banner('RESPAWNED', '', 1.2);
+      }
     }
   }
 }
@@ -738,13 +887,20 @@ function fixedStep() {
   decoded.yaw = sampled.yaw;
   decoded.pitch = sampled.pitch;
 
-  net.send({
+  if (isDM()) {
+    if (sampled.switchSlot === 1) switchToSlot('primary');
+    if (sampled.switchSlot === 2) switchToSlot('secondary');
+  }
+
+  const packet = {
     t: 'i',
     s: state.seq,
     k: sampled.mask,
     y: Math.round(sampled.yaw * 1000) / 1000,
     p: Math.round(sampled.pitch * 1000) / 1000,
-  });
+  };
+  if (isDM() && sampled.switchSlot) packet.sw = sampled.switchSlot;
+  net.send(packet);
 
   state.zooming = decoded.zoom && weapon().zoom > 1;
   input.zoomFactor = state.zooming ? weapon().zoom : 1;
@@ -792,6 +948,8 @@ function updateHud(reloading) {
   const w = weapon();
   hud.setHealth(state.health);
   hud.setWeapon(w.name, localGun.ammo, w.magazine, reloading);
+  if (isDM()) updateLoadoutUI();
+  updateWeaponPickVisibility();
   hud.setPing(net.ping);
   hud.setScope(state.zooming);
 
@@ -845,6 +1003,10 @@ function beginPlay() {
 }
 
 // --------------------------------------------------------------------- wiring
+
+for (const btn of document.querySelectorAll('.pick-btn')) {
+  btn.addEventListener('click', () => sendPrimaryPick(btn.dataset.pw));
+}
 
 for (const btn of document.querySelectorAll('.mode-btn')) {
   btn.addEventListener('click', () => {

@@ -92,6 +92,19 @@ export const WEAPONS = {
 
 export const WEAPON_IDS = Object.keys(WEAPONS);
 
+/** Deathmatch primary choices — pistol is always the fixed secondary. */
+export const PRIMARY_WEAPON_IDS = ['assault', 'sniper', 'shotgun'];
+export const SECONDARY_WEAPON_ID = 'pistol';
+export const DEFAULT_PRIMARY_WEAPON_ID = 'assault';
+
+export function isPrimaryWeaponId(id) {
+  return PRIMARY_WEAPON_IDS.includes(id);
+}
+
+export function weaponById(id) {
+  return WEAPONS[id] || WEAPONS.pistol;
+}
+
 export const HEADSHOT_MULT = 1.8;
 
 export function randomWeaponId(rand = Math.random) {

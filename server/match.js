@@ -28,6 +28,10 @@ import {
   shotInterval,
   damageAtRange,
   HEADSHOT_MULT,
+  PRIMARY_WEAPON_IDS,
+  SECONDARY_WEAPON_ID,
+  DEFAULT_PRIMARY_WEAPON_ID,
+  isPrimaryWeaponId,
 } from '../shared/weapons.js';
 
 const KEY = {
@@ -76,7 +80,6 @@ export class Match {
     this.arena = null;
     this.events = [];
     this.lastRoundResult = null;
-    this.matchWeapon = 'pistol';
   }
 
   get isDM() {
@@ -108,7 +111,11 @@ export class Match {
       health: MAX_HEALTH,
       alive: false,
       weaponId: 'pistol',
+      primaryWeaponId: DEFAULT_PRIMARY_WEAPON_ID,
+      activeSlot: 'primary',
       ammo: 0,
+      primaryAmmo: 0,
+      secondaryAmmo: 0,
       bloom: 0,
       reloadUntilTick: 0,
       nextShotTick: 0,
@@ -182,7 +189,12 @@ export class Match {
     if (!player) return;
     const yaw = Number(msg.y) || 0;
     const pitch = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, Number(msg.p) || 0));
-    player.inputQueue.push({ seq: Number(msg.s) || 0, input: decodeInput(Number(msg.k) || 0, yaw, pitch) });
+    player.inputQueue.push({
+      seq: Number(msg.s) || 0,
+      input: decodeInput(Number(msg.k) || 0, yaw, pitch),
+      pw: typeof msg.pw === 'string' ? msg.pw : null,
+      sw: Number(msg.sw) || 0,
+    });
     if (player.inputQueue.length > 24) player.inputQueue.splice(0, player.inputQueue.length - 24);
   }
 
@@ -203,7 +215,6 @@ export class Match {
     this.roundNumber = 1;
     this.arena = generateArena();
     this.lastRoundResult = null;
-    this.matchWeapon = randomWeaponId();
 
     for (const p of this.players) {
       const { x, z } = pickRandomSpawn(this.arena.grid);
@@ -216,8 +227,7 @@ export class Match {
       p.onGround = true;
       p.yaw = Math.atan2(x, z);
       p.pitch = 0;
-      p.weaponId = this.matchWeapon;
-      p.ammo = WEAPONS[p.weaponId].magazine;
+      this.initDmLoadout(p);
       p.bloom = 0;
       p.reloadUntilTick = 0;
       p.nextShotTick = 0;
@@ -277,6 +287,55 @@ export class Match {
     player.pitch = 0;
   }
 
+  initDmLoadout(player) {
+    if (!isPrimaryWeaponId(player.primaryWeaponId)) {
+      player.primaryWeaponId = DEFAULT_PRIMARY_WEAPON_ID;
+    }
+    player.activeSlot = 'primary';
+    player.weaponId = player.primaryWeaponId;
+    player.primaryAmmo = WEAPONS[player.primaryWeaponId].magazine;
+    player.secondaryAmmo = WEAPONS[SECONDARY_WEAPON_ID].magazine;
+    player.ammo = player.primaryAmmo;
+  }
+
+  pickPrimaryWeapon(player, weaponId) {
+    if (!this.isDM || !isPrimaryWeaponId(weaponId)) return;
+    player.primaryWeaponId = weaponId;
+
+    if (player.alive && player.activeSlot === 'primary') {
+      player.weaponId = weaponId;
+      if (this.state === MATCH_STATE.COUNTDOWN) {
+        player.primaryAmmo = WEAPONS[weaponId].magazine;
+        player.ammo = player.primaryAmmo;
+      } else {
+        player.ammo = player.primaryAmmo;
+      }
+      player.reloadUntilTick = 0;
+      player.bloom = 0;
+    }
+  }
+
+  switchWeapon(player, slot) {
+    if (!this.isDM || !player.alive) return;
+    if (slot !== 'primary' && slot !== 'secondary') return;
+    if (slot === player.activeSlot) return;
+
+    if (player.activeSlot === 'primary') player.primaryAmmo = player.ammo;
+    else player.secondaryAmmo = player.ammo;
+
+    player.activeSlot = slot;
+    if (slot === 'primary') {
+      player.weaponId = player.primaryWeaponId;
+      player.ammo = player.primaryAmmo;
+    } else {
+      player.weaponId = SECONDARY_WEAPON_ID;
+      player.ammo = player.secondaryAmmo;
+    }
+    player.reloadUntilTick = 0;
+    player.zooming = false;
+    player.bloom = 0;
+  }
+
   broadcastGameStart() {
     this.broadcast({
       t: 'round',
@@ -296,6 +355,8 @@ export class Match {
       name: p.name,
       color: playerColor(p.slot),
       w: p.weaponId,
+      pw: p.primaryWeaponId,
+      as: p.activeSlot === 'secondary' ? 2 : 1,
       x: p.x,
       y: p.y,
       z: p.z,
@@ -440,11 +501,10 @@ export class Match {
     player.nextShotTick = 0;
     player.prevShoot = false;
     player.zooming = false;
-    player.weaponId = this.matchWeapon;
-    player.ammo = WEAPONS[player.weaponId].magazine;
+    this.initDmLoadout(player);
     player.respawnAtTick = 0;
     player.spawnProtectUntil = this.tick + Math.round(DM_SPAWN_PROTECT_SECONDS * TICK_RATE);
-    this.events.push({ k: 'respawn', p: player.id });
+    this.events.push({ k: 'respawn', p: player.id, pw: player.primaryWeaponId });
   }
 
   consumeInputs({ move, shoot }) {
@@ -456,18 +516,25 @@ export class Match {
         if (!next) break;
         player.lastInput = next.input;
         player.lastSeq = next.seq;
-        this.applyInput(player, next.input, { move, shoot });
+        this.applyInput(player, next.input, { move, shoot }, false, next.pw, next.sw);
         consumed++;
       }
       if (consumed === 0) {
-        this.applyInput(player, player.lastInput, { move, shoot }, true);
+        this.applyInput(player, player.lastInput, { move, shoot }, true, null, 0);
       }
     }
   }
 
-  applyInput(player, input, { move, shoot }, repeat = false) {
+  applyInput(player, input, { move, shoot }, repeat = false, pickPrimary = null, switchSlot = 0) {
     player.yaw = input.yaw;
     player.pitch = input.pitch;
+
+    if (this.isDM) {
+      if (pickPrimary) this.pickPrimaryWeapon(player, pickPrimary);
+      if (switchSlot === 1 && !repeat) this.switchWeapon(player, 'primary');
+      if (switchSlot === 2 && !repeat) this.switchWeapon(player, 'secondary');
+    }
+
     player.zooming = Boolean(input.zoom) && WEAPONS[player.weaponId].zoom > 1;
 
     if (!player.alive) return;
@@ -485,6 +552,10 @@ export class Match {
 
     if (player.reloadUntilTick && this.tick >= player.reloadUntilTick) {
       player.ammo = weapon.magazine;
+      if (this.isDM) {
+        if (player.activeSlot === 'primary') player.primaryAmmo = player.ammo;
+        else player.secondaryAmmo = player.ammo;
+      }
       player.reloadUntilTick = 0;
     }
 
@@ -519,6 +590,10 @@ export class Match {
 
   fire(player, weapon) {
     player.ammo -= 1;
+    if (this.isDM) {
+      if (player.activeSlot === 'primary') player.primaryAmmo = player.ammo;
+      else player.secondaryAmmo = player.ammo;
+    }
     player.nextShotTick = this.tick + Math.max(1, Math.round(shotInterval(weapon) * TICK_RATE));
 
     const ox = player.x;
@@ -648,6 +723,10 @@ export class Match {
         al: p.alive ? 1 : 0,
         g: p.onGround ? 1 : 0,
         w: p.weaponId,
+        pw: p.primaryWeaponId,
+        as: p.activeSlot === 'secondary' ? 2 : 1,
+        pa: p.primaryAmmo,
+        sa: p.secondaryAmmo,
         am: p.ammo,
         rl: p.reloadUntilTick ? Math.max(0, p.reloadUntilTick - this.tick) : 0,
         zm: p.zooming ? 1 : 0,

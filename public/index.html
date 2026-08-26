@@ -50,6 +50,18 @@
       </div>
 
       <div id="bottom-right">
+        <div id="loadout-bar" class="hidden">
+          <div id="slot-primary" class="loadout-slot active">
+            <span class="loadout-key">1</span>
+            <span id="slot-primary-name">ASSAULT RIFLE</span>
+            <span id="slot-primary-ammo" class="loadout-ammo">30</span>
+          </div>
+          <div id="slot-secondary" class="loadout-slot">
+            <span class="loadout-key">2</span>
+            <span class="loadout-name">PISTOL</span>
+            <span id="slot-secondary-ammo" class="loadout-ammo">12</span>
+          </div>
+        </div>
         <div id="weapon-name">PISTOL</div>
         <div id="ammo"><span id="ammo-cur">12</span><span id="ammo-max">/12</span></div>
         <div id="reload-note" class="hidden">RELOADING</div>
@@ -119,6 +131,19 @@
           <div><b>Click</b> shoot</div>
           <div><b>R</b> reload</div>
           <div><b>RMB</b> scope (sniper)</div>
+          <div><b>1 / 2</b> swap weapons (DM)</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="weapon-pick" class="hidden">
+      <div id="weapon-pick-card">
+        <strong>Choose primary weapon</strong>
+        <small>Pistol is always equipped as secondary — press <b>2</b> to swap</small>
+        <div class="pick-grid">
+          <button type="button" class="pick-btn" data-pw="assault">Assault Rifle</button>
+          <button type="button" class="pick-btn" data-pw="sniper">Sniper Rifle</button>
+          <button type="button" class="pick-btn" data-pw="shotgun">Shotgun</button>
         </div>
       </div>
     </div>

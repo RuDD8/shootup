@@ -449,6 +449,111 @@ button.primary:hover {
   text-align: right;
 }
 
+#loadout-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.loadout-slot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 4px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  font-size: 11px;
+  letter-spacing: 1.2px;
+  color: var(--dim);
+  opacity: 0.55;
+  transition: opacity 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.loadout-slot.active {
+  opacity: 1;
+  color: var(--text);
+  border-color: rgba(56, 189, 248, 0.45);
+  background: rgba(56, 189, 248, 0.08);
+}
+
+.loadout-key {
+  font-family: var(--mono);
+  font-weight: 700;
+  color: var(--cyan);
+  min-width: 14px;
+}
+
+.loadout-ammo {
+  font-family: var(--mono);
+  font-weight: 700;
+  min-width: 24px;
+}
+
+#weapon-pick {
+  position: fixed;
+  left: 50%;
+  bottom: 120px;
+  transform: translateX(-50%);
+  z-index: 30;
+  pointer-events: auto;
+}
+
+#weapon-pick-card {
+  background: rgba(8, 12, 20, 0.92);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  border-radius: 10px;
+  padding: 14px 18px;
+  text-align: center;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+}
+
+#weapon-pick-card strong {
+  display: block;
+  font-size: 13px;
+  letter-spacing: 2px;
+  margin-bottom: 4px;
+}
+
+#weapon-pick-card small {
+  display: block;
+  color: var(--dim);
+  font-size: 11px;
+  margin-bottom: 12px;
+}
+
+.pick-grid {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.pick-btn {
+  font: inherit;
+  cursor: pointer;
+  padding: 8px 14px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  letter-spacing: 0.5px;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.pick-btn:hover {
+  border-color: rgba(56, 189, 248, 0.5);
+  background: rgba(56, 189, 248, 0.1);
+}
+
+.pick-btn.selected {
+  border-color: var(--cyan);
+  background: rgba(56, 189, 248, 0.18);
+  color: #e0f2fe;
+}
+
 #weapon-name {
   font-size: 12px;
   letter-spacing: 2.4px;

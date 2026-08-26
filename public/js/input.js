@@ -26,8 +26,8 @@ export class InputController {
     this.shoot = false;
     this.zoom = false;
     this.reloadPressed = false;
-
-    // Recoil is a view kick that decays back toward the player's real aim.
+    this.slotPrimaryPressed = false;
+    this.slotSecondaryPressed = false;
     this.kickYaw = 0;
     this.kickPitch = 0;
 
@@ -75,6 +75,8 @@ export class InputController {
     document.addEventListener('keydown', (e) => {
       if (!this.locked) return;
       if (e.code === 'KeyR') this.reloadPressed = true;
+      if (e.code === 'Digit1') this.slotPrimaryPressed = true;
+      if (e.code === 'Digit2') this.slotSecondaryPressed = true;
       this.keys.add(e.code);
       if (e.code === 'Space') e.preventDefault();
     });
@@ -137,8 +139,18 @@ export class InputController {
       this.reloadPressed = false;
     }
 
+    let switchSlot = 0;
+    if (this.slotPrimaryPressed) {
+      switchSlot = 1;
+      this.slotPrimaryPressed = false;
+    }
+    if (this.slotSecondaryPressed) {
+      switchSlot = 2;
+      this.slotSecondaryPressed = false;
+    }
+
     const view = this.viewAngles();
-    return { mask, yaw: view.yaw, pitch: view.pitch };
+    return { mask, yaw: view.yaw, pitch: view.pitch, switchSlot };
   }
 
   static decode(mask) {
