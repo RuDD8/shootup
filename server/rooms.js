@@ -1,8 +1,6 @@
 import { Match } from './match.js';
-import { TICK_RATE, ROOM_CODE_LENGTH, MATCH_STATE } from '../shared/constants.js';
+import { TICK_RATE, ROOM_CODE_LENGTH, MATCH_STATE, GAME_MODE, clampDmMinutes, playerColor } from '../shared/constants.js';
 
-// Deliberately excludes I, O, 0 and 1 so codes can be read aloud without
-// anyone mistyping them.
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
 let nextPlayerId = 1;
@@ -24,10 +22,16 @@ export class RoomManager {
     throw new Error('room code space exhausted');
   }
 
-  create() {
+  create({ mode = GAME_MODE.DUEL, dmMinutes = 5 } = {}) {
     const code = this.makeCode();
-    const room = { code, match: null, createdAt: Date.now() };
-    room.match = new Match(room);
+    const room = {
+      code,
+      match: null,
+      createdAt: Date.now(),
+      mode: mode === GAME_MODE.DEATHMATCH ? GAME_MODE.DEATHMATCH : GAME_MODE.DUEL,
+      dmMinutes: clampDmMinutes(dmMinutes),
+    };
+    room.match = new Match(room, { mode: room.mode, dmMinutes: room.dmMinutes });
     this.rooms.set(code, room);
     return room;
   }
@@ -39,7 +43,12 @@ export class RoomManager {
   join(code, name, conn) {
     const room = this.get(code);
     if (!room) return { error: 'No match with that code.' };
-    if (room.match.players.length >= 2) return { error: 'That match is already full.' };
+    if (room.match.state !== MATCH_STATE.WAITING) {
+      return { error: 'That match has already started.' };
+    }
+    if (room.match.players.length >= room.match.maxPlayers) {
+      return { error: 'That match is already full.' };
+    }
     return this.seat(room, name, conn);
   }
 
@@ -56,12 +65,16 @@ export class RoomManager {
   }
 
   roster(room) {
-    return room.match.players.map((p) => ({ i: p.id, slot: p.slot, name: p.name }));
+    return room.match.players.map((p) => ({
+      i: p.id,
+      slot: p.slot,
+      name: p.name,
+      color: playerColor(p.slot),
+    }));
   }
 
   start() {
     if (this.timer) return;
-    // A single loop drives every match on the server.
     let previous = process.hrtime.bigint();
     let accumulator = 0;
     const stepNs = BigInt(Math.round(1e9 / TICK_RATE));
@@ -72,7 +85,6 @@ export class RoomManager {
       previous = now;
       const stepMs = Number(stepNs);
 
-      // Catch up on missed ticks, but never spiral if the process was stalled.
       let steps = 0;
       while (accumulator >= stepMs && steps < 5) {
         accumulator -= stepMs;

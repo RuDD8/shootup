@@ -167,7 +167,7 @@ async function testServer() {
     await a.waitFor((m) => m.t === 'hello');
     check('server greets on connect', true);
 
-    a.send({ t: 'create', name: 'Ada' });
+    a.send({ t: 'create', name: 'Ada', mode: 'duel' });
     const joinedA = await a.waitFor((m) => m.t === 'joined');
     check('create returns a 4-character room code', /^[A-Z0-9]{4}$/.test(joinedA.code), joinedA.code);
 

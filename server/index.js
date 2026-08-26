@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 import { attachWebSocket } from './wsserver.js';
 import { RoomManager } from './rooms.js';
+import { playerColor } from '../shared/constants.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -87,7 +88,8 @@ attachWebSocket(server, (conn) => {
     switch (msg.t) {
       case 'create': {
         if (session.room) return;
-        const room = rooms.create();
+        const mode = msg.mode === 'deathmatch' ? 'deathmatch' : 'duel';
+        const room = rooms.create({ mode, dmMinutes: msg.dmMinutes });
         const { player } = rooms.seat(room, cleanName(msg.name), conn);
         session.room = room;
         session.playerId = player.id;
@@ -96,6 +98,11 @@ attachWebSocket(server, (conn) => {
           code: room.code,
           id: player.id,
           slot: player.slot,
+          mode: room.mode,
+          dmMinutes: room.dmMinutes,
+          isHost: true,
+          maxPlayers: room.match.maxPlayers,
+          color: playerColor(player.slot),
           players: rooms.roster(room),
         });
         break;
@@ -116,9 +123,23 @@ attachWebSocket(server, (conn) => {
           code: result.room.code,
           id: result.player.id,
           slot: result.player.slot,
+          mode: result.room.mode,
+          dmMinutes: result.room.dmMinutes,
+          isHost: result.player.id === result.room.match.hostId,
+          maxPlayers: result.room.match.maxPlayers,
+          color: playerColor(result.player.slot),
           players: roster,
         });
         result.room.match.broadcast({ t: 'peers', players: roster });
+        break;
+      }
+
+      case 'start': {
+        if (!session.room) return;
+        const started = session.room.match.tryStart(session.playerId);
+        if (!started) {
+          conn.sendJSON({ t: 'error', msg: 'Cannot start yet — need at least 2 players.' });
+        }
         break;
       }
 

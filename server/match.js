@@ -7,14 +7,20 @@ import {
   HEAD_HEIGHT,
   PLAYER_HEIGHT,
   MATCH_STATE,
+  GAME_MODE,
   COUNTDOWN_SECONDS,
   ROUND_END_SECONDS,
   MATCH_END_SECONDS,
   ROUND_TIME_LIMIT,
   ROUNDS_TO_WIN,
   MAX_PITCH,
+  MAX_PLAYERS_DUEL,
+  MAX_PLAYERS_DM,
+  DM_RESPAWN_SECONDS,
+  DM_SPAWN_PROTECT_SECONDS,
+  playerColor,
 } from '../shared/constants.js';
-import { generateArena, serializeArena, cellCenter } from '../shared/arena.js';
+import { generateArena, serializeArena, cellCenter, pickRandomSpawn } from '../shared/arena.js';
 import { stepPlayer, raycastWorld, rayCylinder } from '../shared/physics.js';
 import {
   WEAPONS,
@@ -35,8 +41,6 @@ const KEY = {
   ZOOM: 128,
 };
 
-// Hitboxes are a shade wider than the collision cylinder so shots that look
-// like they connect actually do.
 const HIT_RADIUS = 0.45;
 const MAX_SHOT_RANGE = 400;
 const INPUT_QUEUE_LIMIT = 6;
@@ -59,8 +63,11 @@ function decodeInput(mask, yaw, pitch) {
 const IDLE_INPUT = decodeInput(0, 0, 0);
 
 export class Match {
-  constructor(room) {
+  constructor(room, { mode = GAME_MODE.DUEL, dmMinutes = 5 } = {}) {
     this.room = room;
+    this.mode = mode;
+    this.dmMinutes = dmMinutes;
+    this.hostId = null;
     this.players = [];
     this.tick = 0;
     this.state = MATCH_STATE.WAITING;
@@ -69,10 +76,21 @@ export class Match {
     this.arena = null;
     this.events = [];
     this.lastRoundResult = null;
+    this.matchWeapon = 'pistol';
+  }
+
+  get isDM() {
+    return this.mode === GAME_MODE.DEATHMATCH;
+  }
+
+  get maxPlayers() {
+    return this.isDM ? MAX_PLAYERS_DM : MAX_PLAYERS_DUEL;
   }
 
   addPlayer(id, name, conn) {
     const slot = this.players.length;
+    if (this.players.length === 0) this.hostId = id;
+
     const player = {
       id,
       slot,
@@ -99,6 +117,8 @@ export class Match {
       score: 0,
       kills: 0,
       deaths: 0,
+      respawnAtTick: 0,
+      spawnProtectUntil: 0,
       inputQueue: [],
       lastInput: { ...IDLE_INPUT },
       lastSeq: 0,
@@ -112,6 +132,19 @@ export class Match {
     this.players.forEach((p, i) => {
       p.slot = i;
     });
+
+    if (this.hostId === id) this.hostId = this.players[0]?.id || null;
+
+    if (this.isDM) {
+      if (this.players.length === 0) {
+        this.state = MATCH_STATE.WAITING;
+        this.stateTimer = 0;
+      } else if (this.state === MATCH_STATE.LIVE && this.players.length < 2) {
+        this.endDeathmatch('players_left');
+      }
+      return;
+    }
+
     if (this.players.length < 2) {
       this.state = MATCH_STATE.WAITING;
       this.stateTimer = 0;
@@ -123,6 +156,23 @@ export class Match {
     }
   }
 
+  tryStart(requesterId) {
+    if (!this.isDM || this.state !== MATCH_STATE.WAITING) return false;
+    if (requesterId !== this.hostId) return false;
+    if (this.players.length < 2) return false;
+    this.beginMatch();
+    return true;
+  }
+
+  opponentsOf(player) {
+    return this.players.filter(
+      (p) =>
+        p.id !== player.id &&
+        p.alive &&
+        this.tick >= p.spawnProtectUntil,
+    );
+  }
+
   opponentOf(player) {
     return this.players.find((p) => p.id !== player.id) || null;
   }
@@ -130,14 +180,11 @@ export class Match {
   queueInput(id, msg) {
     const player = this.players.find((p) => p.id === id);
     if (!player) return;
-    const seq = Number(msg.s) || 0;
     const yaw = Number(msg.y) || 0;
     const pitch = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, Number(msg.p) || 0));
-    player.inputQueue.push({ seq, input: decodeInput(Number(msg.k) || 0, yaw, pitch) });
+    player.inputQueue.push({ seq: Number(msg.s) || 0, input: decodeInput(Number(msg.k) || 0, yaw, pitch) });
     if (player.inputQueue.length > 24) player.inputQueue.splice(0, player.inputQueue.length - 24);
   }
-
-  // ---------------------------------------------------------------- rounds
 
   beginMatch() {
     this.roundNumber = 0;
@@ -145,19 +192,21 @@ export class Match {
       p.score = 0;
       p.kills = 0;
       p.deaths = 0;
+      p.respawnAtTick = 0;
+      p.spawnProtectUntil = 0;
     }
-    this.startRound();
+    if (this.isDM) this.beginDeathmatch();
+    else this.startRound();
   }
 
-  startRound() {
-    this.roundNumber += 1;
+  beginDeathmatch() {
+    this.roundNumber = 1;
     this.arena = generateArena();
     this.lastRoundResult = null;
-    const roundWeapon = randomWeaponId();
+    this.matchWeapon = randomWeaponId();
 
     for (const p of this.players) {
-      const spawn = this.arena.spawns[p.slot % this.arena.spawns.length];
-      const { x, z } = cellCenter(spawn.c, spawn.r);
+      const { x, z } = pickRandomSpawn(this.arena.grid);
       p.x = x;
       p.y = 0;
       p.z = z;
@@ -165,42 +214,95 @@ export class Match {
       p.vy = 0;
       p.vz = 0;
       p.onGround = true;
-      // Face the middle of the arena so nobody starts staring at a wall.
       p.yaw = Math.atan2(x, z);
       p.pitch = 0;
-      p.health = MAX_HEALTH;
-      p.alive = true;
-      p.weaponId = roundWeapon;
+      p.weaponId = this.matchWeapon;
       p.ammo = WEAPONS[p.weaponId].magazine;
       p.bloom = 0;
       p.reloadUntilTick = 0;
       p.nextShotTick = 0;
       p.prevShoot = false;
       p.zooming = false;
+      p.health = MAX_HEALTH;
+      p.alive = true;
+      p.spawnProtectUntil = 0;
       p.inputQueue.length = 0;
       p.lastInput = { ...IDLE_INPUT, yaw: p.yaw, pitch: 0 };
     }
 
     this.state = MATCH_STATE.COUNTDOWN;
     this.stateTimer = COUNTDOWN_SECONDS;
+    this.broadcastGameStart();
+  }
 
+  startRound() {
+    this.roundNumber += 1;
+    this.arena = generateArena();
+    this.lastRoundResult = null;
+    this.matchWeapon = randomWeaponId();
+
+    for (const p of this.players) {
+      this.placeAtSpawn(p, p.slot);
+      p.weaponId = this.matchWeapon;
+      p.ammo = WEAPONS[p.weaponId].magazine;
+      p.bloom = 0;
+      p.reloadUntilTick = 0;
+      p.nextShotTick = 0;
+      p.prevShoot = false;
+      p.zooming = false;
+      p.health = MAX_HEALTH;
+      p.alive = true;
+      p.respawnAtTick = 0;
+      p.spawnProtectUntil = 0;
+      p.inputQueue.length = 0;
+      p.lastInput = { ...IDLE_INPUT, yaw: p.yaw, pitch: 0 };
+    }
+
+    this.state = MATCH_STATE.COUNTDOWN;
+    this.stateTimer = COUNTDOWN_SECONDS;
+    this.broadcastGameStart();
+  }
+
+  placeAtSpawn(player, slotIndex) {
+    const spawn = this.arena.spawns[slotIndex % this.arena.spawns.length];
+    const { x, z } = cellCenter(spawn.c, spawn.r);
+    player.x = x;
+    player.y = 0;
+    player.z = z;
+    player.vx = 0;
+    player.vy = 0;
+    player.vz = 0;
+    player.onGround = true;
+    player.yaw = Math.atan2(x, z);
+    player.pitch = 0;
+  }
+
+  broadcastGameStart() {
     this.broadcast({
       t: 'round',
+      mode: this.mode,
+      dmMinutes: this.dmMinutes,
       n: this.roundNumber,
       arena: serializeArena(this.arena),
-      target: ROUNDS_TO_WIN,
-      players: this.players.map((p) => ({
-        i: p.id,
-        slot: p.slot,
-        name: p.name,
-        w: p.weaponId,
-        x: p.x,
-        y: p.y,
-        z: p.z,
-        yaw: p.yaw,
-        score: p.score,
-      })),
+      target: this.isDM ? 0 : ROUNDS_TO_WIN,
+      players: this.players.map((p) => this.playerPayload(p)),
     });
+  }
+
+  playerPayload(p) {
+    return {
+      i: p.id,
+      slot: p.slot,
+      name: p.name,
+      color: playerColor(p.slot),
+      w: p.weaponId,
+      x: p.x,
+      y: p.y,
+      z: p.z,
+      yaw: p.yaw,
+      score: p.score,
+      kills: p.kills,
+    };
   }
 
   endRound(winner, reason) {
@@ -220,31 +322,60 @@ export class Match {
     });
   }
 
-  // ------------------------------------------------------------------ loop
+  endDeathmatch(reason = 'timeout') {
+    const ranked = [...this.players].sort((a, b) => b.kills - a.kills || a.deaths - b.deaths);
+    const topKills = ranked[0]?.kills ?? 0;
+    const winners = ranked.filter((p) => p.kills === topKills);
+    const winner = winners.length === 1 ? winners[0] : null;
+
+    this.state = MATCH_STATE.MATCH_OVER;
+    this.stateTimer = MATCH_END_SECONDS;
+    this.broadcast({
+      t: 'matchover',
+      mode: this.mode,
+      reason,
+      winner: winner ? winner.id : null,
+      scores: ranked.map((p) => ({
+        i: p.id,
+        slot: p.slot,
+        name: p.name,
+        color: playerColor(p.slot),
+        score: p.kills,
+        kills: p.kills,
+        deaths: p.deaths,
+      })),
+    });
+  }
 
   update() {
     this.tick += 1;
 
     if (this.state === MATCH_STATE.WAITING) {
-      if (this.players.length === 2) this.beginMatch();
+      if (!this.isDM && this.players.length === 2) this.beginMatch();
       return;
     }
 
     this.stateTimer -= TICK_DT;
 
+    if (this.isDM && this.state === MATCH_STATE.LIVE) {
+      this.processRespawns();
+    }
+
     switch (this.state) {
       case MATCH_STATE.COUNTDOWN:
-        // Look around during the freeze, but no movement or shooting.
         this.consumeInputs({ move: false, shoot: false });
         if (this.stateTimer <= 0) {
           this.state = MATCH_STATE.LIVE;
-          this.stateTimer = ROUND_TIME_LIMIT;
+          this.stateTimer = this.isDM ? this.dmMinutes * 60 : ROUND_TIME_LIMIT;
         }
         break;
 
       case MATCH_STATE.LIVE:
         this.consumeInputs({ move: true, shoot: true });
-        if (this.stateTimer <= 0) this.endRound(null, 'timeout');
+        if (this.stateTimer <= 0) {
+          if (this.isDM) this.endDeathmatch('timeout');
+          else this.endRound(null, 'timeout');
+        }
         break;
 
       case MATCH_STATE.ROUND_OVER:
@@ -255,9 +386,13 @@ export class Match {
             this.stateTimer = MATCH_END_SECONDS;
             this.broadcast({
               t: 'matchover',
+              mode: this.mode,
               winner: leader.id,
               scores: this.players.map((p) => ({
                 i: p.id,
+                slot: p.slot,
+                name: p.name,
+                color: playerColor(p.slot),
                 score: p.score,
                 kills: p.kills,
                 deaths: p.deaths,
@@ -280,10 +415,40 @@ export class Match {
     if (this.tick % SNAPSHOT_INTERVAL === 0) this.sendSnapshot();
   }
 
+  processRespawns() {
+    for (const p of this.players) {
+      if (p.alive || !p.respawnAtTick || this.tick < p.respawnAtTick) continue;
+      this.respawnPlayer(p);
+    }
+  }
+
+  respawnPlayer(player) {
+    const { x, z } = pickRandomSpawn(this.arena.grid);
+    player.x = x;
+    player.y = 0;
+    player.z = z;
+    player.vx = 0;
+    player.vy = 0;
+    player.vz = 0;
+    player.onGround = true;
+    player.yaw = Math.atan2(x, z);
+    player.pitch = 0;
+    player.health = MAX_HEALTH;
+    player.alive = true;
+    player.bloom = 0;
+    player.reloadUntilTick = 0;
+    player.nextShotTick = 0;
+    player.prevShoot = false;
+    player.zooming = false;
+    player.weaponId = this.matchWeapon;
+    player.ammo = WEAPONS[player.weaponId].magazine;
+    player.respawnAtTick = 0;
+    player.spawnProtectUntil = this.tick + Math.round(DM_SPAWN_PROTECT_SECONDS * TICK_RATE);
+    this.events.push({ k: 'respawn', p: player.id });
+  }
+
   consumeInputs({ move, shoot }) {
     for (const player of this.players) {
-      // One input per tick keeps the client's replay in lockstep; drain two
-      // when a burst of packets arrives late so the queue cannot creep.
       let budget = player.inputQueue.length > INPUT_QUEUE_LIMIT ? 2 : 1;
       let consumed = 0;
       while (budget-- > 0) {
@@ -295,9 +460,6 @@ export class Match {
         consumed++;
       }
       if (consumed === 0) {
-        // Nothing arrived this tick: keep simulating the last known input so
-        // movement stays smooth, without re-acking, so the client retains its
-        // unacknowledged inputs for replay.
         this.applyInput(player, player.lastInput, { move, shoot }, true);
       }
     }
@@ -362,17 +524,17 @@ export class Match {
     const ox = player.x;
     const oy = player.y + EYE_HEIGHT;
     const oz = player.z;
-    const target = this.opponentOf(player);
+
+    const targets = this.isDM ? this.opponentsOf(player) : [this.opponentOf(player)].filter(Boolean);
 
     const spreadBase = weapon.spread + player.bloom;
     const spread = player.zooming ? spreadBase * 0.25 : spreadBase;
 
     const impacts = [];
-    let totalDamage = 0;
-    let headshot = false;
+    const damageByTarget = new Map();
+    let anyHeadshot = false;
 
     for (let i = 0; i < weapon.pellets; i++) {
-      // Uniform disc offset applied to the aim angles.
       const angle = Math.random() * Math.PI * 2;
       const radius = Math.sqrt(Math.random()) * spread;
       const yaw = player.yaw + Math.cos(angle) * radius;
@@ -388,25 +550,18 @@ export class Match {
 
       const world = raycastWorld(this.arena.grid, ox, oy, oz, dx, dy, dz, MAX_SHOT_RANGE);
       let hitDist = world.hit ? world.dist : MAX_SHOT_RANGE;
-      let hitPlayer = false;
+      let hitTarget = null;
 
-      if (target && target.alive) {
+      for (const target of targets) {
+        if (!target.alive) continue;
         const tHit = rayCylinder(
-          ox,
-          oy,
-          oz,
-          dx,
-          dy,
-          dz,
-          target.x,
-          target.y,
-          target.z,
-          HIT_RADIUS,
-          PLAYER_HEIGHT,
+          ox, oy, oz, dx, dy, dz,
+          target.x, target.y, target.z,
+          HIT_RADIUS, PLAYER_HEIGHT,
         );
         if (tHit !== null && tHit < hitDist) {
           hitDist = tHit;
-          hitPlayer = true;
+          hitTarget = target;
         }
       }
 
@@ -414,14 +569,14 @@ export class Match {
       const py = oy + dy * hitDist;
       const pz = oz + dz * hitDist;
 
-      if (hitPlayer) {
-        const isHead = py > target.y + HEAD_HEIGHT;
+      if (hitTarget) {
+        const isHead = py > hitTarget.y + HEAD_HEIGHT;
         let dmg = damageAtRange(weapon, hitDist);
         if (isHead) {
           dmg *= HEADSHOT_MULT;
-          headshot = true;
+          anyHeadshot = true;
         }
-        totalDamage += dmg;
+        damageByTarget.set(hitTarget, (damageByTarget.get(hitTarget) || 0) + dmg);
         impacts.push({ x: px, y: py, z: pz, s: 'player' });
       } else {
         impacts.push({ x: px, y: py, z: pz, s: world.surface || 'air' });
@@ -438,23 +593,33 @@ export class Match {
       hits: impacts,
     });
 
-    if (totalDamage > 0 && target && target.alive) {
+    for (const [target, totalDamage] of damageByTarget) {
+      if (!target.alive || totalDamage <= 0) continue;
       const dmg = Math.round(totalDamage);
+      const headshot = anyHeadshot && dmg >= weapon.damage * HEADSHOT_MULT * 0.5;
       target.health -= dmg;
       this.events.push({ k: 'hurt', p: target.id, by: player.id, dmg, head: headshot });
 
       if (target.health <= 0) {
-        target.health = 0;
-        target.alive = false;
-        target.deaths += 1;
-        player.kills += 1;
-        this.events.push({ k: 'die', p: target.id, by: player.id, head: headshot });
-        this.endRound(player, headshot ? 'headshot' : 'kill');
+        this.handleKill(player, target, headshot);
       }
     }
   }
 
-  // ------------------------------------------------------------- messaging
+  handleKill(killer, victim, headshot) {
+    victim.health = 0;
+    victim.alive = false;
+    victim.deaths += 1;
+    killer.kills += 1;
+    this.events.push({ k: 'die', p: victim.id, by: killer.id, head: headshot });
+
+    if (this.isDM) {
+      victim.respawnAtTick = this.tick + Math.round(DM_RESPAWN_SECONDS * TICK_RATE);
+      return;
+    }
+
+    this.endRound(killer, headshot ? 'headshot' : 'kill');
+  }
 
   sendSnapshot() {
     const ack = {};
@@ -463,11 +628,14 @@ export class Match {
     const payload = {
       t: 's',
       k: this.tick,
+      mode: this.mode,
       st: this.state,
       tm: Math.max(0, Number(this.stateTimer.toFixed(2))),
       ack,
       ps: this.players.map((p) => ({
         i: p.id,
+        sl: p.slot,
+        nm: p.name,
         x: round(p.x),
         y: round(p.y),
         z: round(p.z),
@@ -484,6 +652,9 @@ export class Match {
         rl: p.reloadUntilTick ? Math.max(0, p.reloadUntilTick - this.tick) : 0,
         zm: p.zooming ? 1 : 0,
         sc: p.score,
+        kl: p.kills,
+        dt: p.deaths,
+        rs: p.respawnAtTick ? Math.max(0, p.respawnAtTick - this.tick) : 0,
       })),
       ev: this.events,
     };

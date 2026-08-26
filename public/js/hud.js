@@ -1,5 +1,9 @@
 const $ = (id) => document.getElementById(id);
 
+function escapeHtml(text) {
+  return String(text).replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
+}
+
 export class Hud {
   constructor() {
     this.root = $('hud');
@@ -9,11 +13,15 @@ export class Hud {
     this.feedEl = $('killfeed');
     this.vignette = $('damage-vignette');
     this.scope = $('scope-overlay');
+    this.scoreboard = $('scoreboard');
+    this.dmBoard = $('dm-leaderboard');
+    this.dmList = $('dm-lb-list');
 
     this.hitmarkerTimer = 0;
     this.vignetteTimer = 0;
     this.bannerTimer = 0;
     this.lastGap = -1;
+    this.mode = 'duel';
   }
 
   show() {
@@ -23,6 +31,13 @@ export class Hud {
   hide() {
     this.root.classList.add('hidden');
     this.bannerEl.classList.remove('show');
+  }
+
+  setGameMode(mode) {
+    this.mode = mode;
+    const isDM = mode === 'deathmatch';
+    this.scoreboard.classList.toggle('hidden', isDM);
+    this.dmBoard.classList.toggle('hidden', !isDM);
   }
 
   setNames(mine, theirs) {
@@ -39,8 +54,21 @@ export class Hud {
     $('round-label').textContent = `ROUND ${n} · FIRST TO ${target}`;
   }
 
+  setDeathmatchLabel(minutes) {
+    $('round-label').textContent = `DEATHMATCH · ${minutes} MIN`;
+  }
+
   setTimer(text) {
     $('round-timer').textContent = text;
+  }
+
+  updateDmLeaderboard(entries) {
+    this.dmList.innerHTML = '';
+    for (const entry of entries) {
+      const li = document.createElement('li');
+      li.innerHTML = `<span class="lb-name" style="color:${entry.color}">${escapeHtml(entry.name)}</span><span class="lb-kills">${entry.kills}</span>`;
+      this.dmList.appendChild(li);
+    }
   }
 
   setHealth(health) {
@@ -58,7 +86,6 @@ export class Hud {
     $('reload-note').classList.toggle('hidden', !reloading);
   }
 
-  /** Crosshair gap tracks the weapon's current cone of fire. */
   setCrosshairGap(pixels) {
     const gap = Math.round(pixels);
     if (gap === this.lastGap) return;

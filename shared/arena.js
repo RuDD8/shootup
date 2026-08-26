@@ -204,3 +204,24 @@ export function deserializeArena(data) {
   for (let i = 0; i < grid.length; i++) grid[i] = Number(data.g[i]) || 0;
   return { seed: data.seed, grid, spawns: data.spawns };
 }
+
+/** Every walkable interior cell — used for deathmatch respawns. */
+export function listSpawnCells(grid) {
+  const cells = [];
+  for (let r = 2; r < GRID_SIZE - 2; r++) {
+    for (let c = 2; c < GRID_SIZE - 2; c++) {
+      if (grid[idx(c, r)] === TILE_OPEN) cells.push({ c, r });
+    }
+  }
+  return cells;
+}
+
+export function pickRandomSpawn(grid, rand = Math.random) {
+  const cells = listSpawnCells(grid);
+  if (!cells.length) {
+    const { x, z } = cellCenter(SPAWN_A.c, SPAWN_A.r);
+    return { x, z };
+  }
+  const cell = cells[Math.floor(rand() * cells.length)];
+  return cellCenter(cell.c, cell.r);
+}

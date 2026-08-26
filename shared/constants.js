@@ -45,6 +45,19 @@ export const ROUND_TIME_LIMIT = 90;
 export const ROOM_CODE_LENGTH = 4;
 export const MAX_PITCH = Math.PI / 2 - 0.02;
 
+export const GAME_MODE = {
+  DUEL: 'duel',
+  DEATHMATCH: 'deathmatch',
+};
+
+export const MAX_PLAYERS_DUEL = 2;
+export const MAX_PLAYERS_DM = 10;
+export const DM_MIN_MINUTES = 3;
+export const DM_MAX_MINUTES = 20;
+export const DM_DEFAULT_MINUTES = 5;
+export const DM_RESPAWN_SECONDS = 3;
+export const DM_SPAWN_PROTECT_SECONDS = 2;
+
 export const MATCH_STATE = {
   WAITING: 'waiting',
   COUNTDOWN: 'countdown',
@@ -53,5 +66,29 @@ export const MATCH_STATE = {
   MATCH_OVER: 'matchover',
 };
 
-export const SLOT_COLORS = ['#38bdf8', '#fb7185'];
+// One distinct colour per slot (0–9). Used for avatars and the DM leaderboard.
+export const PLAYER_COLORS = [
+  '#38bdf8',
+  '#fb7185',
+  '#34d399',
+  '#fbbf24',
+  '#a78bfa',
+  '#f472b6',
+  '#2dd4bf',
+  '#fb923c',
+  '#818cf8',
+  '#4ade80',
+];
+
+export function playerColor(slot) {
+  return PLAYER_COLORS[slot % PLAYER_COLORS.length];
+}
+
+export function clampDmMinutes(value) {
+  const n = Number(value) || DM_DEFAULT_MINUTES;
+  return Math.max(DM_MIN_MINUTES, Math.min(DM_MAX_MINUTES, Math.round(n)));
+}
+
+// Legacy aliases kept for duel scoreboard styling.
+export const SLOT_COLORS = PLAYER_COLORS;
 export const SLOT_NAMES = ['CYAN', 'ROSE'];

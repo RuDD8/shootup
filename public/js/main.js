@@ -4,7 +4,9 @@ import {
   EYE_HEIGHT,
   MAX_HEALTH,
   MATCH_STATE,
+  GAME_MODE,
   PLAYER_HEIGHT,
+  playerColor,
 } from '/shared/constants.js';
 
 // Rough barrel lengths, used only to scale the opponent's held weapon.
@@ -45,9 +47,14 @@ const net = new Net();
 
 const state = {
   phase: 'menu',
+  mode: GAME_MODE.DUEL,
   myId: null,
   mySlot: 0,
   myName: 'Player',
+  myColor: playerColor(0),
+  isHost: false,
+  dmMinutes: 5,
+  maxPlayers: 2,
   code: null,
   arena: null,
   arenaMesh: null,
@@ -60,6 +67,7 @@ const state = {
   weaponId: 'pistol',
   zooming: false,
   scores: new Map(),
+  kills: new Map(),
   players: new Map(),
   local: { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, onGround: true },
   smooth: new THREE.Vector3(),
@@ -71,6 +79,8 @@ const state = {
   lastCountdownStep: -1,
   serverReloadTicks: 0,
 };
+
+let selectedMode = GAME_MODE.DUEL;
 
 const localGun = { ammo: 0, nextShotAt: 0, reloadEndsAt: 0, prevShoot: false };
 
@@ -87,9 +97,22 @@ function weapon() {
   return WEAPONS[state.weaponId] || WEAPONS.pistol;
 }
 
+function isDM() {
+  return state.mode === GAME_MODE.DEATHMATCH;
+}
+
 function opponent() {
   for (const [id, p] of state.players) if (id !== state.myId) return p;
   return null;
+}
+
+function remoteTargets() {
+  const list = [];
+  for (const [id, p] of state.players) {
+    if (id === state.myId || !p.alive || !p.render) continue;
+    list.push(p);
+  }
+  return list;
 }
 
 function lerpAngle(a, b, t) {
@@ -111,8 +134,8 @@ function localTrace(ox, oy, oz, dir) {
   let dist = world.hit ? world.dist : MAX_RANGE;
   let kind = world.surface || 'air';
 
-  const foe = opponent();
-  if (foe && foe.alive && foe.render) {
+  const targets = isDM() ? remoteTargets() : [opponent()].filter(Boolean);
+  for (const foe of targets) {
     const t = rayCylinder(
       ox, oy, oz,
       dir.x, dir.y, dir.z,
@@ -226,14 +249,16 @@ net.on('joined', (msg) => {
   state.myId = msg.id;
   state.mySlot = msg.slot;
   state.code = msg.code;
-  showLobby(msg.code, msg.players.length);
+  state.mode = msg.mode || GAME_MODE.DUEL;
+  state.dmMinutes = msg.dmMinutes || 5;
+  state.isHost = Boolean(msg.isHost);
+  state.maxPlayers = msg.maxPlayers || 2;
+  state.myColor = msg.color || playerColor(msg.slot);
+  showLobby(msg.code, msg);
 });
 
 net.on('peers', (msg) => {
-  if (state.phase === 'lobby') {
-    $('lobby-status').textContent =
-      msg.players.length >= 2 ? 'Opponent connected — starting…' : 'Waiting for an opponent…';
-  }
+  if (state.phase === 'lobby') updateLobby(msg);
 });
 
 net.on('error', (msg) => {
@@ -241,6 +266,7 @@ net.on('error', (msg) => {
 });
 
 net.on('round', (msg) => {
+  state.mode = msg.mode || state.mode;
   state.arena = deserializeArena(msg.arena);
   state.roundNumber = msg.n;
   state.target = msg.target;
@@ -250,23 +276,25 @@ net.on('round', (msg) => {
   if (state.arenaMesh) state.arenaMesh.dispose();
   state.arenaMesh = buildArena(scene, state.arena);
 
-  // Rebuild the roster: avatars are cheap and this keeps names and colours in
-  // sync if anyone reconnected between rounds.
   for (const p of state.players.values()) if (p.avatar) p.avatar.dispose();
   state.players.clear();
+  state.kills.clear();
 
   for (const entry of msg.players) {
     const player = {
       id: entry.i,
       slot: entry.slot,
       name: entry.name,
+      color: entry.color || playerColor(entry.slot),
       weaponId: entry.w,
       alive: true,
       score: entry.score,
+      kills: entry.kills || 0,
       avatar: null,
       render: { x: entry.x, y: entry.y, z: entry.z, yaw: entry.yaw },
     };
     state.scores.set(entry.i, entry.score);
+    state.kills.set(entry.i, entry.kills || 0);
 
     if (entry.i === state.myId) {
       state.weaponId = entry.w;
@@ -303,15 +331,23 @@ net.on('round', (msg) => {
   localGun.prevShoot = false;
 
   viewModel.setWeapon(state.weaponId);
+  hud.setGameMode(state.mode);
+  hud.clearFeed();
 
-  const foe = opponent();
-  hud.setNames(state.myName, foe ? foe.name : 'Rival');
-  hud.setRound(msg.n, msg.target);
-  hud.setScores(state.scores.get(state.myId) || 0, foe ? state.scores.get(foe.id) || 0 : 0);
+  if (isDM()) {
+    hud.setDeathmatchLabel(state.dmMinutes);
+    hud.updateDmLeaderboard(buildLeaderboard());
+    hud.banner(weapon().name.toUpperCase(), 'Deathmatch', 2.2);
+  } else {
+    const foe = opponent();
+    hud.setNames(state.myName, foe ? foe.name : 'Rival');
+    hud.setRound(msg.n, msg.target);
+    hud.setScores(state.scores.get(state.myId) || 0, foe ? state.scores.get(foe.id) || 0 : 0);
+    hud.banner(weapon().name.toUpperCase(), `Round ${msg.n}`, 2.2);
+  }
+
   hud.setHealth(MAX_HEALTH);
   hud.clearBanner();
-  hud.banner(weapon().name.toUpperCase(), `Round ${msg.n}`, 2.2);
-
   enterGame();
 });
 
@@ -334,24 +370,38 @@ net.on('roundover', (msg) => {
 
 net.on('matchover', (msg) => {
   state.matchState = MATCH_STATE.MATCH_OVER;
-  const won = msg.winner === state.myId;
-  const mine = msg.scores.find((s) => s.i === state.myId);
-  const theirs = msg.scores.find((s) => s.i !== state.myId);
-
   document.exitPointerLock();
   hud.hide();
   $('menu').classList.remove('hidden');
   $('menu-main').classList.add('hidden');
   $('menu-lobby').classList.add('hidden');
   $('menu-result').classList.remove('hidden');
-  $('result-title').textContent = won ? 'YOU WIN THE MATCH' : 'YOU LOSE THE MATCH';
-  $('result-detail').textContent = `Final score ${mine ? mine.score : 0} – ${theirs ? theirs.score : 0}   ·   ${
-    mine ? mine.kills : 0
-  } kills`;
+
+  if (msg.mode === GAME_MODE.DEATHMATCH) {
+    const ranked = [...msg.scores].sort((a, b) => b.kills - a.kills || a.deaths - b.deaths);
+    const won = msg.winner === state.myId;
+    $('result-title').textContent = won ? 'YOU WIN' : msg.winner ? 'MATCH OVER' : 'DRAW';
+    $('result-detail').innerHTML = ranked
+      .map((s) => `<span style="color:${s.color || playerColor(s.slot)}">${escapeHtml(s.name)}</span>: ${s.kills} kills`)
+      .join('<br>');
+  } else {
+    const won = msg.winner === state.myId;
+    const mine = msg.scores.find((s) => s.i === state.myId);
+    const theirs = msg.scores.find((s) => s.i !== state.myId);
+    $('result-title').textContent = won ? 'YOU WIN THE MATCH' : 'YOU LOSE THE MATCH';
+    $('result-detail').textContent = `Final score ${mine ? mine.score : 0} – ${theirs ? theirs.score : 0}   ·   ${
+      mine ? mine.kills : 0
+    } kills`;
+  }
+
   state.phase = 'result';
 });
 
-net.on('opponentleft', () => {
+net.on('opponentleft', (msg) => {
+  if (state.phase === 'lobby' && isDM()) {
+    updateLobby(msg);
+    return;
+  }
   state.matchState = MATCH_STATE.WAITING;
   document.exitPointerLock();
   hud.hide();
@@ -359,7 +409,9 @@ net.on('opponentleft', () => {
   $('menu-main').classList.add('hidden');
   $('menu-result').classList.add('hidden');
   $('menu-lobby').classList.remove('hidden');
-  $('lobby-status').textContent = 'Your opponent left. Waiting for someone to join…';
+  $('lobby-status').textContent = isDM()
+    ? 'A player left. Waiting in lobby…'
+    : 'Your opponent left. Waiting for someone to join…';
   state.phase = 'lobby';
 });
 
@@ -376,12 +428,39 @@ function onSnapshot(msg) {
   if (state.snapshots.length > 24) state.snapshots.shift();
 
   for (const entry of msg.ps) {
-    const player = state.players.get(entry.i);
+    let player = state.players.get(entry.i);
+    if (!player && entry.i !== state.myId) {
+      player = {
+        id: entry.i,
+        slot: entry.sl,
+        name: entry.nm || 'Player',
+        color: playerColor(entry.sl),
+        weaponId: entry.w,
+        alive: entry.al === 1,
+        score: entry.sc,
+        kills: entry.kl || 0,
+        avatar: null,
+        render: { x: entry.x, y: entry.y, z: entry.z, yaw: entry.yaw },
+      };
+      state.players.set(entry.i, player);
+    }
+
     if (player) {
       player.alive = entry.al === 1;
       player.weaponId = entry.w;
       player.score = entry.sc;
+      player.kills = entry.kl || 0;
+      if (entry.nm) player.name = entry.nm;
       state.scores.set(entry.i, entry.sc);
+      state.kills.set(entry.i, entry.kl || 0);
+
+      if (entry.i !== state.myId && !player.avatar && entry.al === 1) {
+        player.avatar = createAvatar(scene, entry.sl);
+        player.avatar.setWeaponLength(AVATAR_GUN_LENGTH[entry.w] || 1);
+      }
+      if (player.avatar) {
+        player.avatar.setWeaponLength(AVATAR_GUN_LENGTH[entry.w] || 1);
+      }
     }
 
     if (entry.i !== state.myId) continue;
@@ -438,6 +517,13 @@ function onSnapshot(msg) {
   }
 
   if (msg.ev && msg.ev.length) handleEvents(msg.ev);
+
+  if (isDM() && state.phase === 'game') {
+    hud.updateDmLeaderboard(buildLeaderboard());
+  } else if (!isDM() && state.phase === 'game') {
+    const foe = opponent();
+    hud.setScores(state.scores.get(state.myId) || 0, foe ? state.scores.get(foe.id) || 0 : 0);
+  }
 }
 
 function handleEvents(events) {
@@ -476,15 +562,70 @@ function handleEvents(events) {
       const killer = state.players.get(ev.by);
       const victimName = victim ? victim.name : 'Player';
       const killerName = killer ? killer.name : 'Player';
+      const killerColor = killer ? killer.color : '#38bdf8';
       const tag = ev.head ? ' <i>headshot</i>' : '';
-      hud.feed(`<b>${escapeHtml(killerName)}</b> → ${escapeHtml(victimName)}${tag}`);
-      if (ev.p === state.myId) state.shake = 2.4;
+      hud.feed(`<b style="color:${killerColor}">${escapeHtml(killerName)}</b> → ${escapeHtml(victimName)}${tag}`);
+      if (ev.p === state.myId) {
+        state.shake = 2.4;
+        if (isDM()) hud.banner('ELIMINATED', 'Respawning…', 2.5);
+      }
+    } else if (ev.k === 'respawn') {
+      if (ev.p === state.myId) hud.banner('RESPAWNED', '', 1.2);
     }
   }
 }
 
+function buildLeaderboard() {
+  return [...state.players.values()]
+    .map((p) => ({
+      id: p.id,
+      name: p.name,
+      kills: state.kills.get(p.id) || p.kills || 0,
+      color: p.color || playerColor(p.slot),
+    }))
+    .sort((a, b) => b.kills - a.kills || a.name.localeCompare(b.name));
+}
+
+function formatTimer(seconds) {
+  const s = Math.max(0, Math.ceil(seconds));
+  if (isDM()) {
+    const m = Math.floor(s / 60);
+    const r = s % 60;
+    return `${m}:${String(r).padStart(2, '0')}`;
+  }
+  return String(s);
+}
+
 function escapeHtml(text) {
   return String(text).replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
+}
+
+function updateLobby(msg) {
+  const players = msg.players || [];
+  const list = $('lobby-players');
+  list.innerHTML = '';
+  for (const p of players) {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="dot" style="background:${p.color}"></span>${escapeHtml(p.name)}`;
+    list.appendChild(li);
+  }
+
+  if (isDM()) {
+    $('lobby-mode-label').textContent = `Deathmatch · ${state.dmMinutes} min · up to ${state.maxPlayers} players`;
+    if (players.length < 2) {
+      $('lobby-status').textContent = `Need at least 2 players (${players.length}/${state.maxPlayers})`;
+    } else if (state.isHost) {
+      $('lobby-status').textContent = 'Ready — click START when everyone is in';
+    } else {
+      $('lobby-status').textContent = `Waiting for host to start (${players.length}/${state.maxPlayers})`;
+    }
+    $('btn-start').classList.toggle('hidden', !state.isHost || players.length < 2);
+  } else {
+    $('lobby-mode-label').textContent = '1 vs 1 Duel';
+    $('btn-start').classList.add('hidden');
+    $('lobby-status').textContent =
+      players.length >= 2 ? 'Opponent connected — starting…' : 'Waiting for an opponent…';
+  }
 }
 
 // -------------------------------------------------------------- interpolation
@@ -659,14 +800,14 @@ function updateHud(reloading) {
 
   if (state.matchState === MATCH_STATE.COUNTDOWN) {
     const step = Math.ceil(state.timer);
-    hud.setTimer(String(Math.max(0, step)));
+    hud.setTimer(formatTimer(state.timer));
     if (step !== state.lastCountdownStep) {
       state.lastCountdownStep = step;
       audio.countdown(step);
       if (step > 0) hud.banner(String(step), 'Get ready', 0.9);
     }
   } else if (state.matchState === MATCH_STATE.LIVE) {
-    hud.setTimer(String(Math.ceil(state.timer)));
+    hud.setTimer(formatTimer(state.timer));
     if (state.lastCountdownStep !== -1) {
       state.lastCountdownStep = -1;
       hud.banner('FIGHT', '', 0.8);
@@ -679,14 +820,13 @@ function updateHud(reloading) {
 
 // -------------------------------------------------------------------- screens
 
-function showLobby(code, playerCount) {
+function showLobby(code, msg) {
   state.phase = 'lobby';
   $('menu-main').classList.add('hidden');
   $('menu-result').classList.add('hidden');
   $('menu-lobby').classList.remove('hidden');
   $('code-display').textContent = code;
-  $('lobby-status').textContent =
-    playerCount >= 2 ? 'Opponent connected — starting…' : 'Waiting for an opponent…';
+  updateLobby(msg);
 }
 
 function enterGame() {
@@ -706,10 +846,28 @@ function beginPlay() {
 
 // --------------------------------------------------------------------- wiring
 
+for (const btn of document.querySelectorAll('.mode-btn')) {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.mode-btn').forEach((b) => b.classList.remove('active'));
+    btn.classList.add('active');
+    selectedMode = btn.dataset.mode;
+    $('dm-options').classList.toggle('hidden', selectedMode !== 'deathmatch');
+  });
+}
+
+$('dm-minutes').addEventListener('input', () => {
+  $('dm-minutes-val').textContent = $('dm-minutes').value;
+});
+
 $('btn-create').addEventListener('click', () => {
   state.myName = $('name-input').value.trim() || 'Player';
   audio.unlock();
-  net.send({ t: 'create', name: state.myName });
+  net.send({
+    t: 'create',
+    name: state.myName,
+    mode: selectedMode,
+    dmMinutes: Number($('dm-minutes').value) || 5,
+  });
 });
 
 $('btn-join').addEventListener('click', () => {
@@ -741,6 +899,12 @@ $('btn-copy').addEventListener('click', async () => {
     $('btn-copy').textContent = link;
   }
   setTimeout(() => ($('btn-copy').textContent = 'copy link'), 1800);
+});
+
+$('btn-start').addEventListener('click', () => {
+  net.send({ t: 'start' });
+  $('btn-start').classList.add('hidden');
+  $('lobby-status').textContent = 'Starting…';
 });
 
 $('click-to-play').addEventListener('click', beginPlay);
