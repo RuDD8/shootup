@@ -1,0 +1,14 @@
+{
+  "name": "duel-arena",
+  "version": "1.0.0",
+  "private": true,
+  "description": "1v1 browser FPS with procedurally generated arenas and randomised loadouts",
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js"
+  }
+}

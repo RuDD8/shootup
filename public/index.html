@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Duel Arena — 1v1 FPS</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230b0f17'/%3E%3Ccircle cx='16' cy='16' r='9' fill='none' stroke='%2338bdf8' stroke-width='2.5'/%3E%3Cpath d='M16 3v6M16 23v6M3 16h6M23 16h6' stroke='%2338bdf8' stroke-width='2.5'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <canvas id="scene"></canvas>
+
+    <!-- In-game overlay -->
+    <div id="hud" class="hidden">
+      <div id="crosshair">
+        <span class="ch ch-t"></span>
+        <span class="ch ch-b"></span>
+        <span class="ch ch-l"></span>
+        <span class="ch ch-r"></span>
+        <span id="hitmarker"></span>
+      </div>
+
+      <div id="scoreboard">
+        <div class="score-side">
+          <span class="score-name" id="score-name-me">YOU</span>
+          <span class="score-val" id="score-me">0</span>
+        </div>
+        <div class="score-mid">
+          <span id="round-timer">--</span>
+          <small id="round-label">ROUND 1</small>
+        </div>
+        <div class="score-side right">
+          <span class="score-val" id="score-them">0</span>
+          <span class="score-name" id="score-name-them">RIVAL</span>
+        </div>
+      </div>
+
+      <div id="banner"></div>
+
+      <div id="bottom-left">
+        <div id="health-wrap">
+          <div id="health-bar"><div id="health-fill"></div></div>
+          <span id="health-num">100</span>
+        </div>
+      </div>
+
+      <div id="bottom-right">
+        <div id="weapon-name">PISTOL</div>
+        <div id="ammo"><span id="ammo-cur">12</span><span id="ammo-max">/12</span></div>
+        <div id="reload-note" class="hidden">RELOADING</div>
+      </div>
+
+      <div id="damage-vignette"></div>
+      <div id="scope-overlay" class="hidden"><div id="scope-ring"></div></div>
+      <div id="killfeed"></div>
+      <div id="net-info"><span id="ping">--</span> ms</div>
+    </div>
+
+    <!-- Menus -->
+    <div id="menu">
+      <div id="menu-card">
+        <h1>DUEL<span>ARENA</span></h1>
+        <p class="tagline">1v1 first-person duel. New arena and new guns every round.</p>
+
+        <div id="menu-main">
+          <label class="field">
+            <span>Your name</span>
+            <input id="name-input" type="text" maxlength="14" placeholder="Player" autocomplete="off" />
+          </label>
+          <button id="btn-create" class="primary">CREATE MATCH</button>
+          <div class="or">or</div>
+          <div class="join-row">
+            <input id="code-input" type="text" maxlength="4" placeholder="CODE" autocomplete="off" spellcheck="false" />
+            <button id="btn-join">JOIN</button>
+          </div>
+          <p id="menu-error"></p>
+        </div>
+
+        <div id="menu-lobby" class="hidden">
+          <p class="lobby-label">Match code — read this out to your friend</p>
+          <div id="code-display">----</div>
+          <button id="btn-copy">copy link</button>
+          <p id="lobby-status">Waiting for an opponent…</p>
+          <div class="spinner"></div>
+        </div>
+
+        <div id="menu-result" class="hidden">
+          <h2 id="result-title">MATCH OVER</h2>
+          <p id="result-detail"></p>
+          <p class="lobby-label">Next match starts automatically…</p>
+        </div>
+
+        <div id="controls-help">
+          <div><b>WASD</b> move</div>
+          <div><b>Space</b> jump</div>
+          <div><b>Mouse</b> aim</div>
+          <div><b>Click</b> shoot</div>
+          <div><b>R</b> reload</div>
+          <div><b>RMB</b> scope (sniper)</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="click-to-play" class="hidden">
+      <div>
+        <strong>Click to play</strong>
+        <small>Esc releases the mouse</small>
+      </div>
+    </div>
+
+    <div id="disconnected" class="hidden">
+      <div>
+        <strong id="disc-title">Connection lost</strong>
+        <small id="disc-detail">Reload the page to start again.</small>
+      </div>
+    </div>
+
+    <script type="module" src="/js/main.js"></script>
+  </body>
+</html>
