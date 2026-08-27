@@ -44,6 +44,7 @@ const KEY = {
   RELOAD: 64,
   ZOOM: 128,
   CROUCH: 256,
+  RUN: 512,
 };
 
 const HIT_RADIUS = 0.45;
@@ -61,6 +62,7 @@ function decodeInput(mask, yaw, pitch) {
     reload: (mask & KEY.RELOAD) !== 0,
     zoom: (mask & KEY.ZOOM) !== 0,
     crouch: (mask & KEY.CROUCH) !== 0,
+    run: (mask & KEY.RUN) !== 0,
     yaw,
     pitch,
   };
@@ -110,6 +112,9 @@ export class Match {
       vz: 0,
       onGround: true,
       crouching: false,
+      sliding: false,
+      slideTime: 0,
+      prevCrouch: false,
       yaw: 0,
       pitch: 0,
       health: MAX_HEALTH,
@@ -248,6 +253,10 @@ export class Match {
       p.nextShotTick = 0;
       p.prevShoot = false;
       p.zooming = false;
+      p.crouching = false;
+      p.sliding = false;
+      p.slideTime = 0;
+      p.prevCrouch = false;
       p.health = MAX_HEALTH;
       p.alive = true;
       p.spawnProtectUntil = 0;
@@ -275,6 +284,10 @@ export class Match {
       p.nextShotTick = 0;
       p.prevShoot = false;
       p.zooming = false;
+      p.crouching = false;
+      p.sliding = false;
+      p.slideTime = 0;
+      p.prevCrouch = false;
       p.health = MAX_HEALTH;
       p.alive = true;
       p.respawnAtTick = 0;
@@ -300,6 +313,10 @@ export class Match {
     player.onGround = true;
     player.yaw = Math.atan2(x, z);
     player.pitch = 0;
+    player.crouching = false;
+    player.sliding = false;
+    player.slideTime = 0;
+    player.prevCrouch = false;
   }
 
   initDmLoadout(player) {
@@ -518,6 +535,10 @@ export class Match {
     player.nextShotTick = 0;
     player.prevShoot = false;
     player.zooming = false;
+    player.crouching = false;
+    player.sliding = false;
+    player.slideTime = 0;
+    player.prevCrouch = false;
     this.initDmLoadout(player);
     player.respawnAtTick = 0;
     player.spawnProtectUntil = this.tick + Math.round(DM_SPAWN_PROTECT_SECONDS * TICK_RATE);
@@ -740,6 +761,7 @@ export class Match {
         al: p.alive ? 1 : 0,
         g: p.onGround ? 1 : 0,
         cr: p.crouching ? 1 : 0,
+        sl: p.sliding ? 1 : 0,
         w: p.weaponId,
         pw: p.primaryWeaponId,
         as: p.activeSlot === 'secondary' ? 2 : 1,

@@ -182,7 +182,7 @@ export class ViewModel {
     );
   }
 
-  update(dt, { moving, onGround, crouching, zooming, reloading, reloadProgress }) {
+  update(dt, { moving, onGround, crouching, sliding, zooming, reloading, reloadProgress }) {
     if (!this.weapon) return;
 
     this.hidden = Boolean(zooming);
@@ -192,26 +192,27 @@ export class ViewModel {
     this.sway.lerp(this.swayTarget, Math.min(1, dt * 12));
     this.swayTarget.multiplyScalar(Math.exp(-dt * 7));
 
-    if (moving && onGround) this.bobTime += dt * 9.5;
+    if (moving && onGround && !sliding) this.bobTime += dt * 9.5;
     else this.bobTime += dt * 1.6;
 
-    const bobX = Math.cos(this.bobTime) * (moving && onGround ? 0.014 : 0.003);
-    const bobY = Math.abs(Math.sin(this.bobTime)) * (moving && onGround ? 0.012 : 0.002);
+    const bobX = sliding ? 0 : Math.cos(this.bobTime) * (moving && onGround ? 0.014 : 0.003);
+    const bobY = sliding ? 0 : Math.abs(Math.sin(this.bobTime)) * (moving && onGround ? 0.012 : 0.002);
 
     const home = zooming ? SCOPED : HOME;
     const crouchDrop = crouching ? 0.06 : 0;
+    const slideDrop = sliding ? 0.1 : 0;
 
     this.reloadPhase = reloading ? Math.min(1, this.reloadPhase + dt * 4) : Math.max(0, this.reloadPhase - dt * 5);
     const reloadDip = Math.sin(Math.PI * Math.min(1, reloadProgress || 0)) * this.reloadPhase;
 
     this.holder.position.set(
       home.x + this.sway.x + bobX,
-      home.y + this.sway.y + bobY - reloadDip * 0.14 - crouchDrop,
+      home.y + this.sway.y + bobY - reloadDip * 0.14 - crouchDrop - slideDrop,
       home.z + this.recoil * 0.075,
     );
 
     this.holder.rotation.set(
-      this.recoil * 0.24 + reloadDip * 0.5,
+      this.recoil * 0.24 + reloadDip * 0.5 + (sliding ? 0.25 : 0),
       -this.sway.x * 1.6,
       this.sway.y * 0.9 + reloadDip * 0.3,
     );

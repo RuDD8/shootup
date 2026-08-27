@@ -274,7 +274,11 @@ export function createAvatar(scene, slot) {
       gun.position.z = -0.2 - 0.36 * length;
     },
     setCrouching(crouching) {
+      this.setPose(crouching, false);
+    },
+    setPose(crouching, sliding) {
       group.scale.y = crouching ? 0.68 : 1;
+      group.rotation.x = sliding ? 0.42 : 0;
     },
     dispose() {
       scene.remove(group);

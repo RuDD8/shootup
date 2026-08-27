@@ -10,6 +10,7 @@ const KEY = {
   RELOAD: 64,
   ZOOM: 128,
   CROUCH: 256,
+  RUN: 512,
 };
 
 const SENSITIVITY = 0.0022;
@@ -134,6 +135,7 @@ export class InputController {
     if (k.has('KeyD') || k.has('ArrowRight')) mask |= KEY.RIGHT;
     if (k.has('Space')) mask |= KEY.JUMP;
     if (k.has('KeyC') || k.has('ControlLeft') || k.has('ControlRight')) mask |= KEY.CROUCH;
+    if (k.has('ShiftLeft') || k.has('ShiftRight')) mask |= KEY.RUN;
     if (this.shoot) mask |= KEY.SHOOT;
     if (this.zoom) mask |= KEY.ZOOM;
     if (this.reloadPressed) {
@@ -166,6 +168,7 @@ export class InputController {
       reload: (mask & KEY.RELOAD) !== 0,
       zoom: (mask & KEY.ZOOM) !== 0,
       crouch: (mask & KEY.CROUCH) !== 0,
+      run: (mask & KEY.RUN) !== 0,
     };
   }
 }

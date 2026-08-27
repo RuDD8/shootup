@@ -74,7 +74,7 @@ const state = {
   scores: new Map(),
   kills: new Map(),
   players: new Map(),
-  local: { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, onGround: true, crouching: false },
+  local: { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, onGround: true, crouching: false, sliding: false, slideTime: 0, prevCrouch: false },
   smooth: new THREE.Vector3(),
   pending: [],
   seq: 0,
@@ -561,6 +561,7 @@ function onSnapshot(msg) {
         avatar: null,
         render: { x: entry.x, y: entry.y, z: entry.z, yaw: entry.yaw },
         crouching: entry.cr === 1,
+        sliding: entry.sl === 1,
       };
       state.players.set(entry.i, player);
     }
@@ -568,6 +569,7 @@ function onSnapshot(msg) {
     if (player) {
       player.alive = entry.al === 1;
       player.crouching = entry.cr === 1;
+      player.sliding = entry.sl === 1;
       player.weaponId = entry.w;
       player.score = entry.sc;
       player.kills = entry.kl || 0;
@@ -624,6 +626,7 @@ function onSnapshot(msg) {
     state.local.vz = entry.vz;
     state.local.onGround = entry.g === 1;
     state.local.crouching = entry.cr === 1;
+    state.local.sliding = entry.sl === 1;
 
     // Only replay when the server is actually moving players, otherwise the
     // client would drift forward during the freeze between rounds.
@@ -836,7 +839,7 @@ function applyRemoteInterpolation() {
       player.avatar.group.position.set(x, y, z);
       player.avatar.group.rotation.y = yaw;
       player.avatar.group.visible = a.al === 1;
-      player.avatar.setCrouching(a.cr === 1);
+      player.avatar.setPose(a.cr === 1, a.sl === 1);
     }
   }
 }
@@ -883,6 +886,7 @@ function frame(now) {
     moving,
     onGround: state.local.onGround,
     crouching: state.local.crouching,
+    sliding: state.local.sliding,
     zooming: state.zooming,
     reloading,
     reloadProgress,

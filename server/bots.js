@@ -32,6 +32,7 @@ function decodeInput(mask, yaw, pitch) {
     reload: (mask & KEY.RELOAD) !== 0,
     zoom: (mask & KEY.ZOOM) !== 0,
     crouch: (mask & KEY.CROUCH) !== 0,
+    run: (mask & KEY.RUN) !== 0,
     yaw,
     pitch,
   };

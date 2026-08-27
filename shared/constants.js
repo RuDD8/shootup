@@ -31,6 +31,15 @@ export const CROUCH_EYE_HEIGHT = 0.92;
 export const CROUCH_HEAD_HEIGHT = 0.78;
 export const CROUCH_SPEED_MULT = 0.52;
 
+export const RUN_SPEED_MULT = 1.38;
+export const SLIDE_MIN_SPEED = 4.0;
+export const SLIDE_BOOST = 1.1;
+export const SLIDE_MAX_SPEED = 8.2;
+export const SLIDE_FRICTION = 3.2;
+export const SLIDE_END_SPEED = 2.6;
+export const SLIDE_MAX_TIME = 0.9;
+export const SLIDE_STEER_MULT = 0.35;
+
 export function playerEyeHeight(crouching) {
   return crouching ? CROUCH_EYE_HEIGHT : EYE_HEIGHT;
 }

@@ -10,6 +10,14 @@ import {
   JUMP_SPEED,
   STEP_UP,
   CROUCH_SPEED_MULT,
+  RUN_SPEED_MULT,
+  SLIDE_MIN_SPEED,
+  SLIDE_BOOST,
+  SLIDE_MAX_SPEED,
+  SLIDE_FRICTION,
+  SLIDE_END_SPEED,
+  SLIDE_MAX_TIME,
+  SLIDE_STEER_MULT,
 } from './constants.js';
 import { tileAt, tileHeight } from './arena.js';
 
@@ -17,9 +25,6 @@ const HALF_WORLD = (GRID_SIZE * CELL) / 2;
 
 const cellIndex = (w) => Math.floor((w + HALF_WORLD) / CELL);
 
-// The cylinder is treated as an axis-aligned box of side 2r for world
-// collision. It costs a little accuracy at corners but is branch-for-branch
-// reproducible on both ends of the wire, which matters far more here.
 function collides(grid, x, y, z) {
   const c0 = cellIndex(x - PLAYER_RADIUS);
   const c1 = cellIndex(x + PLAYER_RADIUS);
@@ -33,9 +38,6 @@ function collides(grid, x, y, z) {
   return false;
 }
 
-// Tallest surface the player could be resting on. Anything taller than the
-// step-up threshold was already refused by the horizontal pass, so only
-// surfaces at or below the feet are considered.
 function groundHeight(grid, x, y, z) {
   const c0 = cellIndex(x - PLAYER_RADIUS);
   const c1 = cellIndex(x + PLAYER_RADIUS);
@@ -51,22 +53,10 @@ function groundHeight(grid, x, y, z) {
   return ground;
 }
 
-/**
- * Advances one player by a fixed timestep. Mutates `p` in place.
- * Runs on the server as the authority and on the client as the predictor.
- */
-export function stepPlayer(grid, p, input, dt, speedMult = 1) {
-  if (p.onGround) {
-    p.crouching = Boolean(input.crouch);
-  } else {
-    p.crouching = false;
-  }
-  if (p.crouching) speedMult *= CROUCH_SPEED_MULT;
-
+function wishDirection(input) {
   const sin = Math.sin(input.yaw);
   const cos = Math.cos(input.yaw);
 
-  // Forward is -Z at yaw 0, matching the camera's default orientation.
   let wishX = 0;
   let wishZ = 0;
   if (input.forward) {
@@ -91,36 +81,113 @@ export function stepPlayer(grid, p, input, dt, speedMult = 1) {
     wishX /= wishLen;
     wishZ /= wishLen;
   }
+  return { wishX, wishZ, wishLen };
+}
 
-  const maxSpeed = MOVE_SPEED * speedMult;
-  const accel = p.onGround ? ACCEL : AIR_ACCEL;
+function applyFriction(p, dt, friction) {
+  const speed = Math.hypot(p.vx, p.vz);
+  if (speed <= 0) return;
+  const drop = Math.min(speed, friction * dt * Math.max(speed, 1));
+  const scale = Math.max(0, speed - drop) / speed;
+  p.vx *= scale;
+  p.vz *= scale;
+}
 
-  if (p.onGround && wishLen === 0) {
-    const speed = Math.hypot(p.vx, p.vz);
-    if (speed > 0) {
-      const drop = Math.min(speed, FRICTION * dt * Math.max(speed, 1));
-      const scale = Math.max(0, speed - drop) / speed;
-      p.vx *= scale;
-      p.vz *= scale;
-    }
-  } else if (wishLen > 0) {
-    // Accelerate toward the wish direction, capped at max speed along it.
-    const current = p.vx * wishX + p.vz * wishZ;
-    const add = Math.min(maxSpeed - current, accel * dt * maxSpeed);
-    if (add > 0) {
-      p.vx += wishX * add;
-      p.vz += wishZ * add;
-    }
+function accelerate(p, wishX, wishZ, maxSpeed, accel, dt) {
+  const current = p.vx * wishX + p.vz * wishZ;
+  const add = Math.min(maxSpeed - current, accel * dt * maxSpeed);
+  if (add > 0) {
+    p.vx += wishX * add;
+    p.vz += wishZ * add;
   }
+}
 
-  // Clamp horizontal speed so diagonal input cannot outrun forward input.
+function clampHorizontalSpeed(p, maxSpeed) {
   const horiz = Math.hypot(p.vx, p.vz);
   if (horiz > maxSpeed) {
     p.vx = (p.vx / horiz) * maxSpeed;
     p.vz = (p.vz / horiz) * maxSpeed;
   }
+}
 
-  if (input.jump && p.onGround && !p.crouching) {
+function tryStartSlide(p, input, crouchEdge, speedMult) {
+  const speed = Math.hypot(p.vx, p.vz);
+  if (!p.onGround || !crouchEdge || p.sliding || speed < SLIDE_MIN_SPEED) return;
+
+  const sprinting = Boolean(input.run) || speed >= MOVE_SPEED * RUN_SPEED_MULT * 0.82;
+  if (!sprinting) return;
+
+  p.sliding = true;
+  p.slideTime = 0;
+  p.crouching = true;
+
+  const cap = SLIDE_MAX_SPEED * speedMult;
+  if (speed > 0.01 && speed < cap) {
+    const scale = Math.min(cap / speed, SLIDE_BOOST);
+    p.vx *= scale;
+    p.vz *= scale;
+  }
+}
+
+/**
+ * Advances one player by a fixed timestep. Mutates `p` in place.
+ * Runs on the server as the authority and on the client as the predictor.
+ */
+export function stepPlayer(grid, p, input, dt, speedMult = 1) {
+  const crouchPressed = Boolean(input.crouch);
+  const crouchEdge = crouchPressed && !p.prevCrouch;
+  p.prevCrouch = crouchPressed;
+
+  tryStartSlide(p, input, crouchEdge, speedMult);
+
+  const { wishX, wishZ, wishLen } = wishDirection(input);
+
+  if (p.sliding) {
+    p.crouching = true;
+    p.slideTime += dt;
+
+    if (wishLen > 0) {
+      accelerate(p, wishX, wishZ, SLIDE_MAX_SPEED * speedMult, ACCEL * SLIDE_STEER_MULT, dt);
+    }
+
+    applyFriction(p, dt, SLIDE_FRICTION);
+    clampHorizontalSpeed(p, SLIDE_MAX_SPEED * speedMult);
+
+    const slideSpeed = Math.hypot(p.vx, p.vz);
+    if (
+      !p.onGround ||
+      !crouchPressed ||
+      p.slideTime >= SLIDE_MAX_TIME ||
+      slideSpeed < SLIDE_END_SPEED
+    ) {
+      p.sliding = false;
+    }
+  } else {
+    if (p.onGround) {
+      p.crouching = crouchPressed;
+    } else {
+      p.crouching = false;
+    }
+
+    let moveMult = speedMult;
+    if (p.onGround && input.run && !p.crouching && wishLen > 0) {
+      moveMult *= RUN_SPEED_MULT;
+    }
+    if (p.crouching) moveMult *= CROUCH_SPEED_MULT;
+
+    const maxSpeed = MOVE_SPEED * moveMult;
+    const accel = p.onGround ? ACCEL : AIR_ACCEL;
+
+    if (p.onGround && wishLen === 0) {
+      applyFriction(p, dt, FRICTION);
+    } else if (wishLen > 0) {
+      accelerate(p, wishX, wishZ, maxSpeed, accel, dt);
+    }
+
+    clampHorizontalSpeed(p, maxSpeed);
+  }
+
+  if (input.jump && p.onGround && !p.crouching && !p.sliding) {
     p.vy = JUMP_SPEED;
     p.onGround = false;
   }
@@ -128,12 +195,20 @@ export function stepPlayer(grid, p, input, dt, speedMult = 1) {
   p.vy -= GRAVITY * dt;
 
   const nx = p.x + p.vx * dt;
-  if (!collides(grid, nx, p.y, p.z)) p.x = nx;
-  else p.vx = 0;
+  if (!collides(grid, nx, p.y, p.z)) {
+    p.x = nx;
+  } else {
+    p.vx = 0;
+    if (p.sliding) p.sliding = false;
+  }
 
   const nz = p.z + p.vz * dt;
-  if (!collides(grid, p.x, p.y, nz)) p.z = nz;
-  else p.vz = 0;
+  if (!collides(grid, p.x, p.y, nz)) {
+    p.z = nz;
+  } else {
+    p.vz = 0;
+    if (p.sliding) p.sliding = false;
+  }
 
   let ny = p.y + p.vy * dt;
   const ground = groundHeight(grid, p.x, p.y, p.z);
@@ -143,16 +218,13 @@ export function stepPlayer(grid, p, input, dt, speedMult = 1) {
     p.onGround = true;
   } else {
     p.onGround = false;
+    if (p.sliding) p.sliding = false;
   }
   p.y = ny;
 
   return p;
 }
 
-/**
- * Marches a ray through the grid, respecting per-column heights so shots pass
- * over waist-high cover. Returns the nearest world hit.
- */
 export function raycastWorld(grid, ox, oy, oz, dx, dy, dz, maxDist) {
   let c = cellIndex(ox);
   let r = cellIndex(oz);
@@ -184,7 +256,6 @@ export function raycastWorld(grid, ox, oy, oz, dx, dy, dz, maxDist) {
         return { hit: true, dist: t, surface: 'wall' };
       }
       if (dy < 0) {
-        // Descending onto the top face of this column.
         const tTop = (h - oy) / dy;
         if (tTop >= t && tTop <= tExit) {
           return { hit: true, dist: tTop, surface: 'wall' };
@@ -212,11 +283,6 @@ export function raycastWorld(grid, ox, oy, oz, dx, dy, dz, maxDist) {
   return { hit: false, dist: maxDist, surface: null };
 }
 
-/**
- * Ray against an upright cylinder standing on (cx, cy, cz). Checks the side
- * wall plus both caps so shots from above or below still register.
- * Returns the nearest positive distance, or null.
- */
 export function rayCylinder(ox, oy, oz, dx, dy, dz, cx, cy, cz, radius, height) {
   const px = ox - cx;
   const pz = oz - cz;
