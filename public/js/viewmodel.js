@@ -182,7 +182,7 @@ export class ViewModel {
     );
   }
 
-  update(dt, { moving, onGround, zooming, reloading, reloadProgress }) {
+  update(dt, { moving, onGround, crouching, zooming, reloading, reloadProgress }) {
     if (!this.weapon) return;
 
     this.hidden = Boolean(zooming);
@@ -199,13 +199,14 @@ export class ViewModel {
     const bobY = Math.abs(Math.sin(this.bobTime)) * (moving && onGround ? 0.012 : 0.002);
 
     const home = zooming ? SCOPED : HOME;
+    const crouchDrop = crouching ? 0.06 : 0;
 
     this.reloadPhase = reloading ? Math.min(1, this.reloadPhase + dt * 4) : Math.max(0, this.reloadPhase - dt * 5);
     const reloadDip = Math.sin(Math.PI * Math.min(1, reloadProgress || 0)) * this.reloadPhase;
 
     this.holder.position.set(
       home.x + this.sway.x + bobX,
-      home.y + this.sway.y + bobY - reloadDip * 0.14,
+      home.y + this.sway.y + bobY - reloadDip * 0.14 - crouchDrop,
       home.z + this.recoil * 0.075,
     );
 

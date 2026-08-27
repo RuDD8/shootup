@@ -3,9 +3,7 @@ import {
   TICK_DT,
   SNAPSHOT_INTERVAL,
   MAX_HEALTH,
-  EYE_HEIGHT,
-  HEAD_HEIGHT,
-  PLAYER_HEIGHT,
+  MAX_PITCH,
   MATCH_STATE,
   GAME_MODE,
   COUNTDOWN_SECONDS,
@@ -13,12 +11,14 @@ import {
   MATCH_END_SECONDS,
   ROUND_TIME_LIMIT,
   ROUNDS_TO_WIN,
-  MAX_PITCH,
   MAX_PLAYERS_DUEL,
   MAX_PLAYERS_DM,
   DM_RESPAWN_SECONDS,
   DM_SPAWN_PROTECT_SECONDS,
   playerColor,
+  playerEyeHeight,
+  playerHeight,
+  playerHeadHeight,
 } from '../shared/constants.js';
 import { generateArena, serializeArena, cellCenter, pickRandomSpawn } from '../shared/arena.js';
 import { stepPlayer, raycastWorld, rayCylinder } from '../shared/physics.js';
@@ -43,6 +43,7 @@ const KEY = {
   SHOOT: 32,
   RELOAD: 64,
   ZOOM: 128,
+  CROUCH: 256,
 };
 
 const HIT_RADIUS = 0.45;
@@ -59,6 +60,7 @@ function decodeInput(mask, yaw, pitch) {
     shoot: (mask & KEY.SHOOT) !== 0,
     reload: (mask & KEY.RELOAD) !== 0,
     zoom: (mask & KEY.ZOOM) !== 0,
+    crouch: (mask & KEY.CROUCH) !== 0,
     yaw,
     pitch,
   };
@@ -107,6 +109,7 @@ export class Match {
       vy: 0,
       vz: 0,
       onGround: true,
+      crouching: false,
       yaw: 0,
       pitch: 0,
       health: MAX_HEALTH,
@@ -611,7 +614,7 @@ export class Match {
     player.nextShotTick = this.tick + Math.max(1, Math.round(shotInterval(weapon) * TICK_RATE));
 
     const ox = player.x;
-    const oy = player.y + EYE_HEIGHT;
+    const oy = player.y + playerEyeHeight(player.crouching);
     const oz = player.z;
 
     const targets = this.isDM ? this.opponentsOf(player) : [this.opponentOf(player)].filter(Boolean);
@@ -646,7 +649,7 @@ export class Match {
         const tHit = rayCylinder(
           ox, oy, oz, dx, dy, dz,
           target.x, target.y, target.z,
-          HIT_RADIUS, PLAYER_HEIGHT,
+          HIT_RADIUS, playerHeight(target.crouching),
         );
         if (tHit !== null && tHit < hitDist) {
           hitDist = tHit;
@@ -659,7 +662,7 @@ export class Match {
       const pz = oz + dz * hitDist;
 
       if (hitTarget) {
-        const isHead = py > hitTarget.y + HEAD_HEIGHT;
+        const isHead = py > hitTarget.y + playerHeadHeight(hitTarget.crouching);
         let dmg = damageAtRange(weapon, hitDist);
         if (isHead) {
           dmg *= HEADSHOT_MULT;
@@ -736,6 +739,7 @@ export class Match {
         h: p.health,
         al: p.alive ? 1 : 0,
         g: p.onGround ? 1 : 0,
+        cr: p.crouching ? 1 : 0,
         w: p.weaponId,
         pw: p.primaryWeaponId,
         as: p.activeSlot === 'secondary' ? 2 : 1,

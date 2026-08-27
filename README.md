@@ -60,6 +60,7 @@ soon as both are connected.
 | --- | --- |
 | `W` `A` `S` `D` | Move |
 | `Space` | Jump — you can get on top of the waist-high cover |
+| `C` or `Ctrl` | Crouch — hide behind cover, smaller hitbox, slower movement |
 | Mouse | Aim |
 | Left click | Shoot |
 | Right click | Scope, sniper only |

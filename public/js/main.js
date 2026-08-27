@@ -1,12 +1,13 @@
 import * as THREE from '/vendor/three.module.js';
 import {
   TICK_DT,
-  EYE_HEIGHT,
   MAX_HEALTH,
   MATCH_STATE,
   GAME_MODE,
-  PLAYER_HEIGHT,
   playerColor,
+  playerEyeHeight,
+  playerHeight,
+  playerHeadHeight,
 } from '/shared/constants.js';
 
 // Rough barrel lengths, used only to scale the opponent's held weapon.
@@ -73,7 +74,7 @@ const state = {
   scores: new Map(),
   kills: new Map(),
   players: new Map(),
-  local: { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, onGround: true },
+  local: { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, onGround: true, crouching: false },
   smooth: new THREE.Vector3(),
   pending: [],
   seq: 0,
@@ -231,7 +232,7 @@ function localTrace(ox, oy, oz, dir) {
       ox, oy, oz,
       dir.x, dir.y, dir.z,
       foe.render.x, foe.render.y, foe.render.z,
-      HIT_RADIUS, PLAYER_HEIGHT,
+      HIT_RADIUS, playerHeight(foe.crouching),
     );
     if (t !== null && t < dist) {
       dist = t;
@@ -260,7 +261,7 @@ function fireLocal() {
   const view = input.viewAngles();
 
   const ox = state.local.x;
-  const oy = state.local.y + EYE_HEIGHT;
+  const oy = state.local.y + playerEyeHeight(state.local.crouching);
   const oz = state.local.z;
 
   muzzleWorld(tmpMuzzle);
@@ -559,12 +560,14 @@ function onSnapshot(msg) {
         kills: entry.kl || 0,
         avatar: null,
         render: { x: entry.x, y: entry.y, z: entry.z, yaw: entry.yaw },
+        crouching: entry.cr === 1,
       };
       state.players.set(entry.i, player);
     }
 
     if (player) {
       player.alive = entry.al === 1;
+      player.crouching = entry.cr === 1;
       player.weaponId = entry.w;
       player.score = entry.sc;
       player.kills = entry.kl || 0;
@@ -620,6 +623,7 @@ function onSnapshot(msg) {
     state.local.vy = entry.vy;
     state.local.vz = entry.vz;
     state.local.onGround = entry.g === 1;
+    state.local.crouching = entry.cr === 1;
 
     // Only replay when the server is actually moving players, otherwise the
     // client would drift forward during the freeze between rounds.
@@ -679,7 +683,7 @@ function handleEvents(events) {
       }
       const distance = Math.hypot(
         ox - state.local.x,
-        oy - (state.local.y + EYE_HEIGHT),
+        oy - (state.local.y + playerEyeHeight(state.local.crouching)),
         oz - state.local.z,
       );
       audio.shot(w.id, Math.max(0.14, 1 - distance / 70));
@@ -832,6 +836,7 @@ function applyRemoteInterpolation() {
       player.avatar.group.position.set(x, y, z);
       player.avatar.group.rotation.y = yaw;
       player.avatar.group.visible = a.al === 1;
+      player.avatar.setCrouching(a.cr === 1);
     }
   }
 }
@@ -877,6 +882,7 @@ function frame(now) {
   viewModel.update(dt, {
     moving,
     onGround: state.local.onGround,
+    crouching: state.local.crouching,
     zooming: state.zooming,
     reloading,
     reloadProgress,
@@ -941,7 +947,7 @@ function updateCamera(dt) {
 
   camera.position.set(
     state.local.x + state.smooth.x,
-    state.local.y + state.smooth.y + EYE_HEIGHT,
+    state.local.y + state.smooth.y + playerEyeHeight(state.local.crouching),
     state.local.z + state.smooth.z,
   );
   camera.rotation.set(view.pitch + jitterY, view.yaw + jitterX, 0);

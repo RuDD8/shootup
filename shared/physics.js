@@ -9,6 +9,7 @@ import {
   GRAVITY,
   JUMP_SPEED,
   STEP_UP,
+  CROUCH_SPEED_MULT,
 } from './constants.js';
 import { tileAt, tileHeight } from './arena.js';
 
@@ -55,6 +56,13 @@ function groundHeight(grid, x, y, z) {
  * Runs on the server as the authority and on the client as the predictor.
  */
 export function stepPlayer(grid, p, input, dt, speedMult = 1) {
+  if (p.onGround) {
+    p.crouching = Boolean(input.crouch);
+  } else {
+    p.crouching = false;
+  }
+  if (p.crouching) speedMult *= CROUCH_SPEED_MULT;
+
   const sin = Math.sin(input.yaw);
   const cos = Math.cos(input.yaw);
 
@@ -112,7 +120,7 @@ export function stepPlayer(grid, p, input, dt, speedMult = 1) {
     p.vz = (p.vz / horiz) * maxSpeed;
   }
 
-  if (input.jump && p.onGround) {
+  if (input.jump && p.onGround && !p.crouching) {
     p.vy = JUMP_SPEED;
     p.onGround = false;
   }

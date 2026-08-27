@@ -26,6 +26,23 @@ export const PLAYER_HEIGHT = 1.8;
 export const EYE_HEIGHT = 1.62;
 export const HEAD_HEIGHT = 1.45; // hits above this count as headshots
 
+export const CROUCH_HEIGHT = 1.15;
+export const CROUCH_EYE_HEIGHT = 0.92;
+export const CROUCH_HEAD_HEIGHT = 0.78;
+export const CROUCH_SPEED_MULT = 0.52;
+
+export function playerEyeHeight(crouching) {
+  return crouching ? CROUCH_EYE_HEIGHT : EYE_HEIGHT;
+}
+
+export function playerHeight(crouching) {
+  return crouching ? CROUCH_HEIGHT : PLAYER_HEIGHT;
+}
+
+export function playerHeadHeight(crouching) {
+  return crouching ? CROUCH_HEAD_HEIGHT : HEAD_HEIGHT;
+}
+
 export const MOVE_SPEED = 5.4;
 export const ACCEL = 60;
 export const FRICTION = 9;
