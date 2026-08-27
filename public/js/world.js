@@ -7,10 +7,10 @@ import {
   COVER_H,
   TILE_WALL,
   TILE_COVER,
-  PLAYER_HEIGHT,
   SLOT_COLORS,
 } from '/shared/constants.js';
 import { cellCenter } from '/shared/arena.js';
+import { AVATAR_GUN_BUILDERS, AVATAR_HOLDS } from './viewmodel.js';
 
 const SKY_TOP = new THREE.Color('#1b2f4d');
 const SKY_BOTTOM = new THREE.Color('#41618a');
@@ -215,78 +215,243 @@ export function buildArena(scene, arena) {
   };
 }
 
-/** Third-person avatar used to draw the opponent. */
+function makeMat(hex, { roughness = 0.85, metalness = 0.05, emissive = 0, emissiveIntensity = 0 } = {}) {
+  return new THREE.MeshStandardMaterial({
+    color: hex,
+    roughness,
+    metalness,
+    emissive,
+    emissiveIntensity,
+  });
+}
+
+function boxPart(w, h, d, material, x = 0, y = 0, z = 0) {
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
+  mesh.position.set(x, y, z);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  return mesh;
+}
+
+/** Simple Minecraft-style face painted on a canvas texture. */
+function makeFaceTexture(skinHex, accentHex) {
+  const size = 64;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d');
+
+  ctx.fillStyle = skinHex;
+  ctx.fillRect(0, 0, size, size);
+
+  // Eyes
+  ctx.fillStyle = '#1a1f2a';
+  ctx.fillRect(14, 24, 10, 10);
+  ctx.fillRect(40, 24, 10, 10);
+  ctx.fillStyle = '#f5f7fa';
+  ctx.fillRect(16, 26, 4, 4);
+  ctx.fillRect(42, 26, 4, 4);
+
+  // Brows + mouth
+  ctx.fillStyle = accentHex;
+  ctx.fillRect(12, 18, 14, 3);
+  ctx.fillRect(38, 18, 14, 3);
+  ctx.fillStyle = '#5a3a2a';
+  ctx.fillRect(24, 42, 16, 3);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.magFilter = THREE.NearestFilter;
+  texture.minFilter = THREE.NearestFilter;
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+/**
+ * Blocky third-person avatar (Minecraft / early Roblox style).
+ * Parts hang from pivots so crouch, slide, and walk anims bend limbs.
+ */
 export function createAvatar(scene, slot) {
   const colorHex = SLOT_COLORS[slot % SLOT_COLORS.length];
-  const color = new THREE.Color(colorHex);
+  const accent = new THREE.Color(colorHex);
+  const accentDark = accent.clone().multiplyScalar(0.55);
+  const skinHex = '#e0b089';
+  const pantHex = accentDark.getStyle();
+  const shirtHex = accent.getStyle();
+
+  const skinMat = makeMat(skinHex);
+  const shirtMat = makeMat(shirtHex, { emissive: accent.getHex(), emissiveIntensity: 0.18 });
+  const pantMat = makeMat(pantHex);
+  const shoeMat = makeMat('#1c222c', { roughness: 0.7 });
+  const faceMat = makeMat(skinHex);
+  faceMat.map = makeFaceTexture(skinHex, colorHex);
+
   const group = new THREE.Group();
+  const root = new THREE.Group();
+  group.add(root);
 
-  const bodyMat = new THREE.MeshStandardMaterial({
-    color: color.clone().multiplyScalar(0.5),
-    roughness: 0.55,
-    metalness: 0.25,
-  });
-  const trimMat = new THREE.MeshStandardMaterial({
-    color: 0x0d131c,
-    emissive: color,
-    emissiveIntensity: 1.4,
-    roughness: 0.4,
-  });
+  // --- Legs (pivot at hip) ---
+  const leftLeg = new THREE.Group();
+  leftLeg.position.set(-0.125, 0.72, 0);
+  leftLeg.add(boxPart(0.22, 0.58, 0.24, pantMat, 0, -0.29, 0));
+  leftLeg.add(boxPart(0.24, 0.12, 0.28, shoeMat, 0, -0.64, 0.02));
+  root.add(leftLeg);
 
-  // Capsule arg is the cylinder section, so total height is length + 2 * radius.
-  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.36, 0.72, 6, 12), bodyMat);
-  torso.position.y = 0.36 + 0.36 + 0.28;
-  torso.castShadow = true;
-  group.add(torso);
+  const rightLeg = new THREE.Group();
+  rightLeg.position.set(0.125, 0.72, 0);
+  rightLeg.add(boxPart(0.22, 0.58, 0.24, pantMat, 0, -0.29, 0));
+  rightLeg.add(boxPart(0.24, 0.12, 0.28, shoeMat, 0, -0.64, 0.02));
+  root.add(rightLeg);
 
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.23, 16, 12), bodyMat);
-  head.position.y = 1.58;
-  head.castShadow = true;
-  group.add(head);
+  // --- Torso + head ---
+  const torso = boxPart(0.5, 0.62, 0.28, shirtMat, 0, 1.03, 0);
+  root.add(torso);
 
-  const visor = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.09, 0.06), trimMat);
-  visor.position.set(0, 1.6, -0.21);
-  group.add(visor);
+  // Neck stub
+  root.add(boxPart(0.16, 0.1, 0.16, skinMat, 0, 1.39, 0));
 
-  const band = new THREE.Mesh(new THREE.TorusGeometry(0.37, 0.045, 8, 20), trimMat);
-  band.rotation.x = Math.PI / 2;
-  band.position.y = 1.06;
-  group.add(band);
+  const head = new THREE.Group();
+  head.position.set(0, 1.62, 0);
+  // Body of head (5 sides) + face on front (-Z, camera-facing when yaw=0)
+  const headCube = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 0.4), [
+    skinMat, // +X
+    skinMat, // -X
+    skinMat, // +Y
+    skinMat, // -Y
+    skinMat, // +Z back
+    faceMat, // -Z front
+  ]);
+  headCube.castShadow = true;
+  head.add(headCube);
+  // Hair / helmet slab tinted with team colour
+  head.add(boxPart(0.42, 0.1, 0.42, shirtMat, 0, 0.22, 0));
+  root.add(head);
 
-  const legs = new THREE.Mesh(new THREE.CapsuleGeometry(0.2, 0.42, 4, 10), bodyMat);
-  legs.position.y = 0.41;
-  legs.castShadow = true;
-  group.add(legs);
+  // --- Arms (pivot at shoulder) ---
+  // Gloved hands, matching the first-person viewmodel. Bare skin here reads as
+  // part of the sand-coloured furniture on several of the guns.
+  // Mid-slate gloves: bare skin reads as part of the sand-coloured furniture on
+  // several guns, and a near-black glove disappears into their receivers.
+  const gloveMat = makeMat('#5a6270', { roughness: 0.8 });
 
-  // Stand-in weapon so you can see roughly what they are holding.
-  const gun = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.14, 0.72), bodyMat);
-  gun.position.set(0.26, 1.24, -0.42);
-  gun.castShadow = true;
-  group.add(gun);
+  const leftArm = new THREE.Group();
+  leftArm.position.set(-0.36, 1.28, 0);
+  leftArm.add(boxPart(0.2, 0.58, 0.22, shirtMat, 0, -0.25, 0));
+  leftArm.add(boxPart(0.16, 0.14, 0.15, gloveMat, 0, -0.56, 0));
+  root.add(leftArm);
+
+  const rightArm = new THREE.Group();
+  rightArm.position.set(0.36, 1.28, 0);
+  rightArm.add(boxPart(0.2, 0.58, 0.22, shirtMat, 0, -0.25, 0));
+  rightArm.add(boxPart(0.16, 0.14, 0.15, gloveMat, 0, -0.56, 0));
+  root.add(rightArm);
+
+  // The weapon hangs off the right hand, so it stays attached no matter how the
+  // arm is posed. gunHold cancels the arm's rotation to keep the barrel level.
+  const gunHold = new THREE.Group();
+  gunHold.position.set(0, -0.58, 0);
+  rightArm.add(gunHold);
+
+  let gun = null;
+  let gunId = null;
+  let hold = AVATAR_HOLDS.pistol;
+
+  function applyHold() {
+    hold = AVATAR_HOLDS[gunId] || AVATAR_HOLDS.pistol;
+    rightArm.position.fromArray(hold.rightShoulder);
+    leftArm.position.fromArray(hold.leftShoulder);
+    if (gun) gun.position.fromArray(hold.gunOffset);
+  }
+
+  /** Pose both arms onto the weapon and keep the gun aimed down the body's -Z. */
+  function holdArms(swing = 0, drop = 0) {
+    rightArm.rotation.set(hold.rightArm[0] - drop + swing * 0.05, hold.rightArm[1], hold.rightArm[2]);
+    leftArm.rotation.set(hold.leftArm[0] - drop * 0.8 + swing * 0.04, hold.leftArm[1], hold.leftArm[2]);
+    gunHold.quaternion.copy(rightArm.quaternion).invert();
+  }
+
+  function disposeGun() {
+    if (!gun) return;
+    gunHold.remove(gun);
+    gun.traverse((child) => {
+      if (child.geometry) child.geometry.dispose();
+      if (child.material) {
+        const mats = Array.isArray(child.material) ? child.material : [child.material];
+        for (const m of mats) m.dispose();
+      }
+    });
+    gun = null;
+    gunId = null;
+  }
+
+  function setWeapon(id) {
+    const next = AVATAR_GUN_BUILDERS[id] ? id : 'pistol';
+    if (next === gunId) return;
+    disposeGun();
+    const build = AVATAR_GUN_BUILDERS[next] || AVATAR_GUN_BUILDERS.pistol;
+    gun = build();
+    gunId = next;
+    gunHold.add(gun);
+    applyHold();
+    holdArms();
+  }
+
+  setWeapon('pistol');
 
   scene.add(group);
+
+  let walkPhase = 0;
 
   return {
     group,
     gun,
+    setWeapon,
     setWeaponLength(length) {
-      gun.scale.z = length;
-      gun.position.z = -0.2 - 0.36 * length;
+      // Kept for older call sites; prefer setWeapon(id).
+      if (gun) gun.scale.z = Math.max(0.6, length);
     },
     setCrouching(crouching) {
-      this.setPose(crouching, false);
+      this.setPose(crouching, false, 0);
     },
-    setPose(crouching, sliding) {
-      group.scale.y = crouching ? 0.68 : 1;
-      group.rotation.x = sliding ? 0.42 : 0;
+    setPose(crouching, sliding, moveSpeed = 0) {
+      const speed = Math.max(0, moveSpeed);
+      if (speed > 0.4 && !sliding) walkPhase += 0.18 * Math.min(speed / 5, 1.6);
+      else walkPhase *= 0.85;
+
+      const swing = Math.sin(walkPhase) * Math.min(1, speed / 4) * 0.55;
+
+      if (sliding) {
+        root.position.y = -0.15;
+        root.rotation.x = 0.95;
+        leftLeg.rotation.x = -1.1;
+        rightLeg.rotation.x = -0.35;
+        holdArms(0, 0.45);
+        head.rotation.x = -0.25;
+      } else if (crouching) {
+        root.position.y = -0.35;
+        root.rotation.x = 0.18;
+        leftLeg.rotation.x = -1.15 + swing * 0.2;
+        rightLeg.rotation.x = -1.15 - swing * 0.2;
+        holdArms(swing * 0.5, 0.12);
+        head.rotation.x = 0.1;
+      } else {
+        root.position.y = 0;
+        root.rotation.x = 0;
+        leftLeg.rotation.x = swing;
+        rightLeg.rotation.x = -swing;
+        holdArms(swing);
+        head.rotation.x = 0;
+      }
     },
     dispose() {
+      disposeGun();
       scene.remove(group);
       group.traverse((child) => {
         if (child.geometry) child.geometry.dispose();
         if (child.material) {
-          if (child.material.map) child.material.map.dispose();
-          child.material.dispose();
+          const mats = Array.isArray(child.material) ? child.material : [child.material];
+          for (const mat of mats) {
+            if (mat.map) mat.map.dispose();
+            mat.dispose();
+          }
         }
       });
     },

@@ -753,6 +753,7 @@ export class Match {
 
     for (const [target, totalDamage] of damageByTarget) {
       if (!target.alive || totalDamage <= 0) continue;
+      if (this.tick < target.spawnProtectUntil) continue;
       const dmg = Math.round(totalDamage);
       const headshot = anyHeadshot && dmg >= weapon.damage * HEADSHOT_MULT * 0.5;
       target.health -= dmg;
@@ -819,6 +820,7 @@ export class Match {
         kl: p.kills,
         dt: p.deaths,
         rs: p.respawnAtTick ? Math.max(0, p.respawnAtTick - this.tick) : 0,
+        sp: p.spawnProtectUntil > this.tick ? p.spawnProtectUntil - this.tick : 0,
       })),
       ev: this.events,
     };

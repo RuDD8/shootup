@@ -15,6 +15,55 @@ const KEY = {
 
 const SENSITIVITY = 0.0022;
 
+const GAME_KEYS = new Set([
+  'Space',
+  'Tab',
+  'ArrowUp',
+  'ArrowDown',
+  'ArrowLeft',
+  'ArrowRight',
+  'KeyW',
+  'KeyA',
+  'KeyS',
+  'KeyD',
+  'ShiftLeft',
+  'ShiftRight',
+  'KeyC',
+  'KeyR',
+  'Digit1',
+  'Digit2',
+]);
+
+/** Keys captured via the Keyboard Lock API while the mouse is locked. */
+const LOCKED_KEYS = [
+  ...GAME_KEYS,
+  'Escape',
+  'ControlLeft',
+  'ControlRight',
+  'AltLeft',
+  'AltRight',
+  'MetaLeft',
+  'MetaRight',
+];
+
+function isTypingTarget(target) {
+  if (!target) return false;
+  const tag = target.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable;
+}
+
+/** Stop browser shortcuts and page actions from firing during a match. */
+function shouldBlockBrowserKey(e, playing) {
+  if (!playing) return false;
+  if (e.code === 'Escape') return false;
+  if (isTypingTarget(e.target)) return false;
+  if (e.ctrlKey || e.metaKey || e.altKey) return true;
+  if (/^F\d+$/.test(e.code)) return true;
+  if (GAME_KEYS.has(e.code)) return true;
+  if (e.code === 'Backspace') return true;
+  return false;
+}
+
 export class InputController {
   constructor(canvas) {
     this.canvas = canvas;
@@ -22,6 +71,7 @@ export class InputController {
     this.pitch = 0;
     this.locked = false;
     this.enabled = false;
+    this.playing = false;
     this.zoomFactor = 1;
 
     this.keys = new Set();
@@ -45,6 +95,9 @@ export class InputController {
         this.keys.clear();
         this.shoot = false;
         this.zoom = false;
+        this.unlockBrowserKeys();
+      } else if (this.playing) {
+        this.lockBrowserKeys();
       }
       if (this.onLockChange) this.onLockChange(this.locked);
     });
@@ -74,30 +127,81 @@ export class InputController {
       if (this.locked) e.preventDefault();
     });
 
-    document.addEventListener('keydown', (e) => {
-      if (!this.locked) return;
-      if (e.code === 'KeyR') this.reloadPressed = true;
-      if (e.code === 'Digit1') this.slotPrimaryPressed = true;
-      if (e.code === 'Digit2') this.slotSecondaryPressed = true;
-      this.keys.add(e.code);
-      if (e.code === 'Space') e.preventDefault();
-    });
+    document.addEventListener(
+      'keydown',
+      (e) => {
+        if (shouldBlockBrowserKey(e, this.playing)) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+        if (!this.locked) return;
+        if (e.code === 'KeyR') this.reloadPressed = true;
+        if (e.code === 'Digit1') this.slotPrimaryPressed = true;
+        if (e.code === 'Digit2') this.slotSecondaryPressed = true;
+        this.keys.add(e.code);
+      },
+      true,
+    );
 
-    document.addEventListener('keyup', (e) => {
-      this.keys.delete(e.code);
-    });
+    document.addEventListener(
+      'keyup',
+      (e) => {
+        if (shouldBlockBrowserKey(e, this.playing)) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+        this.keys.delete(e.code);
+      },
+      true,
+    );
 
     window.addEventListener('blur', () => {
       this.keys.clear();
       this.shoot = false;
       this.zoom = false;
     });
+
+    window.addEventListener('beforeunload', (e) => {
+      if (!this.playing) return;
+      e.preventDefault();
+      e.returnValue = '';
+    });
+  }
+
+  async lockBrowserKeys() {
+    if (!navigator.keyboard?.lock) return;
+    try {
+      await navigator.keyboard.lock(LOCKED_KEYS);
+    } catch {
+      // Unsupported or denied — fall back to preventDefault handlers only.
+    }
+  }
+
+  unlockBrowserKeys() {
+    navigator.keyboard?.unlock?.();
   }
 
   requestLock() {
     if (this.locked) return;
     const result = this.canvas.requestPointerLock();
     if (result && typeof result.catch === 'function') result.catch(() => {});
+  }
+
+  exitLock() {
+    if (!this.locked) return;
+    document.exitPointerLock();
+  }
+
+  setPlaying(active) {
+    this.playing = active;
+    if (!active) {
+      this.keys.clear();
+      this.shoot = false;
+      this.zoom = false;
+      this.unlockBrowserKeys();
+    } else if (this.locked) {
+      this.lockBrowserKeys();
+    }
   }
 
   addKick(yawAmount, pitchAmount) {
@@ -134,7 +238,7 @@ export class InputController {
     if (k.has('KeyA') || k.has('ArrowLeft')) mask |= KEY.LEFT;
     if (k.has('KeyD') || k.has('ArrowRight')) mask |= KEY.RIGHT;
     if (k.has('Space')) mask |= KEY.JUMP;
-    if (k.has('KeyC') || k.has('ControlLeft') || k.has('ControlRight')) mask |= KEY.CROUCH;
+    if (k.has('KeyC')) mask |= KEY.CROUCH;
     if (k.has('ShiftLeft') || k.has('ShiftRight')) mask |= KEY.RUN;
     if (this.shoot) mask |= KEY.SHOOT;
     if (this.zoom) mask |= KEY.ZOOM;

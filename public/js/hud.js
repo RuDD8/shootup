@@ -4,6 +4,12 @@ function escapeHtml(text) {
   return String(text).replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
 }
 
+const SKULL_ICON =
+  '<svg class="feed-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" ' +
+  'd="M12 2a8 8 0 0 0-8 8v3.1a2 2 0 0 0 1.1 1.8l1.3.65.35 1.95A2 2 0 0 0 8.72 19h6.56a2 2 0 0 0 ' +
+  '1.97-1.6l.35-1.95 1.3-.65A2 2 0 0 0 20 13.1V10a8 8 0 0 0-8-8Zm-3.3 8.1a1.9 1.9 0 1 1 0 3.8 1.9 ' +
+  '1.9 0 0 1 0-3.8Zm6.6 0a1.9 1.9 0 1 1 0 3.8 1.9 1.9 0 0 1 0-3.8ZM10.5 15.6h3l-.5 1.9h-2l-.5-1.9Z"/></svg>';
+
 export class Hud {
   constructor() {
     this.root = $('hud');
@@ -14,14 +20,24 @@ export class Hud {
     this.vignette = $('damage-vignette');
     this.scope = $('scope-overlay');
     this.scoreboard = $('scoreboard');
+    this.clock = $('match-clock');
     this.dmBoard = $('dm-leaderboard');
     this.dmList = $('dm-lb-list');
+    this.netInfo = $('net-info');
+    this.healthWrap = $('health-wrap');
+    this.ammoEl = $('ammo');
+    this.reloadFill = $('reload-fill');
+    this.spawnShield = $('spawn-shield');
 
     this.hitmarkerTimer = 0;
     this.vignetteTimer = 0;
     this.bannerTimer = 0;
     this.lastGap = -1;
     this.mode = 'duel';
+
+    // Smoothed frame rate so the readout does not flicker every frame.
+    this.fps = 60;
+    this.fpsTimer = 0;
   }
 
   show() {
@@ -58,32 +74,44 @@ export class Hud {
     $('round-label').textContent = `DEATHMATCH · ${minutes} MIN`;
   }
 
-  setTimer(text) {
+  setTimer(text, urgent = false) {
     $('round-timer').textContent = text;
+    this.clock.classList.toggle('urgent', urgent);
   }
 
   updateDmLeaderboard(entries) {
     this.dmList.innerHTML = '';
-    for (const entry of entries) {
+    entries.forEach((entry, i) => {
       const li = document.createElement('li');
-      li.innerHTML = `<span class="lb-name" style="color:${entry.color}">${escapeHtml(entry.name)}</span><span class="lb-kills">${entry.kills}</span>`;
+      if (entry.me) li.className = 'me';
+      li.innerHTML =
+        `<span class="lb-rank">${i + 1}</span>` +
+        `<span class="lb-dot" style="background:${entry.color}"></span>` +
+        `<span class="lb-name">${escapeHtml(entry.name)}</span>` +
+        `<span class="lb-kills">${entry.kills}</span>`;
       this.dmList.appendChild(li);
-    }
+    });
   }
 
   setHealth(health) {
     const clamped = Math.max(0, Math.min(100, health));
+    const low = clamped <= 35;
     const fill = $('health-fill');
     fill.style.width = `${clamped}%`;
-    fill.classList.toggle('low', clamped <= 35);
+    fill.classList.toggle('low', low);
+    this.healthWrap.classList.toggle('low', low);
     $('health-num').textContent = Math.round(clamped);
   }
 
-  setWeapon(name, ammo, magazine, reloading) {
+  setWeapon(name, ammo, magazine, reloading, reloadProgress = 0) {
     $('weapon-name').textContent = name.toUpperCase();
     $('ammo-cur').textContent = ammo;
     $('ammo-max').textContent = `/${magazine}`;
+    this.ammoEl.classList.toggle('empty', ammo === 0);
     $('reload-note').classList.toggle('hidden', !reloading);
+    if (reloading) {
+      this.reloadFill.style.width = `${Math.round(Math.max(0, Math.min(1, reloadProgress)) * 100)}%`;
+    }
   }
 
   setLoadout({ primaryName, primaryAmmo, secondaryAmmo, activeSlot, visible }) {
@@ -108,15 +136,21 @@ export class Hud {
     this.scope.classList.toggle('hidden', !on);
   }
 
+  setSpawnShield(on) {
+    this.spawnShield.classList.toggle('hidden', !on);
+  }
+
   setPing(ms) {
     $('ping').textContent = ms;
+    this.netInfo.classList.toggle('ok', ms >= 80 && ms < 150);
+    this.netInfo.classList.toggle('bad', ms >= 150);
   }
 
   hitmarker(isHead) {
     this.hitmarkerEl.style.opacity = '1';
     this.hitmarkerEl.style.filter = isHead
-      ? 'drop-shadow(0 0 5px #fb7185) hue-rotate(-20deg)'
-      : 'none';
+      ? 'drop-shadow(0 0 6px #fb7185) hue-rotate(-20deg)'
+      : 'drop-shadow(0 0 2px rgba(0, 0, 0, 0.9))';
     this.hitmarkerTimer = isHead ? 0.22 : 0.14;
   }
 
@@ -136,13 +170,20 @@ export class Hud {
     this.bannerTimer = 0;
   }
 
-  feed(html) {
+  killFeed({ killer, killerColor, victim, victimColor, headshot, iKilled, iDied }) {
     const row = document.createElement('div');
     row.className = 'feed-row';
-    row.innerHTML = html;
+    if (iKilled) row.classList.add('i-killed');
+    if (iDied) row.classList.add('i-died');
+    if (headshot) row.classList.add('headshot');
+    row.innerHTML =
+      `<span class="feed-name" style="color:${killerColor}">${escapeHtml(killer)}</span>` +
+      SKULL_ICON +
+      `<span class="feed-name" style="color:${victimColor}">${escapeHtml(victim)}</span>` +
+      (headshot ? '<span class="feed-head">HS</span>' : '');
     this.feedEl.appendChild(row);
     setTimeout(() => row.remove(), 4500);
-    while (this.feedEl.children.length > 4) this.feedEl.firstChild.remove();
+    while (this.feedEl.children.length > 5) this.feedEl.firstChild.remove();
   }
 
   clearFeed() {
@@ -150,6 +191,13 @@ export class Hud {
   }
 
   update(dt) {
+    if (dt > 0) this.fps += (1 / dt - this.fps) * Math.min(1, dt * 4);
+    this.fpsTimer -= dt;
+    if (this.fpsTimer <= 0) {
+      this.fpsTimer = 0.25;
+      $('fps').textContent = Math.round(this.fps);
+    }
+
     if (this.hitmarkerTimer > 0) {
       this.hitmarkerTimer -= dt;
       if (this.hitmarkerTimer <= 0) this.hitmarkerEl.style.opacity = '0';

@@ -12,40 +12,62 @@
 
     <!-- In-game overlay -->
     <div id="hud" class="hidden">
+      <div id="hud-scrim"></div>
+
       <div id="crosshair">
         <span class="ch ch-t"></span>
         <span class="ch ch-b"></span>
         <span class="ch ch-l"></span>
         <span class="ch ch-r"></span>
+        <span id="ch-dot"></span>
         <span id="hitmarker"></span>
       </div>
 
-      <div id="scoreboard">
-        <div class="score-side">
-          <span class="score-name" id="score-name-me">YOU</span>
-          <span class="score-val" id="score-me">0</span>
-        </div>
-        <div class="score-mid">
+      <div id="top-center">
+        <div id="match-clock" class="hud-panel">
           <span id="round-timer">--</span>
           <small id="round-label">ROUND 1</small>
         </div>
-        <div class="score-side right">
-          <span class="score-val" id="score-them">0</span>
-          <span class="score-name" id="score-name-them">RIVAL</span>
+        <div id="scoreboard" class="hud-panel">
+          <div class="score-side">
+            <span class="score-name" id="score-name-me">YOU</span>
+            <span class="score-val" id="score-me">0</span>
+          </div>
+          <span class="score-dash"></span>
+          <div class="score-side right">
+            <span class="score-val" id="score-them">0</span>
+            <span class="score-name" id="score-name-them">RIVAL</span>
+          </div>
         </div>
       </div>
 
-      <div id="dm-leaderboard" class="hidden">
-        <div class="dm-lb-title">KILLS</div>
+      <div id="dm-leaderboard" class="hud-panel hidden">
+        <div class="dm-lb-head">
+          <span class="dm-lb-title">LEADERBOARD</span>
+          <span class="dm-lb-unit">KILLS</span>
+        </div>
         <ol id="dm-lb-list"></ol>
       </div>
 
+      <div id="top-right">
+        <div id="net-info" class="hud-panel">
+          <span class="net-stat"><b id="fps">--</b>fps</span>
+          <span class="net-div"></span>
+          <span class="net-stat"><i id="ping-dot"></i><b id="ping">--</b>ms</span>
+        </div>
+        <div id="killfeed"></div>
+      </div>
+
       <div id="banner"></div>
+      <div id="spawn-shield" class="hidden">INVULNERABLE</div>
 
       <div id="bottom-left">
         <div id="health-wrap">
-          <div id="health-bar"><div id="health-fill"></div></div>
           <span id="health-num">100</span>
+          <div id="health-col">
+            <span class="hp-label">HEALTH</span>
+            <div id="health-bar"><div id="health-fill"></div></div>
+          </div>
         </div>
       </div>
 
@@ -64,13 +86,14 @@
         </div>
         <div id="weapon-name">PISTOL</div>
         <div id="ammo"><span id="ammo-cur">12</span><span id="ammo-max">/12</span></div>
-        <div id="reload-note" class="hidden">RELOADING</div>
+        <div id="reload-note" class="hidden">
+          <span class="reload-text">RELOADING</span>
+          <span id="reload-track"><span id="reload-fill"></span></span>
+        </div>
       </div>
 
       <div id="damage-vignette"></div>
       <div id="scope-overlay" class="hidden"><div id="scope-ring"></div></div>
-      <div id="killfeed"></div>
-      <div id="net-info"><span id="ping">--</span> ms</div>
     </div>
 
     <!-- Menus -->
@@ -129,7 +152,7 @@
           <div><b>WASD</b> move</div>
           <div><b>Space</b> jump</div>
           <div><b>Shift</b> sprint</div>
-          <div><b>C / Ctrl</b> crouch · slide while sprinting</div>
+          <div><b>C</b> crouch · slide while sprinting</div>
           <div><b>Mouse</b> aim</div>
           <div><b>Click</b> shoot</div>
           <div><b>R</b> reload</div>

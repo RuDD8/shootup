@@ -10,8 +10,6 @@ import {
   playerHeadHeight,
 } from '/shared/constants.js';
 
-// Rough barrel lengths, used only to scale the opponent's held weapon.
-const AVATAR_GUN_LENGTH = { pistol: 0.5, assault: 1.0, shotgun: 1.05, sniper: 1.55 };
 import { deserializeArena } from '/shared/arena.js';
 import { stepPlayer, raycastWorld, rayCylinder } from '/shared/physics.js';
 import { WEAPONS, shotInterval, DEFAULT_PRIMARY_WEAPON_ID } from '/shared/weapons.js';
@@ -83,6 +81,7 @@ const state = {
   bloom: 0,
   lastCountdownStep: -1,
   serverReloadTicks: 0,
+  spawnProtect: 0,
 };
 
 let selectedMode = GAME_MODE.DUEL;
@@ -145,12 +144,28 @@ function updateWeaponPickUI() {
   }
 }
 
-function updateWeaponPickVisibility() {
-  const show =
+function needsWeaponPick() {
+  return (
     isDM() &&
     state.phase === 'game' &&
-    (state.matchState === MATCH_STATE.COUNTDOWN || !state.alive);
+    (state.matchState === MATCH_STATE.COUNTDOWN || !state.alive)
+  );
+}
+
+function syncWeaponPickPointer() {
+  const show = needsWeaponPick();
   $('weapon-pick').classList.toggle('hidden', !show);
+  if (show) {
+    // Unlock so weapon buttons are clickable; hide the full-screen lock overlay.
+    input.exitLock();
+    $('click-to-play').classList.add('hidden');
+  } else if (state.phase === 'game' && !input.locked) {
+    $('click-to-play').classList.remove('hidden');
+  }
+}
+
+function updateWeaponPickVisibility() {
+  syncWeaponPickPointer();
 }
 
 function sendPrimaryPick(id) {
@@ -426,7 +441,7 @@ net.on('round', (msg) => {
       input.kickPitch = 0;
     } else {
       player.avatar = createAvatar(scene, entry.slot);
-      player.avatar.setWeaponLength(AVATAR_GUN_LENGTH[entry.w] || 1);
+      player.avatar.setWeapon(entry.w || 'pistol');
     }
     state.players.set(entry.i, player);
   }
@@ -514,6 +529,8 @@ net.on('matchover', (msg) => {
   }
 
   state.phase = 'result';
+  input.setPlaying(false);
+  input.enabled = false;
 });
 
 net.on('opponentleft', (msg) => {
@@ -532,11 +549,15 @@ net.on('opponentleft', (msg) => {
     ? 'A player left. Waiting in lobby…'
     : 'Your opponent left. Waiting for someone to join…';
   state.phase = 'lobby';
+  input.setPlaying(false);
+  input.enabled = false;
 });
 
 net.on('s', onSnapshot);
 
 net.onClose = () => {
+  input.setPlaying(false);
+  input.enabled = false;
   $('disconnected').classList.remove('hidden');
 };
 
@@ -579,18 +600,23 @@ function onSnapshot(msg) {
 
       if (entry.i !== state.myId && !player.avatar && entry.al === 1) {
         player.avatar = createAvatar(scene, entry.sl);
-        player.avatar.setWeaponLength(AVATAR_GUN_LENGTH[entry.w] || 1);
+        player.avatar.setWeapon(entry.w || 'pistol');
       }
       if (player.avatar) {
-        player.avatar.setWeaponLength(AVATAR_GUN_LENGTH[entry.w] || 1);
+        player.avatar.setWeapon(entry.w || 'pistol');
       }
     }
 
     if (entry.i !== state.myId) continue;
 
+    const wasAlive = state.alive;
     state.health = entry.h;
     state.alive = entry.al === 1;
     state.serverReloadTicks = entry.rl;
+    state.spawnProtect = entry.sp || 0;
+
+    if (isDM() && wasAlive && !state.alive) syncWeaponPickPointer();
+    if (isDM() && !wasAlive && state.alive) syncWeaponPickPointer();
 
     if (isDM()) {
       if (entry.pw) state.primaryWeaponId = entry.pw;
@@ -703,16 +729,20 @@ function handleEvents(events) {
     } else if (ev.k === 'die') {
       const victim = state.players.get(ev.p);
       const killer = state.players.get(ev.by);
-      const victimName = victim ? victim.name : 'Player';
-      const killerName = killer ? killer.name : 'Player';
-      const killerColor = killer ? killer.color : '#38bdf8';
-      const tag = ev.head ? ' <i>headshot</i>' : '';
-      hud.feed(`<b style="color:${killerColor}">${escapeHtml(killerName)}</b> → ${escapeHtml(victimName)}${tag}`);
+      hud.killFeed({
+        killer: killer ? killer.name : 'Player',
+        killerColor: (killer && killer.color) || '#38bdf8',
+        victim: victim ? victim.name : 'Player',
+        victimColor: (victim && victim.color) || '#94a3b8',
+        headshot: !!ev.head,
+        iKilled: ev.by === state.myId && ev.p !== state.myId,
+        iDied: ev.p === state.myId,
+      });
       if (ev.p === state.myId) {
         state.shake = 2.4;
         if (isDM()) {
           hud.banner('ELIMINATED', 'Pick a weapon · respawning…', 2.5);
-          updateWeaponPickVisibility();
+          syncWeaponPickPointer();
         }
       }
     } else if (ev.k === 'respawn') {
@@ -728,7 +758,7 @@ function handleEvents(events) {
         viewModel.setWeapon(state.weaponId);
         updateLoadoutUI();
         updateWeaponPickUI();
-        updateWeaponPickVisibility();
+        syncWeaponPickPointer();
         hud.banner('RESPAWNED', '', 1.2);
       }
     }
@@ -742,6 +772,7 @@ function buildLeaderboard() {
       name: p.name,
       kills: state.kills.get(p.id) || p.kills || 0,
       color: p.color || playerColor(p.slot),
+      me: p.id === state.myId,
     }))
     .sort((a, b) => b.kills - a.kills || a.name.localeCompare(b.name));
 }
@@ -846,7 +877,8 @@ function applyRemoteInterpolation() {
       player.avatar.group.position.set(extrap.x, y, extrap.z);
       player.avatar.group.rotation.y = yaw;
       player.avatar.group.visible = a.al === 1;
-      player.avatar.setPose(crouching, sliding);
+      const moveSpeed = Math.hypot(vx || 0, vz || 0);
+      player.avatar.setPose(crouching, sliding, moveSpeed);
     }
   }
 }
@@ -901,7 +933,7 @@ function frame(now) {
 
   effects.update(dt);
   hud.update(dt);
-  updateHud(reloading);
+  updateHud(reloading, reloadProgress);
 
   renderer.clear();
   renderer.render(scene, camera);
@@ -975,14 +1007,15 @@ function updateCamera(dt) {
   prevPitch = view.pitch;
 }
 
-function updateHud(reloading) {
+function updateHud(reloading, reloadProgress) {
   const w = weapon();
   hud.setHealth(state.health);
-  hud.setWeapon(w.name, localGun.ammo, w.magazine, reloading);
+  hud.setWeapon(w.name, localGun.ammo, w.magazine, reloading, reloadProgress);
   if (isDM()) updateLoadoutUI();
   updateWeaponPickVisibility();
   hud.setPing(net.ping);
   hud.setScope(state.zooming);
+  hud.setSpawnShield(state.spawnProtect > 0);
 
   const spread = (w.spread + state.bloom) * (state.zooming ? 0.25 : 1);
   hud.setCrosshairGap(5 + spread * 620);
@@ -996,7 +1029,7 @@ function updateHud(reloading) {
       if (step > 0) hud.banner(String(step), 'Get ready', 0.9);
     }
   } else if (state.matchState === MATCH_STATE.LIVE) {
-    hud.setTimer(formatTimer(state.timer));
+    hud.setTimer(formatTimer(state.timer), state.timer <= 10);
     if (state.lastCountdownStep !== -1) {
       state.lastCountdownStep = -1;
       hud.banner('FIGHT', '', 0.8);
@@ -1024,7 +1057,8 @@ function enterGame() {
   $('menu-result').classList.add('hidden');
   hud.show();
   input.enabled = true;
-  if (!input.locked) $('click-to-play').classList.remove('hidden');
+  input.setPlaying(true);
+  syncWeaponPickPointer();
 }
 
 function beginPlay() {
@@ -1106,15 +1140,19 @@ $('btn-add-bot').addEventListener('click', () => {
 
 $('click-to-play').addEventListener('click', beginPlay);
 canvas.addEventListener('click', () => {
-  if (state.phase === 'game' && !input.locked) beginPlay();
+  if (state.phase === 'game' && !input.locked && !needsWeaponPick()) beginPlay();
 });
 
 input.onLockChange = (locked) => {
-  if (!locked && state.phase === 'game') {
-    $('click-to-play').classList.remove('hidden');
-  } else {
+  if (locked || state.phase !== 'game') {
     $('click-to-play').classList.add('hidden');
+    return;
   }
+  if (needsWeaponPick()) {
+    $('click-to-play').classList.add('hidden');
+    return;
+  }
+  $('click-to-play').classList.remove('hidden');
 };
 
 window.addEventListener('resize', () => {
