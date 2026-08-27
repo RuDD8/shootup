@@ -99,8 +99,8 @@ function testWeaponRandomisation() {
 
 // ------------------------------------------------------------- server tests
 
-function openClient(name) {
-  const socket = new WebSocket(`ws://127.0.0.1:${PORT}/`);
+function openClient(name, port = PORT) {
+  const socket = new WebSocket(`ws://127.0.0.1:${port}/`);
   const inbox = [];
   const waiters = [];
 
@@ -259,12 +259,51 @@ async function testServer() {
   }
 }
 
+async function testBots() {
+  console.log('\nbots');
+
+  const server = spawn(process.execPath, ['server/index.js'], {
+    env: { ...process.env, PORT: String(PORT + 1) },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  try {
+    await sleep(700);
+
+    const host = openClient('host', PORT + 1);
+    await host.ready;
+    await host.waitFor((m) => m.t === 'hello');
+
+    host.send({ t: 'create', name: 'Tester', mode: 'duel' });
+    const joined = await host.waitFor((m) => m.t === 'joined');
+    check('solo host can create a duel room', joined.isHost);
+
+    host.send({ t: 'addbot' });
+    const peers = await host.waitFor((m) => m.t === 'peers');
+    check('addbot updates the lobby roster', peers.players.length === 2);
+    check('added player is marked as a bot', peers.players.some((p) => p.bot));
+
+    const round = await host.waitFor((m) => m.t === 'round', 4000);
+    check('duel auto-starts after a bot joins', Boolean(round.arena));
+    check('round includes the human and the bot', round.players.length === 2);
+
+    host.socket.close();
+    await sleep(200);
+  } catch (err) {
+    failures++;
+    console.log(`  FAIL  bot test threw — ${err.message}`);
+  } finally {
+    server.kill('SIGKILL');
+  }
+}
+
 // ---------------------------------------------------------------------- main
 
 console.log('Duel Arena smoke test');
 testArenas();
 testWeaponRandomisation();
 await testServer();
+await testBots();
 
 console.log(
   failures === 0 ? '\nAll checks passed.\n' : `\n${failures} check(s) failed.\n`,

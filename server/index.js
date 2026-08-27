@@ -143,6 +143,18 @@ attachWebSocket(server, (conn) => {
         break;
       }
 
+      case 'addbot': {
+        if (!session.room) return;
+        const result = rooms.addBot(session.room, session.playerId);
+        if (result.error) {
+          conn.sendJSON({ t: 'error', msg: result.error });
+          return;
+        }
+        const roster = rooms.roster(session.room);
+        session.room.match.broadcast({ t: 'peers', players: roster });
+        break;
+      }
+
       case 'i':
         if (session.room) session.room.match.queueInput(session.playerId, msg);
         break;

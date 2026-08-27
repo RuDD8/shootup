@@ -70,7 +70,25 @@ export class RoomManager {
       slot: p.slot,
       name: p.name,
       color: playerColor(p.slot),
+      bot: Boolean(p.isBot),
     }));
+  }
+
+  addBot(room, requesterId) {
+    if (requesterId !== room.match.hostId) {
+      return { error: 'Only the host can add bots.' };
+    }
+    if (room.match.state !== MATCH_STATE.WAITING) {
+      return { error: 'Bots can only be added before the match starts.' };
+    }
+    if (room.match.players.length >= room.match.maxPlayers) {
+      return { error: 'Room is full.' };
+    }
+    const botNum = room.match.players.filter((p) => p.isBot).length + 1;
+    const id = `p${nextPlayerId++}`;
+    const player = room.match.addBot(id, `Bot ${botNum}`);
+    if (!player) return { error: 'Room is full.' };
+    return { player };
   }
 
   start() {

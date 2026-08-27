@@ -28,11 +28,11 @@ import {
   shotInterval,
   damageAtRange,
   HEADSHOT_MULT,
-  PRIMARY_WEAPON_IDS,
   SECONDARY_WEAPON_ID,
   DEFAULT_PRIMARY_WEAPON_ID,
   isPrimaryWeaponId,
 } from '../shared/weapons.js';
+import { tickBots, randomPrimaryWeaponId } from './bots.js';
 
 const KEY = {
   FORWARD: 1,
@@ -99,6 +99,7 @@ export class Match {
       slot,
       name,
       conn,
+      isBot: false,
       x: 0,
       y: 0,
       z: 0,
@@ -131,6 +132,17 @@ export class Match {
       lastSeq: 0,
     };
     this.players.push(player);
+    return player;
+  }
+
+  addBot(id, name) {
+    if (this.players.length >= this.maxPlayers) return null;
+    const player = this.addPlayer(id, name, null);
+    player.isBot = true;
+    player.botState = { strafe: 1, nextStrafeTick: this.tick + 90 };
+    if (this.isDM) {
+      player.primaryWeaponId = randomPrimaryWeaponId();
+    }
     return player;
   }
 
@@ -421,6 +433,8 @@ export class Match {
     if (this.isDM && this.state === MATCH_STATE.LIVE) {
       this.processRespawns();
     }
+
+    tickBots(this);
 
     switch (this.state) {
       case MATCH_STATE.COUNTDOWN:

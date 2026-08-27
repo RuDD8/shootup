@@ -361,6 +361,10 @@ net.on('peers', (msg) => {
 });
 
 net.on('error', (msg) => {
+  if (state.phase === 'lobby') {
+    $('lobby-status').textContent = msg.msg || 'Something went wrong.';
+    return;
+  }
   $('menu-error').textContent = msg.msg || 'Something went wrong.';
 });
 
@@ -755,9 +759,14 @@ function updateLobby(msg) {
   list.innerHTML = '';
   for (const p of players) {
     const li = document.createElement('li');
-    li.innerHTML = `<span class="dot" style="background:${p.color}"></span>${escapeHtml(p.name)}`;
+    const badge = p.bot ? '<span class="bot-badge">BOT</span>' : '';
+    li.innerHTML = `<span class="dot" style="background:${p.color}"></span>${escapeHtml(p.name)}${badge}`;
     list.appendChild(li);
   }
+
+  const canAddBot =
+    state.isHost && players.length < state.maxPlayers && state.phase === 'lobby';
+  $('btn-add-bot').classList.toggle('hidden', !canAddBot);
 
   if (isDM()) {
     $('lobby-mode-label').textContent = `Deathmatch · ${state.dmMinutes} min · up to ${state.maxPlayers} players`;
@@ -773,7 +782,11 @@ function updateLobby(msg) {
     $('lobby-mode-label').textContent = '1 vs 1 Duel';
     $('btn-start').classList.add('hidden');
     $('lobby-status').textContent =
-      players.length >= 2 ? 'Opponent connected — starting…' : 'Waiting for an opponent…';
+      players.length >= 2
+        ? players.some((p) => p.bot)
+          ? 'Bot joined — starting…'
+          : 'Opponent connected — starting…'
+        : 'Waiting for an opponent — or add a bot below';
   }
 }
 
@@ -1067,6 +1080,10 @@ $('btn-start').addEventListener('click', () => {
   net.send({ t: 'start' });
   $('btn-start').classList.add('hidden');
   $('lobby-status').textContent = 'Starting…';
+});
+
+$('btn-add-bot').addEventListener('click', () => {
+  net.send({ t: 'addbot' });
 });
 
 $('click-to-play').addEventListener('click', beginPlay);

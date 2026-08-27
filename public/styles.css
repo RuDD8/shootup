@@ -152,6 +152,33 @@ button.primary:hover {
   background: linear-gradient(180deg, #38bdf8, #0ea5e9);
 }
 
+button.secondary {
+  width: 100%;
+  margin-bottom: 12px;
+  background: rgba(6, 10, 18, 0.85);
+  border: 1px solid var(--line);
+  color: var(--dim);
+  font-size: 13px;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+}
+
+button.secondary:hover {
+  border-color: var(--cyan);
+  color: var(--cyan);
+}
+
+.bot-badge {
+  margin-left: auto;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: var(--dim);
+  border: 1px solid var(--line);
+  background: rgba(56, 189, 248, 0.08);
+}
+
 .or {
   margin: 16px 0 12px;
   font-size: 11px;
