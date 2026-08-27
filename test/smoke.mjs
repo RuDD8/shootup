@@ -8,6 +8,12 @@ import { spawn } from 'node:child_process';
 import { generateArena, mulberry32 } from '../shared/arena.js';
 import { GRID_SIZE, TILE_OPEN, TILE_WALL, MATCH_STATE } from '../shared/constants.js';
 import { WEAPON_IDS, randomWeaponId } from '../shared/weapons.js';
+import {
+  sampleHistory,
+  extrapolateRender,
+  lagCompTicks,
+  INTERP_DELAY_MS,
+} from '../shared/lagcomp.js';
 
 const PORT = 8899;
 let failures = 0;
@@ -259,6 +265,28 @@ async function testServer() {
   }
 }
 
+function testLagComp() {
+  console.log('\nlag compensation helpers');
+
+  const history = [
+    { tick: 10, x: 0, y: 0, z: 0, cr: false, vx: 0, vz: 0 },
+    { tick: 20, x: 2, y: 0, z: 0, cr: false, vx: 6, vz: 0 },
+    { tick: 30, x: 4, y: 0, z: 1, cr: true, vx: 6, vz: 2 },
+  ];
+
+  check('sampleHistory picks the latest sample at or before a tick', sampleHistory(history, 25).x === 2);
+  check('sampleHistory falls back to the oldest entry', sampleHistory(history, 5).tick === 10);
+
+  const moved = extrapolateRender(4, 1, 6, 2, INTERP_DELAY_MS);
+  check(
+    'extrapolateRender advances position by velocity',
+    Math.abs(moved.x - (4 + 6 * (INTERP_DELAY_MS / 1000))) < 0.001,
+    `x=${moved.x.toFixed(3)}`,
+  );
+
+  check('lagCompTicks scales with ping', lagCompTicks(100) > lagCompTicks(0));
+}
+
 async function testBots() {
   console.log('\nbots');
 
@@ -302,6 +330,7 @@ async function testBots() {
 console.log('Duel Arena smoke test');
 testArenas();
 testWeaponRandomisation();
+testLagComp();
 await testServer();
 await testBots();
 

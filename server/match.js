@@ -20,6 +20,7 @@ import {
   playerHeight,
   playerHeadHeight,
 } from '../shared/constants.js';
+import { sampleHistory, lagCompTicks, historyCapacity } from '../shared/lagcomp.js';
 import { generateArena, serializeArena, cellCenter, pickRandomSpawn } from '../shared/arena.js';
 import { stepPlayer, raycastWorld, rayCylinder } from '../shared/physics.js';
 import {
@@ -135,6 +136,8 @@ export class Match {
       deaths: 0,
       respawnAtTick: 0,
       spawnProtectUntil: 0,
+      pingMs: 0,
+      history: [],
       inputQueue: [],
       lastInput: { ...IDLE_INPUT },
       lastSeq: 0,
@@ -209,6 +212,9 @@ export class Match {
     if (!player) return;
     const yaw = Number(msg.y) || 0;
     const pitch = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, Number(msg.p) || 0));
+    if (typeof msg.pg === 'number' && msg.pg >= 0) {
+      player.pingMs = Math.min(999, Math.round(msg.pg));
+    }
     player.inputQueue.push({
       seq: Number(msg.s) || 0,
       input: decodeInput(Number(msg.k) || 0, yaw, pitch),
@@ -508,6 +514,36 @@ export class Match {
     }
 
     if (this.tick % SNAPSHOT_INTERVAL === 0) this.sendSnapshot();
+    this.recordHistory();
+  }
+
+  recordHistory() {
+    for (const p of this.players) {
+      if (!p.history) p.history = [];
+      p.history.push({
+        tick: this.tick,
+        x: p.x,
+        y: p.y,
+        z: p.z,
+        cr: p.crouching,
+        vx: p.vx,
+        vz: p.vz,
+      });
+      const cap = historyCapacity();
+      if (p.history.length > cap) p.history.shift();
+    }
+  }
+
+  targetStateAtShot(shooter, target) {
+    const rewind = lagCompTicks(shooter.pingMs);
+    if (rewind <= 0) {
+      return { x: target.x, y: target.y, z: target.z, cr: target.crouching };
+    }
+    const sample = sampleHistory(target.history, this.tick - rewind);
+    if (!sample) {
+      return { x: target.x, y: target.y, z: target.z, cr: target.crouching };
+    }
+    return { x: sample.x, y: sample.y, z: sample.z, cr: sample.cr };
   }
 
   processRespawns() {
@@ -664,17 +700,20 @@ export class Match {
       const world = raycastWorld(this.arena.grid, ox, oy, oz, dx, dy, dz, MAX_SHOT_RANGE);
       let hitDist = world.hit ? world.dist : MAX_SHOT_RANGE;
       let hitTarget = null;
+      let hitLagComp = null;
 
       for (const target of targets) {
         if (!target.alive) continue;
+        const tState = this.targetStateAtShot(player, target);
         const tHit = rayCylinder(
           ox, oy, oz, dx, dy, dz,
-          target.x, target.y, target.z,
-          HIT_RADIUS, playerHeight(target.crouching),
+          tState.x, tState.y, tState.z,
+          HIT_RADIUS, playerHeight(tState.cr),
         );
         if (tHit !== null && tHit < hitDist) {
           hitDist = tHit;
           hitTarget = target;
+          hitLagComp = tState;
         }
       }
 
@@ -683,7 +722,13 @@ export class Match {
       const pz = oz + dz * hitDist;
 
       if (hitTarget) {
-        const isHead = py > hitTarget.y + playerHeadHeight(hitTarget.crouching);
+        const tState = hitLagComp || {
+          x: hitTarget.x,
+          y: hitTarget.y,
+          z: hitTarget.z,
+          cr: hitTarget.crouching,
+        };
+        const isHead = py > tState.y + playerHeadHeight(tState.cr);
         let dmg = damageAtRange(weapon, hitDist);
         if (isHead) {
           dmg *= HEADSHOT_MULT;

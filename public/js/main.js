@@ -23,10 +23,10 @@ import { Hud } from './hud.js';
 import { ViewModel } from './viewmodel.js';
 import { Effects } from './effects.js';
 import { createRenderer, createScene, buildArena, createAvatar } from './world.js';
+import { INTERP_DELAY_MS, extrapolateRender } from '/shared/lagcomp.js';
 
-// Render remote players this far in the past so there are always two snapshots
-// to interpolate between, even with a little jitter.
-const INTERP_DELAY_MS = 90;
+// Render remote players this far in the past, then extrapolate forward so avatars
+// line up with the server hitboxes players are aiming at.
 const BASE_FOV = 82;
 const HIT_RADIUS = 0.45;
 const MAX_RANGE = 400;
@@ -832,14 +832,21 @@ function applyRemoteInterpolation() {
     const y = b ? a.y + (b.y - a.y) * t : a.y;
     const z = b ? a.z + (b.z - a.z) * t : a.z;
     const yaw = b ? lerpAngle(a.yaw, b.yaw, t) : a.yaw;
+    const vx = b ? a.vx + (b.vx - a.vx) * t : a.vx;
+    const vz = b ? a.vz + (b.vz - a.vz) * t : a.vz;
+    const extrap = extrapolateRender(x, z, vx, vz, INTERP_DELAY_MS);
+    const crouching = b ? (a.cr || 0) + ((b.cr || 0) - (a.cr || 0)) * t >= 0.5 : a.cr === 1;
+    const sliding = b ? (a.sl || 0) + ((b.sl || 0) - (a.sl || 0)) * t >= 0.5 : a.sl === 1;
 
-    player.render = { x, y, z, yaw };
+    player.render = { x: extrap.x, y, z: extrap.z, yaw };
+    player.crouching = crouching;
+    player.sliding = sliding;
 
     if (player.avatar) {
-      player.avatar.group.position.set(x, y, z);
+      player.avatar.group.position.set(extrap.x, y, extrap.z);
       player.avatar.group.rotation.y = yaw;
       player.avatar.group.visible = a.al === 1;
-      player.avatar.setPose(a.cr === 1, a.sl === 1);
+      player.avatar.setPose(crouching, sliding);
     }
   }
 }
@@ -921,6 +928,7 @@ function fixedStep() {
     k: sampled.mask,
     y: Math.round(sampled.yaw * 1000) / 1000,
     p: Math.round(sampled.pitch * 1000) / 1000,
+    pg: net.ping,
   };
   if (isDM() && sampled.switchSlot) packet.sw = sampled.switchSlot;
   net.send(packet);
