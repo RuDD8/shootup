@@ -32,7 +32,7 @@ import {
   DEFAULT_PRIMARY_WEAPON_ID,
   isPrimaryWeaponId,
 } from '../shared/weapons.js';
-import { tickBots, randomPrimaryWeaponId } from './bots.js';
+import { tickBots, randomPrimaryWeaponId, createBotState } from './bots.js';
 
 const KEY = {
   FORWARD: 1,
@@ -139,7 +139,7 @@ export class Match {
     if (this.players.length >= this.maxPlayers) return null;
     const player = this.addPlayer(id, name, null);
     player.isBot = true;
-    player.botState = { strafe: 1, nextStrafeTick: this.tick + 90 };
+    player.botState = createBotState(this.tick);
     if (this.isDM) {
       player.primaryWeaponId = randomPrimaryWeaponId();
     }
