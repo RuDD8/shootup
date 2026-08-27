@@ -1010,6 +1010,23 @@ button.secondary:hover {
   accent-color: var(--cyan);
 }
 
+.map-select {
+  width: 100%;
+  padding: 12px 14px;
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--text);
+  background: rgba(6, 10, 18, 0.9);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  outline: none;
+  cursor: pointer;
+}
+
+.map-select:focus {
+  border-color: var(--cyan);
+}
+
 .lobby-mode {
   margin: 8px 0 12px;
   font-size: 12px;

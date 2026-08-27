@@ -22,6 +22,7 @@ import {
 } from '../shared/constants.js';
 import { sampleHistory, lagCompTicks, historyCapacity } from '../shared/lagcomp.js';
 import { generateArena, serializeArena, cellCenter, pickRandomSpawn } from '../shared/arena.js';
+import { loadArena, MAP_RANDOM, normalizeMapId, mapName } from '../shared/maps/index.js';
 import { stepPlayer, raycastWorld, rayCylinder } from '../shared/physics.js';
 import {
   WEAPONS,
@@ -72,10 +73,12 @@ function decodeInput(mask, yaw, pitch) {
 const IDLE_INPUT = decodeInput(0, 0, 0);
 
 export class Match {
-  constructor(room, { mode = GAME_MODE.DUEL, dmMinutes = 5 } = {}) {
+  constructor(room, { mode = GAME_MODE.DUEL, dmMinutes = 5, mapId = MAP_RANDOM } = {}) {
     this.room = room;
     this.mode = mode;
     this.dmMinutes = dmMinutes;
+    this.mapId = normalizeMapId(mapId);
+    this.arenaSeed = 0;
     this.hostId = null;
     this.players = [];
     this.tick = 0;
@@ -237,9 +240,16 @@ export class Match {
     else this.startRound();
   }
 
+  loadArenaForRound() {
+    if (this.mapId === MAP_RANDOM) {
+      this.arenaSeed = (Math.random() * 0xffffffff) >>> 0;
+    }
+    this.arena = loadArena(this.mapId, this.arenaSeed);
+  }
+
   beginDeathmatch() {
     this.roundNumber = 1;
-    this.arena = generateArena();
+    this.loadArenaForRound();
     this.lastRoundResult = null;
 
     for (const p of this.players) {
@@ -277,7 +287,7 @@ export class Match {
 
   startRound() {
     this.roundNumber += 1;
-    this.arena = generateArena();
+    this.loadArenaForRound();
     this.lastRoundResult = null;
     this.matchWeapon = randomWeaponId();
 
@@ -380,6 +390,8 @@ export class Match {
       mode: this.mode,
       dmMinutes: this.dmMinutes,
       n: this.roundNumber,
+      mapId: this.mapId,
+      mapName: mapName(this.mapId),
       arena: serializeArena(this.arena),
       target: this.isDM ? 0 : ROUNDS_TO_WIN,
       players: this.players.map((p) => this.playerPayload(p)),

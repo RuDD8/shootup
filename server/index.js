@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { attachWebSocket } from './wsserver.js';
 import { RoomManager } from './rooms.js';
 import { playerColor } from '../shared/constants.js';
+import { mapName } from '../shared/maps/index.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -89,7 +90,7 @@ attachWebSocket(server, (conn) => {
       case 'create': {
         if (session.room) return;
         const mode = msg.mode === 'deathmatch' ? 'deathmatch' : 'duel';
-        const room = rooms.create({ mode, dmMinutes: msg.dmMinutes });
+        const room = rooms.create({ mode, dmMinutes: msg.dmMinutes, mapId: msg.mapId });
         const { player } = rooms.seat(room, cleanName(msg.name), conn);
         session.room = room;
         session.playerId = player.id;
@@ -100,6 +101,8 @@ attachWebSocket(server, (conn) => {
           slot: player.slot,
           mode: room.mode,
           dmMinutes: room.dmMinutes,
+          mapId: room.mapId,
+          mapName: mapName(room.mapId),
           isHost: true,
           maxPlayers: room.match.maxPlayers,
           color: playerColor(player.slot),
@@ -125,6 +128,8 @@ attachWebSocket(server, (conn) => {
           slot: result.player.slot,
           mode: result.room.mode,
           dmMinutes: result.room.dmMinutes,
+          mapId: result.room.mapId,
+          mapName: mapName(result.room.mapId),
           isHost: result.player.id === result.room.match.hostId,
           maxPlayers: result.room.match.maxPlayers,
           color: playerColor(result.player.slot),

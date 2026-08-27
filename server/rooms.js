@@ -1,5 +1,6 @@
 import { Match } from './match.js';
 import { TICK_RATE, ROOM_CODE_LENGTH, MATCH_STATE, GAME_MODE, clampDmMinutes, playerColor } from '../shared/constants.js';
+import { normalizeMapId, MAP_RANDOM } from '../shared/maps/index.js';
 
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
@@ -22,7 +23,7 @@ export class RoomManager {
     throw new Error('room code space exhausted');
   }
 
-  create({ mode = GAME_MODE.DUEL, dmMinutes = 5 } = {}) {
+  create({ mode = GAME_MODE.DUEL, dmMinutes = 5, mapId = MAP_RANDOM } = {}) {
     const code = this.makeCode();
     const room = {
       code,
@@ -30,8 +31,9 @@ export class RoomManager {
       createdAt: Date.now(),
       mode: mode === GAME_MODE.DEATHMATCH ? GAME_MODE.DEATHMATCH : GAME_MODE.DUEL,
       dmMinutes: clampDmMinutes(dmMinutes),
+      mapId: normalizeMapId(mapId),
     };
-    room.match = new Match(room, { mode: room.mode, dmMinutes: room.dmMinutes });
+    room.match = new Match(room, { mode: room.mode, dmMinutes: room.dmMinutes, mapId: room.mapId });
     this.rooms.set(code, room);
     return room;
   }

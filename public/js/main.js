@@ -20,7 +20,7 @@ import { Audio } from './audio.js';
 import { Hud } from './hud.js';
 import { ViewModel } from './viewmodel.js';
 import { Effects } from './effects.js';
-import { createRenderer, createScene, buildArena, createAvatar } from './world.js';
+import { createRenderer, createScene, buildArena, createAvatar, applyMapTheme } from './world.js';
 import { INTERP_DELAY_MS, extrapolateRender } from '/shared/lagcomp.js';
 
 // Render remote players this far in the past, then extrapolate forward so avatars
@@ -53,6 +53,8 @@ const state = {
   myColor: playerColor(0),
   isHost: false,
   dmMinutes: 5,
+  mapId: 'random',
+  mapName: 'Random',
   maxPlayers: 2,
   code: null,
   arena: null,
@@ -366,6 +368,8 @@ net.on('joined', (msg) => {
   state.code = msg.code;
   state.mode = msg.mode || GAME_MODE.DUEL;
   state.dmMinutes = msg.dmMinutes || 5;
+  state.mapId = msg.mapId || 'random';
+  state.mapName = msg.mapName || 'Random';
   state.isHost = Boolean(msg.isHost);
   state.maxPlayers = msg.maxPlayers || 2;
   state.myColor = msg.color || playerColor(msg.slot);
@@ -389,11 +393,14 @@ net.on('round', (msg) => {
   state.arena = deserializeArena(msg.arena);
   state.roundNumber = msg.n;
   state.target = msg.target;
+  state.mapId = msg.mapId || state.mapId;
+  state.mapName = msg.mapName || state.mapName;
   state.matchState = MATCH_STATE.COUNTDOWN;
   state.lastCountdownStep = -1;
 
+  applyMapTheme(scene, state.mapId);
   if (state.arenaMesh) state.arenaMesh.dispose();
-  state.arenaMesh = buildArena(scene, state.arena);
+  state.arenaMesh = buildArena(scene, state.arena, state.mapId);
 
   for (const p of state.players.values()) if (p.avatar) p.avatar.dispose();
   state.players.clear();
@@ -807,7 +814,8 @@ function updateLobby(msg) {
   $('btn-add-bot').classList.toggle('hidden', !canAddBot);
 
   if (isDM()) {
-    $('lobby-mode-label').textContent = `Deathmatch · ${state.dmMinutes} min · up to ${state.maxPlayers} players`;
+    $('lobby-mode-label').textContent =
+      `Deathmatch · ${state.dmMinutes} min · ${state.mapName} · up to ${state.maxPlayers} players`;
     if (players.length < 2) {
       $('lobby-status').textContent = `Need at least 2 players (${players.length}/${state.maxPlayers})`;
     } else if (state.isHost) {
@@ -817,7 +825,7 @@ function updateLobby(msg) {
     }
     $('btn-start').classList.toggle('hidden', !state.isHost || players.length < 2);
   } else {
-    $('lobby-mode-label').textContent = '1 vs 1 Duel';
+    $('lobby-mode-label').textContent = `1 vs 1 Duel · ${state.mapName}`;
     $('btn-start').classList.add('hidden');
     $('lobby-status').textContent =
       players.length >= 2
@@ -1094,6 +1102,7 @@ $('btn-create').addEventListener('click', () => {
     name: state.myName,
     mode: selectedMode,
     dmMinutes: Number($('dm-minutes').value) || 5,
+    mapId: $('map-select').value,
   });
 });
 

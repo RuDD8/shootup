@@ -6,6 +6,8 @@
 
 import { spawn } from 'node:child_process';
 import { generateArena, mulberry32 } from '../shared/arena.js';
+import { loadArena, MAP_FY_SNOW } from '../shared/maps/index.js';
+import { FY_SNOW_SPAWNS } from '../shared/maps/fy_snow.js';
 import { GRID_SIZE, TILE_OPEN, TILE_WALL, MATCH_STATE } from '../shared/constants.js';
 import { WEAPON_IDS, randomWeaponId } from '../shared/weapons.js';
 import {
@@ -90,6 +92,45 @@ function testArenas() {
   check('300 arenas connect both spawns', allConnected);
   check('300 arenas are sealed with no orphan pockets', allSealed);
   check('arenas keep a usable amount of open space', minOpen >= 60, `min open cells ${minOpen}`);
+}
+
+function testStaticMaps() {
+  console.log('\nstatic maps');
+  const arena = loadArena(MAP_FY_SNOW);
+  const grid = arena.grid;
+  const at = (c, r) => grid[r * GRID_SIZE + c];
+
+  check('fy_snow grid length', grid.length === GRID_SIZE * GRID_SIZE);
+  check('fy_snow has two spawns', arena.spawns.length === 2);
+
+  // A gap in the border would let players walk straight out of the world.
+  let sealed = true;
+  for (let k = 0; k < GRID_SIZE; k++) {
+    if (at(k, 0) !== TILE_WALL || at(k, GRID_SIZE - 1) !== TILE_WALL) sealed = false;
+    if (at(0, k) !== TILE_WALL || at(GRID_SIZE - 1, k) !== TILE_WALL) sealed = false;
+  }
+  check('fy_snow border is sealed', sealed);
+
+  // 180 degree symmetry is what makes the two spawns equally good.
+  let rotational = true;
+  for (let r = 0; r < GRID_SIZE; r++) {
+    for (let c = 0; c < GRID_SIZE; c++) {
+      if (at(c, r) !== at(GRID_SIZE - 1 - c, GRID_SIZE - 1 - r)) rotational = false;
+    }
+  }
+  check('fy_snow is rotationally symmetric', rotational);
+
+  const [a, b] = arena.spawns;
+  check('fy_snow spawn A matches layout', a.c === FY_SNOW_SPAWNS[0].c && a.r === FY_SNOW_SPAWNS[0].r);
+  check('fy_snow spawns sit on open ground', at(a.c, a.r) === TILE_OPEN && at(b.c, b.r) === TILE_OPEN);
+
+  const { seen, count } = floodFill(grid, a);
+  check('fy_snow connects spawns', Boolean(seen[b.r * GRID_SIZE + b.c]));
+
+  let orphans = 0;
+  for (let i = 0; i < grid.length; i++) if (grid[i] === TILE_OPEN && !seen[i]) orphans++;
+  check('fy_snow has no orphan pockets', orphans === 0, `${orphans} unreachable open cells`);
+  check('fy_snow has room to fight', count >= 100, `reachable ${count}`);
 }
 
 function testWeaponRandomisation() {
@@ -329,6 +370,7 @@ async function testBots() {
 
 console.log('Duel Arena smoke test');
 testArenas();
+testStaticMaps();
 testWeaponRandomisation();
 testLagComp();
 await testServer();

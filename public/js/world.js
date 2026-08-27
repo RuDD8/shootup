@@ -15,6 +15,61 @@ import { AVATAR_GUN_BUILDERS, AVATAR_HOLDS } from './viewmodel.js';
 const SKY_TOP = new THREE.Color('#1b2f4d');
 const SKY_BOTTOM = new THREE.Color('#41618a');
 
+const MAP_THEMES = {
+  random: {
+    skyTop: '#1b2f4d',
+    skyBottom: '#41618a',
+    fog: 0x0d1421,
+    fogNear: 48,
+    fogFar: 175,
+    hemiSky: 0xc7ddf7,
+    hemiGround: 0x4a5568,
+    sun: 0xfff4e2,
+    sunIntensity: 2.4,
+    floorBase: '#2b3444',
+    floorGrid: 'rgba(140, 190, 245, 0.38)',
+    wall: 0x5b6980,
+    wallCap: 0x0b1118,
+    wallEmissive: 0x2f7fb5,
+    wallGlow: 1.5,
+    cover: 0x76839c,
+    coverCap: 0x11161e,
+    coverEmissive: 0xd98b3a,
+    coverGlow: 1.2,
+  },
+  // Overcast winter light. The glow strips that make the default arena readable
+  // look like neon on snow, so the wall caps are near-white and barely lit —
+  // they read as a snow ledge instead.
+  fy_snow: {
+    skyTop: '#7f97b4',
+    skyBottom: '#e6eef7',
+    fog: 0xccdae8,
+    fogNear: 70,
+    fogFar: 240,
+    hemiSky: 0xf2f8ff,
+    hemiGround: 0xb9c8d8,
+    sun: 0xfff6ea,
+    sunIntensity: 1.9,
+    floorBase: '#f1f6fb',
+    floorGrid: 'rgba(126, 152, 178, 0.2)',
+    // Snow settles on top of the walls, so their caps are near-white. Crates
+    // only get a dusting: a snow-tinted tan keeps them reading as wood from
+    // above instead of vanishing into the floor.
+    wall: 0xa6bacd,
+    wallCap: 0xeaf3fa,
+    wallEmissive: 0xffffff,
+    wallGlow: 0.3,
+    cover: 0x7d5836,
+    coverCap: 0xcbb595,
+    coverEmissive: 0xfff4e2,
+    coverGlow: 0.22,
+  },
+};
+
+function getMapTheme(mapId) {
+  return MAP_THEMES[mapId] || MAP_THEMES.random;
+}
+
 export function createRenderer(canvas) {
   const renderer = new THREE.WebGLRenderer({
     canvas,
@@ -59,13 +114,13 @@ function makeSky() {
   return new THREE.Mesh(geometry, material);
 }
 
-function makeFloorTexture() {
+function makeFloorTexture(theme) {
   const size = 256;
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = size;
   const ctx = canvas.getContext('2d');
 
-  ctx.fillStyle = '#2b3444';
+  ctx.fillStyle = theme.floorBase;
   ctx.fillRect(0, 0, size, size);
 
   // Faint speckle keeps large floors from looking like flat colour.
@@ -74,7 +129,7 @@ function makeFloorTexture() {
     ctx.fillRect(Math.random() * size, Math.random() * size, 1.5, 1.5);
   }
 
-  ctx.strokeStyle = 'rgba(140, 190, 245, 0.38)';
+  ctx.strokeStyle = theme.floorGrid;
   ctx.lineWidth = 2;
   ctx.strokeRect(1, 1, size - 2, size - 2);
 
@@ -85,17 +140,35 @@ function makeFloorTexture() {
   return texture;
 }
 
+function updateSkyColors(sky, theme) {
+  const top = new THREE.Color(theme.skyTop);
+  const bottom = new THREE.Color(theme.skyBottom);
+  const position = sky.geometry.attributes.position;
+  const colors = sky.geometry.attributes.color;
+  const colour = new THREE.Color();
+
+  for (let i = 0; i < position.count; i++) {
+    const y = position.getY(i) / 320;
+    const t = Math.pow(THREE.MathUtils.clamp(y * 0.5 + 0.5, 0, 1), 0.8);
+    colour.copy(bottom).lerp(top, t);
+    colors.setXYZ(i, colour.r, colour.g, colour.b);
+  }
+  colors.needsUpdate = true;
+}
+
 export function createScene() {
   const scene = new THREE.Scene();
+  const theme = getMapTheme('random');
   // Starts past the far wall of the arena so fog reads as atmosphere rather
   // than something that hides an opponent.
-  scene.fog = new THREE.Fog(0x0d1421, 48, 175);
-  scene.add(makeSky());
+  scene.fog = new THREE.Fog(theme.fog, theme.fogNear, theme.fogFar);
+  const sky = makeSky();
+  scene.add(sky);
 
-  const hemi = new THREE.HemisphereLight(0xc7ddf7, 0x4a5568, 2.1);
+  const hemi = new THREE.HemisphereLight(theme.hemiSky, theme.hemiGround, 2.1);
   scene.add(hemi);
 
-  const sun = new THREE.DirectionalLight(0xfff4e2, 2.4);
+  const sun = new THREE.DirectionalLight(theme.sun, theme.sunIntensity);
   sun.position.set(26, 42, 18);
   sun.castShadow = true;
   sun.shadow.mapSize.set(1024, 1024);
@@ -109,27 +182,51 @@ export function createScene() {
   sun.shadow.bias = -0.0012;
   scene.add(sun);
 
-  const floor = new THREE.Mesh(
-    new THREE.PlaneGeometry(WORLD_SIZE, WORLD_SIZE),
-    new THREE.MeshStandardMaterial({
-      map: makeFloorTexture(),
-      roughness: 0.94,
-      metalness: 0.04,
-    }),
-  );
+  const floorMat = new THREE.MeshStandardMaterial({
+    map: makeFloorTexture(theme),
+    roughness: 0.94,
+    metalness: 0.04,
+  });
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(WORLD_SIZE, WORLD_SIZE), floorMat);
   floor.rotation.x = -Math.PI / 2;
   floor.receiveShadow = true;
   scene.add(floor);
 
+  scene.userData.env = { sky, hemi, sun, floor, floorMat, mapId: 'random' };
   return scene;
+}
+
+/** Swap sky, fog, and floor to match the active map. */
+export function applyMapTheme(scene, mapId) {
+  const env = scene.userData.env;
+  if (!env || env.mapId === mapId) return;
+
+  const theme = getMapTheme(mapId);
+  env.mapId = mapId;
+
+  scene.fog.color.setHex(theme.fog);
+  scene.fog.near = theme.fogNear;
+  scene.fog.far = theme.fogFar;
+
+  updateSkyColors(env.sky, theme);
+
+  env.hemi.color.setHex(theme.hemiSky);
+  env.hemi.groundColor.setHex(theme.hemiGround);
+  env.sun.color.setHex(theme.sun);
+  env.sun.intensity = theme.sunIntensity;
+
+  if (env.floorMat.map) env.floorMat.map.dispose();
+  env.floorMat.map = makeFloorTexture(theme);
+  env.floorMat.needsUpdate = true;
 }
 
 /**
  * Builds meshes for one arena. Returns a group plus a dispose() so the next
  * round can swap geometry without leaking GPU memory.
  */
-export function buildArena(scene, arena) {
+export function buildArena(scene, arena, mapId = 'random') {
   const group = new THREE.Group();
+  const theme = getMapTheme(mapId);
 
   const wallCells = [];
   const coverCells = [];
@@ -164,7 +261,7 @@ export function buildArena(scene, arena) {
   addInstances(
     wallCells,
     WALL_H,
-    new THREE.MeshStandardMaterial({ color: 0x5b6980, roughness: 0.82, metalness: 0.12 }),
+    new THREE.MeshStandardMaterial({ color: theme.wall, roughness: 0.82, metalness: 0.12 }),
   );
 
   // Glowing lip along the top of every wall: cheap, and it makes the layout
@@ -173,9 +270,9 @@ export function buildArena(scene, arena) {
     wallCells,
     0.14,
     new THREE.MeshStandardMaterial({
-      color: 0x0b1118,
-      emissive: 0x2f7fb5,
-      emissiveIntensity: 1.5,
+      color: theme.wallCap,
+      emissive: theme.wallEmissive,
+      emissiveIntensity: theme.wallGlow,
       roughness: 0.5,
     }),
     WALL_H - 0.07,
@@ -185,16 +282,16 @@ export function buildArena(scene, arena) {
   addInstances(
     coverCells,
     COVER_H,
-    new THREE.MeshStandardMaterial({ color: 0x76839c, roughness: 0.7, metalness: 0.18 }),
+    new THREE.MeshStandardMaterial({ color: theme.cover, roughness: 0.7, metalness: 0.18 }),
   );
 
   addInstances(
     coverCells,
     0.12,
     new THREE.MeshStandardMaterial({
-      color: 0x11161e,
-      emissive: 0xd98b3a,
-      emissiveIntensity: 1.2,
+      color: theme.coverCap,
+      emissive: theme.coverEmissive,
+      emissiveIntensity: theme.coverGlow,
       roughness: 0.5,
     }),
     COVER_H - 0.06,
