@@ -13,7 +13,7 @@ const KEY = {
   RUN: 512,
 };
 
-const SENSITIVITY = 0.0022;
+const DEFAULT_SENSITIVITY = 0.0022;
 
 const GAME_KEYS = new Set([
   'Space',
@@ -73,6 +73,7 @@ export class InputController {
     this.enabled = false;
     this.playing = false;
     this.zoomFactor = 1;
+    this.sensitivity = DEFAULT_SENSITIVITY;
 
     this.keys = new Set();
     this.shoot = false;
@@ -106,7 +107,7 @@ export class InputController {
       if (!this.locked) return;
       // Scoping narrows the field of view, so scale look speed to match or
       // aiming feels twitchy at high zoom.
-      const scale = SENSITIVITY / this.zoomFactor;
+      const scale = this.sensitivity / this.zoomFactor;
       this.yaw -= e.movementX * scale;
       this.pitch -= e.movementY * scale;
       this.pitch = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, this.pitch));
@@ -202,6 +203,11 @@ export class InputController {
     } else if (this.locked) {
       this.lockBrowserKeys();
     }
+  }
+
+  setSensitivity(value) {
+    if (!Number.isFinite(value)) return;
+    this.sensitivity = Math.max(0.0005, Math.min(0.006, value));
   }
 
   addKick(yawAmount, pitchAmount) {

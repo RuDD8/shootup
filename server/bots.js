@@ -1,4 +1,12 @@
-import { EYE_HEIGHT, MAX_PITCH, MATCH_STATE, TICK_DT } from '../shared/constants.js';
+import {
+  EYE_HEIGHT,
+  GRID_SIZE,
+  MAX_PITCH,
+  MATCH_STATE,
+  TICK_DT,
+  TILE_OPEN,
+} from '../shared/constants.js';
+import { cellCenter, cellOf, listSpawnCells } from '../shared/arena.js';
 import { raycastWorld } from '../shared/physics.js';
 import { PRIMARY_WEAPON_IDS } from '../shared/weapons.js';
 
@@ -11,6 +19,8 @@ const KEY = {
   SHOOT: 32,
   RELOAD: 64,
   ZOOM: 128,
+  CROUCH: 256,
+  RUN: 512,
 };
 
 // How close the crosshair must be before the bot pulls the trigger.
@@ -20,6 +30,7 @@ const REACTION_MIN_TICKS = 16;
 const REACTION_MAX_TICKS = 34;
 // Keep tracking the last known position briefly after LOS breaks.
 const MEMORY_TICKS = 72;
+const REPATH_TICKS = 18;
 
 function decodeInput(mask, yaw, pitch) {
   return {
@@ -95,6 +106,47 @@ function aimError(yaw, pitch, dx, dy, dz, horiz) {
   return Math.hypot(yawErr, pitchErr);
 }
 
+/** Return the first open cell on a shortest path, or null when no path exists. */
+function nextPathCell(grid, start, goal) {
+  const index = (c, r) => r * GRID_SIZE + c;
+  const startIndex = index(start.c, start.r);
+  const goalIndex = index(goal.c, goal.r);
+  if (startIndex === goalIndex) return goal;
+
+  const previous = new Int16Array(GRID_SIZE * GRID_SIZE);
+  previous.fill(-1);
+  const queue = new Int16Array(GRID_SIZE * GRID_SIZE);
+  let read = 0;
+  let write = 0;
+  queue[write++] = startIndex;
+  previous[startIndex] = startIndex;
+
+  while (read < write && previous[goalIndex] === -1) {
+    const current = queue[read++];
+    const c = current % GRID_SIZE;
+    const r = Math.floor(current / GRID_SIZE);
+    for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nc = c + dc;
+      const nr = r + dr;
+      if (nc < 0 || nr < 0 || nc >= GRID_SIZE || nr >= GRID_SIZE) continue;
+      const next = index(nc, nr);
+      if (previous[next] !== -1 || grid[next] !== TILE_OPEN) continue;
+      previous[next] = current;
+      queue[write++] = next;
+    }
+  }
+
+  if (previous[goalIndex] === -1) return null;
+  let step = goalIndex;
+  while (previous[step] !== startIndex) step = previous[step];
+  return { c: step % GRID_SIZE, r: Math.floor(step / GRID_SIZE) };
+}
+
+function randomPatrolCell(match) {
+  const cells = listSpawnCells(match.arena.grid);
+  return cells[Math.floor(Math.random() * cells.length)] || { c: 2, r: 2 };
+}
+
 function initBotState(player, tick) {
   return {
     strafe: Math.random() > 0.5 ? 1 : -1,
@@ -105,6 +157,10 @@ function initBotState(player, tick) {
     reactionTicks: REACTION_MIN_TICKS + Math.floor(Math.random() * (REACTION_MAX_TICKS - REACTION_MIN_TICKS)),
     aimWobble: Math.random() * Math.PI * 2,
     turnRate: 1.5 + Math.random() * 0.7,
+    lastSeen: null,
+    patrolCell: null,
+    waypoint: null,
+    nextPathTick: tick,
   };
 }
 
@@ -135,23 +191,58 @@ function computeBotInput(match, player) {
       bs.reactAfterTick = match.tick + bs.reactionTicks;
     }
     bs.lastSeenTick = match.tick;
+    bs.lastSeen = { x: target.x, y: target.y, z: target.z };
   } else if (match.tick - bs.lastSeenTick > MEMORY_TICKS) {
     bs.hadLos = false;
   }
 
-  const hasMemory = match.tick - bs.lastSeenTick <= MEMORY_TICKS;
+  const hasMemory = Boolean(bs.lastSeen) && match.tick - bs.lastSeenTick <= MEMORY_TICKS;
   const trackTarget = canSee || hasMemory;
 
   let wantYaw = player.yaw;
   let wantPitch = player.pitch;
 
   if (trackTarget) {
+    const aimAt = canSee ? target : bs.lastSeen;
+    const aimDx = aimAt.x - player.x;
+    const aimDz = aimAt.z - player.z;
+    const aimDy = aimAt.y + EYE_HEIGHT * 0.92 - (player.y + EYE_HEIGHT);
+    const aimHoriz = Math.hypot(aimDx, aimDz);
     const wobble = Math.sin(match.tick * 0.06 + bs.aimWobble) * 0.028;
-    wantYaw = Math.atan2(-dx, -dz) + wobble;
+    wantYaw = Math.atan2(-aimDx, -aimDz) + wobble;
     wantPitch = Math.max(
       -MAX_PITCH,
-      Math.min(MAX_PITCH, Math.atan2(dy, Math.max(horiz, 0.01)) + wobble * 0.4),
+      Math.min(MAX_PITCH, Math.atan2(aimDy, Math.max(aimHoriz, 0.01)) + wobble * 0.4),
     );
+  }
+
+  // When sight is blocked, follow the open-cell graph toward the last seen
+  // position. Once memory expires, patrol instead of staring into a wall.
+  let navigating = false;
+  if (!canSee) {
+    const currentCell = cellOf(player.x, player.z);
+    const reachedPatrol =
+      bs.patrolCell &&
+      currentCell.c === bs.patrolCell.c &&
+      currentCell.r === bs.patrolCell.r;
+    if (!hasMemory && (!bs.patrolCell || reachedPatrol)) {
+      bs.patrolCell = randomPatrolCell(match);
+    }
+    const goal = hasMemory ? cellOf(bs.lastSeen.x, bs.lastSeen.z) : bs.patrolCell;
+    if (goal && match.tick >= bs.nextPathTick) {
+      bs.nextPathTick = match.tick + REPATH_TICKS;
+      bs.waypoint = nextPathCell(match.arena.grid, currentCell, goal);
+    }
+    if (bs.waypoint) {
+      const point = cellCenter(bs.waypoint.c, bs.waypoint.r);
+      const navDx = point.x - player.x;
+      const navDz = point.z - player.z;
+      if (Math.hypot(navDx, navDz) > 0.35) {
+        wantYaw = Math.atan2(-navDx, -navDz);
+        wantPitch = 0;
+        navigating = true;
+      }
+    }
   }
 
   const turnMult = canSee ? 1 : 0.45;
@@ -166,14 +257,16 @@ function computeBotInput(match, player) {
 
   let mask = 0;
 
-  if (horiz > 10) {
+  if (navigating || horiz > 10) {
     mask |= KEY.FORWARD;
   } else if (horiz < 4) {
     mask |= KEY.BACK;
   }
 
-  if (bs.strafe > 0) mask |= KEY.RIGHT;
-  else mask |= KEY.LEFT;
+  if (!navigating) {
+    if (bs.strafe > 0) mask |= KEY.RIGHT;
+    else mask |= KEY.LEFT;
+  }
 
   if (player.onGround && horiz > 6 && match.tick % 150 < 8) {
     mask |= KEY.JUMP;

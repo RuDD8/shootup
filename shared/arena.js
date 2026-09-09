@@ -225,3 +225,38 @@ export function pickRandomSpawn(grid, rand = Math.random) {
   const cell = cells[Math.floor(rand() * cells.length)];
   return cellCenter(cell.c, cell.r);
 }
+
+/**
+ * Pick from the safest open cells instead of dropping a deathmatch player
+ * beside an opponent. A random choice among the best few keeps respawns from
+ * becoming predictable while still maximizing distance from the nearest
+ * living threat.
+ */
+export function pickSafeSpawn(grid, threats = [], rand = Math.random) {
+  const cells = listSpawnCells(grid);
+  if (!cells.length) {
+    const { x, z } = cellCenter(SPAWN_A.c, SPAWN_A.r);
+    return { x, z };
+  }
+  if (!threats.length) {
+    const cell = cells[Math.floor(rand() * cells.length)];
+    return cellCenter(cell.c, cell.r);
+  }
+
+  const ranked = cells
+    .map((cell) => {
+      const point = cellCenter(cell.c, cell.r);
+      let nearestSq = Infinity;
+      for (const threat of threats) {
+        const dx = point.x - threat.x;
+        const dz = point.z - threat.z;
+        nearestSq = Math.min(nearestSq, dx * dx + dz * dz);
+      }
+      return { ...point, nearestSq };
+    })
+    .sort((a, b) => b.nearestSq - a.nearestSq);
+
+  const poolSize = Math.min(5, ranked.length);
+  const chosen = ranked[Math.floor(rand() * poolSize)];
+  return { x: chosen.x, z: chosen.z };
+}

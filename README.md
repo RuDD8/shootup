@@ -1,11 +1,10 @@
 # Duel Arena
 
-A 1v1 first-person shooter that runs in the browser. One player creates a match
-and reads out a four-character code, the other types it in on the same URL, and
-you duel. Every round builds a brand-new arena and picks one random gun for
-both players.
+A browser first-person shooter with 1v1 duels, free-for-all deathmatch, bots,
+procedural arenas, and hand-authored maps. One player creates a match and
+shares a four-character code; everyone else joins from the same URL.
 
-**No dependencies and no build step.** The WebSocket server is implemented
+**No dependencies and no build step.** Requires Node.js 22 or newer. The WebSocket server is implemented
 directly against Node's `http` module and Three.js is vendored into
 `public/vendor/`, so a clean checkout runs with nothing but Node installed.
 
@@ -61,7 +60,7 @@ soon as both are connected.
 | `W` `A` `S` `D` | Move |
 | `Space` | Jump — you can get on top of the waist-high cover |
 | `Shift` | Sprint |
-| `C` or `Ctrl` | Crouch — sprint and crouch together to slide |
+| `C` | Crouch — sprint and crouch together to slide |
 | Mouse | Aim |
 | Left click | Shoot |
 | Right click | Scope, sniper only |
@@ -88,8 +87,9 @@ tightens it to a quarter.
 
 ## Arenas
 
-Each round generates a fresh 16x16 grid of 4m columns, which become full walls
-or waist-high cover you can shoot over and jump onto.
+The host can choose a fresh procedurally generated arena or a hand-authored
+map such as **FY Snow**. Arenas use a 16x16 grid of 4m columns, which become
+full walls or waist-high cover you can shoot over and jump onto.
 
 Two properties are enforced rather than hoped for. Layouts are stamped with
 **180-degree rotational symmetry**, so neither spawn gets the better side of the
@@ -141,5 +141,6 @@ Boots the real server and drives it with Node's built-in WebSocket client, which
 checks the hand-rolled framing against an independent implementation rather than
 against itself. It covers arena connectivity across 300 generated maps, weapon
 draw distribution, the create/join flow, bad codes, round start, movement,
-input acknowledgement, ammo consumption, event delivery, bounds, and disconnect
+input acknowledgement, malformed-input sanitization, safe respawns, ammo
+consumption, event delivery, bounds, static-map integrity, bots, and disconnect
 handling.

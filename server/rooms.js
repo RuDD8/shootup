@@ -3,6 +3,7 @@ import { TICK_RATE, ROOM_CODE_LENGTH, MATCH_STATE, GAME_MODE, clampDmMinutes, pl
 import { normalizeMapId, MAP_RANDOM } from '../shared/maps/index.js';
 
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const MAX_ROOMS = 256;
 
 let nextPlayerId = 1;
 
@@ -24,6 +25,7 @@ export class RoomManager {
   }
 
   create({ mode = GAME_MODE.DUEL, dmMinutes = 5, mapId = MAP_RANDOM } = {}) {
+    if (this.rooms.size >= MAX_ROOMS) return null;
     const code = this.makeCode();
     const room = {
       code,
@@ -63,7 +65,13 @@ export class RoomManager {
   leave(room, playerId) {
     if (!room) return;
     room.match.removePlayer(playerId);
-    if (room.match.players.length === 0) this.rooms.delete(room.code);
+    const hasHuman = room.match.players.some((player) => !player.isBot);
+    if (!hasHuman) {
+      // Bots cannot own or rejoin a room. Remove bot-only rooms immediately so
+      // abandoned solo-test matches do not simulate forever.
+      room.match.players.length = 0;
+      this.rooms.delete(room.code);
+    }
   }
 
   roster(room) {
@@ -110,11 +118,24 @@ export class RoomManager {
         accumulator -= stepMs;
         steps++;
         for (const room of this.rooms.values()) {
-          if (room.match.players.length > 0) room.match.update();
+          const match = room.match;
+          const readyToAutoStart =
+            !match.isDM &&
+            match.state === MATCH_STATE.WAITING &&
+            match.players.length === 2;
+          if (match.state !== MATCH_STATE.WAITING || readyToAutoStart) {
+            match.update();
+          }
         }
       }
       if (steps === 5) accumulator = 0;
     }, 1000 / TICK_RATE);
+  }
+
+  stop() {
+    if (!this.timer) return;
+    clearInterval(this.timer);
+    this.timer = null;
   }
 
   stats() {

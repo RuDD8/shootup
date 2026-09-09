@@ -5,19 +5,20 @@
 //   node test/smoke.mjs
 
 import { spawn } from 'node:child_process';
-import { generateArena, mulberry32 } from '../shared/arena.js';
+import { generateArena, mulberry32, pickSafeSpawn } from '../shared/arena.js';
 import { loadArena, MAP_FY_SNOW } from '../shared/maps/index.js';
 import { FY_SNOW_SPAWNS } from '../shared/maps/fy_snow.js';
 import { GRID_SIZE, TILE_OPEN, TILE_WALL, MATCH_STATE } from '../shared/constants.js';
-import { WEAPON_IDS, randomWeaponId } from '../shared/weapons.js';
+import { WEAPONS, WEAPON_IDS, randomWeaponId, shotSpread } from '../shared/weapons.js';
 import {
   sampleHistory,
+  interpolateHistory,
   extrapolateRender,
   lagCompTicks,
   INTERP_DELAY_MS,
 } from '../shared/lagcomp.js';
 
-const PORT = 8899;
+const PORT = 8800 + (process.pid % 500);
 let failures = 0;
 
 function check(label, condition, detail = '') {
@@ -92,6 +93,12 @@ function testArenas() {
   check('300 arenas connect both spawns', allConnected);
   check('300 arenas are sealed with no orphan pockets', allSealed);
   check('arenas keep a usable amount of open space', minOpen >= 60, `min open cells ${minOpen}`);
+
+  const arena = generateArena(123);
+  const threat = { x: -24, z: -24 };
+  const safe = pickSafeSpawn(arena.grid, [threat], () => 0);
+  const safeDistance = Math.hypot(safe.x - threat.x, safe.z - threat.z);
+  check('safe respawn stays away from threats', safeDistance > 30, `distance ${safeDistance.toFixed(1)}m`);
 }
 
 function testStaticMaps() {
@@ -142,6 +149,10 @@ function testWeaponRandomisation() {
   const spread = Object.values(counts).every((n) => Math.abs(n - expected) < expected * 0.15);
   check('all four guns appear', Object.values(counts).every((n) => n > 0));
   check('draws are roughly uniform', spread, JSON.stringify(counts));
+  check(
+    'sniper hip fire is substantially less accurate than scoped fire',
+    shotSpread(WEAPONS.sniper, 0, false) >= shotSpread(WEAPONS.sniper, 0, true) * 40,
+  );
 }
 
 // ------------------------------------------------------------- server tests
@@ -206,6 +217,16 @@ async function testServer() {
   try {
     await sleep(700);
 
+    const health = await fetch(`http://127.0.0.1:${PORT}/health`).then((response) => response.json());
+    check('health endpoint reports server status', health.ok === true && health.rooms === 0);
+    const rifleAsset = await fetch(`http://127.0.0.1:${PORT}/models/assault_rifle.glb`);
+    check(
+      'Blender assault rifle is served as a GLB asset',
+      rifleAsset.ok &&
+        rifleAsset.headers.get('content-type') === 'model/gltf-binary' &&
+        Number(rifleAsset.headers.get('content-length')) > 1000,
+    );
+
     const a = openClient('A');
     const b = openClient('B');
     await Promise.all([a.ready, b.ready]);
@@ -248,6 +269,14 @@ async function testServer() {
 
     const firstSnap = await a.waitFor((m) => m.t === 's');
     check('snapshots include both players', firstSnap.ps.length === 2);
+    check(
+      'snapshots keep slot and sliding as distinct fields',
+      firstSnap.ps.every(
+        (player) =>
+          Number.isInteger(player.slot) &&
+          (player.sl === 0 || player.sl === 1),
+      ),
+    );
     check('snapshot starts in countdown', firstSnap.st === MATCH_STATE.COUNTDOWN, firstSnap.st);
 
     // Wait out the countdown, then drive player A forward for a while.
@@ -290,6 +319,18 @@ async function testServer() {
       .every((m) => m.ps.every((p) => Math.abs(p.x) < half && Math.abs(p.z) < half && p.y >= -0.01));
     check('players never leave the arena', inBounds);
 
+    // Non-finite values from a malicious client must not poison simulation.
+    a.socket.send('{"t":"i","s":999999,"k":1,"y":1e999,"p":-1e999}');
+    await sleep(100);
+    const sanitized = a.inbox.filter((m) => m.t === 's').pop().ps.find((p) => p.i === joinedA.id);
+    check(
+      'malformed aim values are sanitized',
+      Number.isFinite(sanitized.x) &&
+        Number.isFinite(sanitized.z) &&
+        Number.isFinite(sanitized.yaw) &&
+        Number.isFinite(sanitized.pitch),
+    );
+
     // A disconnect must be reported to the survivor.
     b.socket.close();
     const left = await a.waitFor((m) => m.t === 'opponentleft', 4000);
@@ -317,6 +358,11 @@ function testLagComp() {
 
   check('sampleHistory picks the latest sample at or before a tick', sampleHistory(history, 25).x === 2);
   check('sampleHistory falls back to the oldest entry', sampleHistory(history, 5).tick === 10);
+  const interpolated = interpolateHistory(history, 25);
+  check(
+    'interpolateHistory blends between simulation ticks',
+    interpolated.x === 3 && interpolated.z === 0.5,
+  );
 
   const moved = extrapolateRender(4, 1, 6, 2, INTERP_DELAY_MS);
   check(
@@ -366,6 +412,64 @@ async function testBots() {
   }
 }
 
+async function testDeathmatch() {
+  console.log('\ndeathmatch');
+
+  const port = PORT + 2;
+  const server = spawn(process.execPath, ['server/index.js'], {
+    env: { ...process.env, PORT: String(port) },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  try {
+    await sleep(700);
+    const host = openClient('dm-host', port);
+    const guest = openClient('dm-guest', port);
+    await Promise.all([host.ready, guest.ready]);
+
+    host.send({ t: 'create', name: 'Host', mode: 'deathmatch', mapId: 'fy_snow' });
+    const joinedHost = await host.waitFor((m) => m.t === 'joined');
+    guest.send({ t: 'join', code: joinedHost.code, name: 'Guest' });
+    const joinedGuest = await guest.waitFor((m) => m.t === 'joined');
+    check('deathmatch lobby accepts multiple players', joinedGuest.mode === 'deathmatch');
+
+    host.send({ t: 'start' });
+    const round = await host.waitFor((m) => m.t === 'round');
+    check('deathmatch starts on selected map', round.mode === 'deathmatch' && round.mapId === 'fy_snow');
+
+    host.send({ t: 'i', s: 1, k: 0, y: 0, p: 0, pw: 'sniper' });
+    const picked = await host.waitFor(
+      (m) =>
+        m.t === 's' &&
+        m.ps.some((player) => player.i === joinedHost.id && player.pw === 'sniper'),
+    );
+    check('deathmatch primary selection reaches server', Boolean(picked));
+
+    await host.waitFor((m) => m.t === 's' && m.st === MATCH_STATE.LIVE, 8000);
+    host.send({ t: 'i', s: 2, k: 0, y: 0, p: 0, sw: 2 });
+    const switched = await host.waitFor(
+      (m) =>
+        m.t === 's' &&
+        m.ps.some(
+          (player) =>
+            player.i === joinedHost.id &&
+            player.as === 2 &&
+            player.w === 'pistol',
+        ),
+    );
+    check('deathmatch secondary switching reaches server', Boolean(switched));
+
+    host.socket.close();
+    guest.socket.close();
+    await sleep(100);
+  } catch (err) {
+    failures++;
+    console.log(`  FAIL  deathmatch test threw — ${err.message}`);
+  } finally {
+    server.kill('SIGTERM');
+  }
+}
+
 // ---------------------------------------------------------------------- main
 
 console.log('Duel Arena smoke test');
@@ -375,6 +479,7 @@ testWeaponRandomisation();
 testLagComp();
 await testServer();
 await testBots();
+await testDeathmatch();
 
 console.log(
   failures === 0 ? '\nAll checks passed.\n' : `\n${failures} check(s) failed.\n`,

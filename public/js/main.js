@@ -1,5 +1,6 @@
 import * as THREE from '/vendor/three.module.js';
 import {
+  TICK_RATE,
   TICK_DT,
   MAX_HEALTH,
   MATCH_STATE,
@@ -12,7 +13,12 @@ import {
 
 import { deserializeArena } from '/shared/arena.js';
 import { stepPlayer, raycastWorld, rayCylinder } from '/shared/physics.js';
-import { WEAPONS, shotInterval, DEFAULT_PRIMARY_WEAPON_ID } from '/shared/weapons.js';
+import {
+  WEAPONS,
+  shotInterval,
+  shotSpread,
+  DEFAULT_PRIMARY_WEAPON_ID,
+} from '/shared/weapons.js';
 
 import { Net } from './net.js';
 import { InputController, KEY } from './input.js';
@@ -21,7 +27,7 @@ import { Hud } from './hud.js';
 import { ViewModel } from './viewmodel.js';
 import { Effects } from './effects.js';
 import { createRenderer, createScene, buildArena, createAvatar, applyMapTheme } from './world.js';
-import { INTERP_DELAY_MS, extrapolateRender } from '/shared/lagcomp.js';
+import { INTERP_DELAY_MS, MAX_LAG_COMP_MS, extrapolateRender } from '/shared/lagcomp.js';
 
 // Render remote players this far in the past, then extrapolate forward so avatars
 // line up with the server hitboxes players are aiming at.
@@ -84,9 +90,14 @@ const state = {
   lastCountdownStep: -1,
   serverReloadTicks: 0,
   spawnProtect: 0,
+  respawnAtMs: 0,
+  footstepTimer: 0,
+  weaponPickDismissed: false,
+  lastLeaderboardAt: 0,
 };
 
 let selectedMode = GAME_MODE.DUEL;
+const SETTINGS_KEY = 'shootup.preferences.v1';
 
 const localGun = {
   ammo: 0,
@@ -105,6 +116,44 @@ const forward = new THREE.Vector3();
 const right = new THREE.Vector3();
 
 // ------------------------------------------------------------------- helpers
+
+function sliderSensitivity(value) {
+  return 0.001 + Number(value) * 0.0003;
+}
+
+function savePreferences() {
+  try {
+    localStorage.setItem(
+      SETTINGS_KEY,
+      JSON.stringify({
+        sensitivity: Number($('sensitivity').value),
+        volume: Number($('volume').value),
+      }),
+    );
+  } catch {
+    // Privacy modes can disable storage; in-memory settings still work.
+  }
+}
+
+function applyPreferences() {
+  const sensitivity = Number($('sensitivity').value);
+  const volume = Number($('volume').value);
+  input.setSensitivity(sliderSensitivity(sensitivity));
+  audio.setVolume(volume / 100);
+  $('sensitivity-val').textContent = String(sensitivity);
+  $('volume-val').textContent = `${volume}%`;
+}
+
+function loadPreferences() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
+    if (Number.isFinite(saved.sensitivity)) $('sensitivity').value = saved.sensitivity;
+    if (Number.isFinite(saved.volume)) $('volume').value = saved.volume;
+  } catch {
+    // Ignore malformed or unavailable local storage.
+  }
+  applyPreferences();
+}
 
 function weapon() {
   return WEAPONS[state.weaponId] || WEAPONS.pistol;
@@ -142,16 +191,53 @@ function updateLoadoutUI() {
 
 function updateWeaponPickUI() {
   for (const btn of document.querySelectorAll('.pick-btn')) {
-    btn.classList.toggle('selected', btn.dataset.pw === state.primaryWeaponId);
+    const selected = btn.dataset.pw === state.primaryWeaponId;
+    btn.classList.toggle('selected', selected);
+    btn.setAttribute('aria-pressed', String(selected));
   }
 }
 
-function needsWeaponPick() {
+function updateRespawnNote() {
+  const note = $('respawn-note');
+  if (!isDM() || state.alive) {
+    note.innerHTML = 'Pistol is always equipped as secondary — press <b>2</b> to swap';
+    return;
+  }
+  const seconds = Math.max(0, (state.respawnAtMs - performance.now()) / 1000);
+  note.textContent = `Respawning in ${seconds.toFixed(1)}s · choose your next primary`;
+}
+
+function updateFootsteps(dt) {
+  const speed = Math.hypot(state.local.vx, state.local.vz);
+  const walking =
+    state.alive &&
+    state.matchState === MATCH_STATE.LIVE &&
+    state.local.onGround &&
+    speed > 1.2;
+  if (!walking) {
+    state.footstepTimer = 0;
+    return;
+  }
+
+  state.footstepTimer -= dt;
+  if (state.footstepTimer > 0) return;
+
+  const sprinting = speed > 5.2;
+  state.footstepTimer = state.local.crouching ? 0.56 : sprinting ? 0.28 : 0.4;
+  const surface = state.mapId === 'fy_snow' ? 'snow' : 'default';
+  audio.footstep(surface, state.local.crouching ? 0.55 : sprinting ? 1 : 0.78);
+}
+
+function wantsWeaponPick() {
   return (
     isDM() &&
     state.phase === 'game' &&
     (state.matchState === MATCH_STATE.COUNTDOWN || !state.alive)
   );
+}
+
+function needsWeaponPick() {
+  return wantsWeaponPick() && !state.weaponPickDismissed;
 }
 
 function syncWeaponPickPointer() {
@@ -193,6 +279,10 @@ function sendPrimaryPick(id) {
   }
   updateWeaponPickUI();
   updateLoadoutUI();
+  if (state.matchState === MATCH_STATE.COUNTDOWN) {
+    state.weaponPickDismissed = true;
+    syncWeaponPickPointer();
+  }
 }
 
 function switchToSlot(slot) {
@@ -284,7 +374,7 @@ function fireLocal() {
   muzzleWorld(tmpMuzzle);
   effects.flash(tmpMuzzle.x, tmpMuzzle.y, tmpMuzzle.z, w.id === 'shotgun' ? 1.5 : 1.1);
 
-  const spreadBase = (w.spread + state.bloom) * (state.zooming ? 0.25 : 1);
+  const spreadBase = shotSpread(w, state.bloom, state.zooming);
 
   for (let i = 0; i < w.pellets; i++) {
     const angle = Math.random() * Math.PI * 2;
@@ -397,6 +487,7 @@ net.on('round', (msg) => {
   state.mapName = msg.mapName || state.mapName;
   state.matchState = MATCH_STATE.COUNTDOWN;
   state.lastCountdownStep = -1;
+  state.weaponPickDismissed = false;
 
   applyMapTheme(scene, state.mapId);
   if (state.arenaMesh) state.arenaMesh.dispose();
@@ -416,6 +507,7 @@ net.on('round', (msg) => {
       alive: true,
       score: entry.score,
       kills: entry.kills || 0,
+      deaths: entry.deaths || 0,
       avatar: null,
       render: { x: entry.x, y: entry.y, z: entry.z, yaw: entry.yaw },
     };
@@ -488,7 +580,6 @@ net.on('round', (msg) => {
   }
 
   hud.setHealth(MAX_HEALTH);
-  hud.clearBanner();
   enterGame();
 });
 
@@ -579,13 +670,14 @@ function onSnapshot(msg) {
     if (!player && entry.i !== state.myId) {
       player = {
         id: entry.i,
-        slot: entry.sl,
+        slot: entry.slot,
         name: entry.nm || 'Player',
-        color: playerColor(entry.sl),
+        color: playerColor(entry.slot),
         weaponId: entry.w,
         alive: entry.al === 1,
         score: entry.sc,
         kills: entry.kl || 0,
+        deaths: entry.dt || 0,
         avatar: null,
         render: { x: entry.x, y: entry.y, z: entry.z, yaw: entry.yaw },
         crouching: entry.cr === 1,
@@ -601,12 +693,13 @@ function onSnapshot(msg) {
       player.weaponId = entry.w;
       player.score = entry.sc;
       player.kills = entry.kl || 0;
+      player.deaths = entry.dt || 0;
       if (entry.nm) player.name = entry.nm;
       state.scores.set(entry.i, entry.sc);
       state.kills.set(entry.i, entry.kl || 0);
 
       if (entry.i !== state.myId && !player.avatar && entry.al === 1) {
-        player.avatar = createAvatar(scene, entry.sl);
+        player.avatar = createAvatar(scene, entry.slot);
         player.avatar.setWeapon(entry.w || 'pistol');
       }
       if (player.avatar) {
@@ -621,18 +714,24 @@ function onSnapshot(msg) {
     state.alive = entry.al === 1;
     state.serverReloadTicks = entry.rl;
     state.spawnProtect = entry.sp || 0;
+    state.respawnAtMs = entry.rs
+      ? performance.now() + (entry.rs / TICK_RATE) * 1000
+      : 0;
 
-    if (isDM() && wasAlive && !state.alive) syncWeaponPickPointer();
+    const ack = msg.ack[state.myId] || 0;
+    while (state.pending.length && state.pending[0].seq <= ack) state.pending.shift();
+
+    if (isDM() && wasAlive && !state.alive) {
+      state.weaponPickDismissed = false;
+      syncWeaponPickPointer();
+    }
     if (isDM() && !wasAlive && state.alive) syncWeaponPickPointer();
 
     if (isDM()) {
       if (entry.pw) state.primaryWeaponId = entry.pw;
-      localGun.primaryAmmo = entry.pa ?? localGun.primaryAmmo;
-      localGun.secondaryAmmo = entry.sa ?? localGun.secondaryAmmo;
-      state.primaryAmmo = localGun.primaryAmmo;
-      state.secondaryAmmo = localGun.secondaryAmmo;
       const newSlot = entry.as === 2 ? 'secondary' : 'primary';
-      if (newSlot !== state.activeSlot || entry.w !== state.weaponId) {
+      const pendingSwitch = state.pending.some((item) => item.switchSlot);
+      if (!pendingSwitch && (newSlot !== state.activeSlot || entry.w !== state.weaponId)) {
         state.activeSlot = newSlot;
         state.weaponId = entry.w;
         viewModel.setWeapon(entry.w);
@@ -644,9 +743,6 @@ function onSnapshot(msg) {
 
     // Reconcile: adopt the authoritative state, then replay everything the
     // server has not acknowledged yet.
-    const ack = msg.ack[state.myId] || 0;
-    while (state.pending.length && state.pending[0].seq <= ack) state.pending.shift();
-
     const prevX = state.local.x;
     const prevY = state.local.y;
     const prevZ = state.local.z;
@@ -664,8 +760,9 @@ function onSnapshot(msg) {
     // Only replay when the server is actually moving players, otherwise the
     // client would drift forward during the freeze between rounds.
     if (state.arena && msg.st === MATCH_STATE.LIVE && state.alive) {
-      const mult = WEAPONS[state.weaponId].moveMult * (entry.zm ? 0.55 : 1);
       for (const item of state.pending) {
+        const pendingWeapon = WEAPONS[item.weaponId] || WEAPONS.pistol;
+        const mult = pendingWeapon.moveMult * (item.zooming ? 0.55 : 1);
         stepPlayer(state.arena.grid, state.local, item.input, TICK_DT, mult);
       }
     }
@@ -681,7 +778,35 @@ function onSnapshot(msg) {
       localGun.reloadEndsAt = performance.now() + (entry.rl / 60) * 1000;
     }
     if (isDM()) {
-      localGun.ammo = entry.am;
+      const serverReloading = entry.rl > 0;
+      const pendingPrimaryShot = state.pending.some(
+        (item) => item.activeSlot === 'primary' && item.input.shoot,
+      );
+      const pendingSecondaryShot = state.pending.some(
+        (item) => item.activeSlot === 'secondary' && item.input.shoot,
+      );
+      const reconcileMagazine = (predicted, authoritative, hasPendingShot) => {
+        if (!Number.isFinite(authoritative) || serverReloading) return predicted;
+        if (authoritative < predicted) return authoritative;
+        if (authoritative > predicted && !hasPendingShot && !localGun.reloadEndsAt) {
+          return authoritative;
+        }
+        return predicted;
+      };
+      localGun.primaryAmmo = reconcileMagazine(
+        localGun.primaryAmmo,
+        entry.pa,
+        pendingPrimaryShot,
+      );
+      localGun.secondaryAmmo = reconcileMagazine(
+        localGun.secondaryAmmo,
+        entry.sa,
+        pendingSecondaryShot,
+      );
+      localGun.ammo =
+        state.activeSlot === 'primary' ? localGun.primaryAmmo : localGun.secondaryAmmo;
+      state.primaryAmmo = localGun.primaryAmmo;
+      state.secondaryAmmo = localGun.secondaryAmmo;
     } else if (entry.am < localGun.ammo) {
       localGun.ammo = entry.am;
     }
@@ -695,7 +820,11 @@ function onSnapshot(msg) {
   if (msg.ev && msg.ev.length) handleEvents(msg.ev);
 
   if (isDM() && state.phase === 'game') {
-    hud.updateDmLeaderboard(buildLeaderboard());
+    const now = performance.now();
+    if (now - state.lastLeaderboardAt >= 200) {
+      state.lastLeaderboardAt = now;
+      hud.updateDmLeaderboard(buildLeaderboard());
+    }
   } else if (!isDM() && state.phase === 'game') {
     const foe = opponent();
     hud.setScores(state.scores.get(state.myId) || 0, foe ? state.scores.get(foe.id) || 0 : 0);
@@ -778,6 +907,7 @@ function buildLeaderboard() {
       id: p.id,
       name: p.name,
       kills: state.kills.get(p.id) || p.kills || 0,
+      deaths: p.deaths || 0,
       color: p.color || playerColor(p.slot),
       me: p.id === state.myId,
     }))
@@ -842,7 +972,11 @@ function applyRemoteInterpolation() {
   const buffer = state.snapshots;
   if (buffer.length === 0) return;
 
-  const renderTime = performance.now() - INTERP_DELAY_MS;
+  const interpolationDelay = Math.min(
+    MAX_LAG_COMP_MS,
+    Math.max(INTERP_DELAY_MS, net.ping * 0.75),
+  );
+  const renderTime = performance.now() - interpolationDelay;
 
   let older = null;
   let newer = null;
@@ -872,17 +1006,19 @@ function applyRemoteInterpolation() {
     const z = b ? a.z + (b.z - a.z) * t : a.z;
     const yaw = b ? lerpAngle(a.yaw, b.yaw, t) : a.yaw;
     const vx = b ? a.vx + (b.vx - a.vx) * t : a.vx;
+    const vy = b ? a.vy + (b.vy - a.vy) * t : a.vy;
     const vz = b ? a.vz + (b.vz - a.vz) * t : a.vz;
-    const extrap = extrapolateRender(x, z, vx, vz, INTERP_DELAY_MS);
+    const extrap = extrapolateRender(x, z, vx, vz, interpolationDelay);
+    const extrapolatedY = Math.max(0, y + (vy || 0) * (interpolationDelay / 1000));
     const crouching = b ? (a.cr || 0) + ((b.cr || 0) - (a.cr || 0)) * t >= 0.5 : a.cr === 1;
     const sliding = b ? (a.sl || 0) + ((b.sl || 0) - (a.sl || 0)) * t >= 0.5 : a.sl === 1;
 
-    player.render = { x: extrap.x, y, z: extrap.z, yaw };
+    player.render = { x: extrap.x, y: extrapolatedY, z: extrap.z, yaw };
     player.crouching = crouching;
     player.sliding = sliding;
 
     if (player.avatar) {
-      player.avatar.group.position.set(extrap.x, y, extrap.z);
+      player.avatar.group.position.set(extrap.x, extrapolatedY, extrap.z);
       player.avatar.group.rotation.y = yaw;
       player.avatar.group.visible = a.al === 1;
       const moveSpeed = Math.hypot(vx || 0, vz || 0);
@@ -904,7 +1040,7 @@ function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
 
-  if (state.phase === 'game' || state.phase === 'result') {
+  if (state.phase === 'game' && state.matchState !== MATCH_STATE.MATCH_OVER) {
     accumulator += dt;
     let steps = 0;
     while (accumulator >= TICK_DT && steps < 6) {
@@ -940,6 +1076,7 @@ function frame(now) {
   });
 
   effects.update(dt);
+  updateFootsteps(dt);
   hud.update(dt);
   updateHud(reloading, reloadProgress);
 
@@ -968,7 +1105,6 @@ function fixedStep() {
     k: sampled.mask,
     y: Math.round(sampled.yaw * 1000) / 1000,
     p: Math.round(sampled.pitch * 1000) / 1000,
-    pg: net.ping,
   };
   if (isDM() && sampled.switchSlot) packet.sw = sampled.switchSlot;
   net.send(packet);
@@ -982,7 +1118,14 @@ function fixedStep() {
     stepPlayer(state.arena.grid, state.local, decoded, TICK_DT, mult);
   }
 
-  state.pending.push({ seq: state.seq, input: decoded });
+  state.pending.push({
+    seq: state.seq,
+    input: decoded,
+    weaponId: state.weaponId,
+    zooming: state.zooming,
+    activeSlot: state.activeSlot,
+    switchSlot: sampled.switchSlot,
+  });
   if (state.pending.length > 200) state.pending.shift();
 
   updateLocalGun(sampled.mask);
@@ -1024,6 +1167,7 @@ function updateHud(reloading, reloadProgress) {
   hud.setPing(net.ping);
   hud.setScope(state.zooming);
   hud.setSpawnShield(state.spawnProtect > 0);
+  updateRespawnNote();
 
   const spread = (w.spread + state.bloom) * (state.zooming ? 0.25 : 1);
   hud.setCrosshairGap(5 + spread * 620);
@@ -1083,10 +1227,21 @@ for (const btn of document.querySelectorAll('.pick-btn')) {
 
 for (const btn of document.querySelectorAll('.mode-btn')) {
   btn.addEventListener('click', () => {
-    document.querySelectorAll('.mode-btn').forEach((b) => b.classList.remove('active'));
+    document.querySelectorAll('.mode-btn').forEach((b) => {
+      b.classList.remove('active');
+      b.setAttribute('aria-pressed', 'false');
+    });
     btn.classList.add('active');
+    btn.setAttribute('aria-pressed', 'true');
     selectedMode = btn.dataset.mode;
     $('dm-options').classList.toggle('hidden', selectedMode !== 'deathmatch');
+  });
+}
+
+for (const id of ['sensitivity', 'volume']) {
+  $(id).addEventListener('input', () => {
+    applyPreferences();
+    savePreferences();
   });
 }
 
@@ -1148,6 +1303,12 @@ $('btn-add-bot').addEventListener('click', () => {
 });
 
 $('click-to-play').addEventListener('click', beginPlay);
+$('click-to-play').addEventListener('keydown', (event) => {
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault();
+    beginPlay();
+  }
+});
 canvas.addEventListener('click', () => {
   if (state.phase === 'game' && !input.locked && !needsWeaponPick()) beginPlay();
 });
@@ -1174,6 +1335,7 @@ window.addEventListener('resize', () => {
 });
 
 viewModel.resize(window.innerWidth / window.innerHeight);
+loadPreferences();
 
 // Prefill the code when arriving from a shared link.
 const codeParam = new URLSearchParams(location.search).get('code');

@@ -20,14 +20,15 @@ import {
   playerHeight,
   playerHeadHeight,
 } from '../shared/constants.js';
-import { sampleHistory, lagCompTicks, historyCapacity } from '../shared/lagcomp.js';
-import { generateArena, serializeArena, cellCenter, pickRandomSpawn } from '../shared/arena.js';
+import { interpolateHistory, lagCompTicks, historyCapacity } from '../shared/lagcomp.js';
+import { serializeArena, cellCenter, pickSafeSpawn } from '../shared/arena.js';
 import { loadArena, MAP_RANDOM, normalizeMapId, mapName } from '../shared/maps/index.js';
 import { stepPlayer, raycastWorld, rayCylinder } from '../shared/physics.js';
 import {
   WEAPONS,
   randomWeaponId,
   shotInterval,
+  shotSpread,
   damageAtRange,
   HEADSHOT_MULT,
   SECONDARY_WEAPON_ID,
@@ -52,6 +53,19 @@ const KEY = {
 const HIT_RADIUS = 0.45;
 const MAX_SHOT_RANGE = 400;
 const INPUT_QUEUE_LIMIT = 6;
+const MAX_INPUT_QUEUE = 24;
+const INPUT_IDLE_TICKS = Math.round(TICK_RATE * 0.5);
+const INPUT_MASK = 0x3ff;
+
+function finiteNumber(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function normalizeAngle(angle) {
+  const tau = Math.PI * 2;
+  return ((angle + Math.PI) % tau + tau) % tau - Math.PI;
+}
 
 function decodeInput(mask, yaw, pitch) {
   return {
@@ -139,11 +153,11 @@ export class Match {
       deaths: 0,
       respawnAtTick: 0,
       spawnProtectUntil: 0,
-      pingMs: 0,
       history: [],
       inputQueue: [],
       lastInput: { ...IDLE_INPUT },
       lastSeq: 0,
+      lastInputTick: this.tick,
     };
     this.players.push(player);
     return player;
@@ -213,18 +227,23 @@ export class Match {
   queueInput(id, msg) {
     const player = this.players.find((p) => p.id === id);
     if (!player) return;
-    const yaw = Number(msg.y) || 0;
-    const pitch = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, Number(msg.p) || 0));
-    if (typeof msg.pg === 'number' && msg.pg >= 0) {
-      player.pingMs = Math.min(999, Math.round(msg.pg));
-    }
+
+    const yaw = normalizeAngle(finiteNumber(msg.y, player.yaw));
+    const pitch = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, finiteNumber(msg.p, player.pitch)));
+    const newestQueuedSeq = player.inputQueue.at(-1)?.seq ?? player.lastSeq;
+    const seq = Math.max(0, Math.floor(finiteNumber(msg.s, newestQueuedSeq)));
+    if (seq <= newestQueuedSeq) return;
+
     player.inputQueue.push({
-      seq: Number(msg.s) || 0,
-      input: decodeInput(Number(msg.k) || 0, yaw, pitch),
+      seq,
+      input: decodeInput(Math.floor(finiteNumber(msg.k)) & INPUT_MASK, yaw, pitch),
       pw: typeof msg.pw === 'string' ? msg.pw : null,
-      sw: Number(msg.sw) || 0,
+      sw: Math.floor(finiteNumber(msg.sw)),
     });
-    if (player.inputQueue.length > 24) player.inputQueue.splice(0, player.inputQueue.length - 24);
+    player.lastInputTick = this.tick;
+    if (player.inputQueue.length > MAX_INPUT_QUEUE) {
+      player.inputQueue.splice(0, player.inputQueue.length - MAX_INPUT_QUEUE);
+    }
   }
 
   beginMatch() {
@@ -253,7 +272,8 @@ export class Match {
     this.lastRoundResult = null;
 
     for (const p of this.players) {
-      const { x, z } = pickRandomSpawn(this.arena.grid);
+      const threats = this.players.filter((other) => other !== p && other.alive);
+      const { x, z } = pickSafeSpawn(this.arena.grid, threats);
       p.x = x;
       p.y = 0;
       p.z = z;
@@ -413,6 +433,7 @@ export class Match {
       yaw: p.yaw,
       score: p.score,
       kills: p.kills,
+      deaths: p.deaths,
     };
   }
 
@@ -539,6 +560,7 @@ export class Match {
         z: p.z,
         cr: p.crouching,
         vx: p.vx,
+        vy: p.vy,
         vz: p.vz,
       });
       const cap = historyCapacity();
@@ -547,11 +569,13 @@ export class Match {
   }
 
   targetStateAtShot(shooter, target) {
-    const rewind = lagCompTicks(shooter.pingMs);
+    // RTT comes from the server's WebSocket ping/pong exchange. Never trust a
+    // client-provided number to choose how far authoritative hitboxes rewind.
+    const rewind = lagCompTicks(shooter.conn?.rttMs || 0);
     if (rewind <= 0) {
       return { x: target.x, y: target.y, z: target.z, cr: target.crouching };
     }
-    const sample = sampleHistory(target.history, this.tick - rewind);
+    const sample = interpolateHistory(target.history, this.tick - rewind);
     if (!sample) {
       return { x: target.x, y: target.y, z: target.z, cr: target.crouching };
     }
@@ -566,7 +590,8 @@ export class Match {
   }
 
   respawnPlayer(player) {
-    const { x, z } = pickRandomSpawn(this.arena.grid);
+    const threats = this.players.filter((other) => other !== player && other.alive);
+    const { x, z } = pickSafeSpawn(this.arena.grid, threats);
     player.x = x;
     player.y = 0;
     player.z = z;
@@ -606,7 +631,13 @@ export class Match {
         consumed++;
       }
       if (consumed === 0) {
-        this.applyInput(player, player.lastInput, { move, shoot }, true, null, 0);
+        const stale =
+          !player.isBot &&
+          this.tick - player.lastInputTick > INPUT_IDLE_TICKS;
+        const repeatedInput = stale
+          ? decodeInput(0, player.yaw, player.pitch)
+          : player.lastInput;
+        this.applyInput(player, repeatedInput, { move, shoot }, true, null, 0);
       }
     }
   }
@@ -688,12 +719,10 @@ export class Match {
 
     const targets = this.isDM ? this.opponentsOf(player) : [this.opponentOf(player)].filter(Boolean);
 
-    const spreadBase = weapon.spread + player.bloom;
-    const spread = player.zooming ? spreadBase * 0.25 : spreadBase;
+    const spread = shotSpread(weapon, player.bloom, player.zooming);
 
     const impacts = [];
     const damageByTarget = new Map();
-    let anyHeadshot = false;
 
     for (let i = 0; i < weapon.pellets; i++) {
       const angle = Math.random() * Math.PI * 2;
@@ -744,9 +773,11 @@ export class Match {
         let dmg = damageAtRange(weapon, hitDist);
         if (isHead) {
           dmg *= HEADSHOT_MULT;
-          anyHeadshot = true;
         }
-        damageByTarget.set(hitTarget, (damageByTarget.get(hitTarget) || 0) + dmg);
+        const damage = damageByTarget.get(hitTarget) || { total: 0, head: 0 };
+        damage.total += dmg;
+        if (isHead) damage.head += dmg;
+        damageByTarget.set(hitTarget, damage);
         impacts.push({ x: px, y: py, z: pz, s: 'player' });
       } else {
         impacts.push({ x: px, y: py, z: pz, s: world.surface || 'air' });
@@ -763,11 +794,11 @@ export class Match {
       hits: impacts,
     });
 
-    for (const [target, totalDamage] of damageByTarget) {
-      if (!target.alive || totalDamage <= 0) continue;
+    for (const [target, damage] of damageByTarget) {
+      if (!target.alive || damage.total <= 0) continue;
       if (this.tick < target.spawnProtectUntil) continue;
-      const dmg = Math.round(totalDamage);
-      const headshot = anyHeadshot && dmg >= weapon.damage * HEADSHOT_MULT * 0.5;
+      const dmg = Math.round(damage.total);
+      const headshot = damage.head > 0;
       target.health -= dmg;
       this.events.push({ k: 'hurt', p: target.id, by: player.id, dmg, head: headshot });
 
@@ -805,7 +836,7 @@ export class Match {
       ack,
       ps: this.players.map((p) => ({
         i: p.id,
-        sl: p.slot,
+        slot: p.slot,
         nm: p.name,
         x: round(p.x),
         y: round(p.y),

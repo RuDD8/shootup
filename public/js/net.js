@@ -48,8 +48,13 @@ export class Net {
       if (handler) handler();
     });
 
+    let stopped = false;
     const shutdown = () => {
+      if (stopped) return;
+      stopped = true;
       clearInterval(this.pingTimer);
+      this.pingTimer = null;
+      this.pingSentAt.clear();
       if (this.onClose) this.onClose();
     };
     socket.addEventListener('close', shutdown);

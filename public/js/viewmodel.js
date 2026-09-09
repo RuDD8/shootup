@@ -1,4 +1,5 @@
 import * as THREE from '/vendor/three.module.js';
+import { mountAssaultRifle } from './model-assets.js';
 
 // The viewmodel lives in its own scene rendered after the world with the depth
 // buffer cleared, which is the standard way to stop the gun clipping into walls.
@@ -265,36 +266,45 @@ const BUILDERS = {
     const t = THEMES.assault();
     const glass = mat(0x0b1220, { emissive: 0xf87171, emissiveIntensity: 1.1, roughness: 0.3 });
     const reticle = mat(0x0b1220, { emissive: 0xff2a2a, emissiveIntensity: 2.2, roughness: 0.25 });
+    const fallback = new THREE.Group();
+    const modelHost = new THREE.Group();
+    g.add(fallback, modelHost);
 
     // Upper receiver
-    g.add(box(0.07, 0.07, 0.3, t.rail, 0, 0.04, -0.05));
+    fallback.add(box(0.07, 0.07, 0.3, t.rail, 0, 0.04, -0.05));
     // Lower receiver
-    g.add(box(0.068, 0.06, 0.26, t.body, 0, -0.02, -0.03));
+    fallback.add(box(0.068, 0.06, 0.26, t.body, 0, -0.02, -0.03));
     // Handguard (tan)
-    g.add(box(0.072, 0.075, 0.24, t.tan, 0, 0.015, -0.32));
-    g.add(box(0.05, 0.018, 0.22, t.rail, 0, 0.06, -0.32));
+    fallback.add(box(0.072, 0.075, 0.24, t.tan, 0, 0.015, -0.32));
+    fallback.add(box(0.05, 0.018, 0.22, t.rail, 0, 0.06, -0.32));
     // Barrel
-    g.add(cyl(0.013, 0.28, t.barrel, 0, 0.02, -0.56));
-    g.add(cyl(0.02, 0.05, t.steel, 0, 0.02, -0.72));
+    fallback.add(cyl(0.013, 0.28, t.barrel, 0, 0.02, -0.56));
+    fallback.add(cyl(0.02, 0.05, t.steel, 0, 0.02, -0.72));
     // Mag (curved look via two offset boxes)
-    g.add(box(0.045, 0.14, 0.08, t.mag, 0, -0.12, -0.06));
-    g.add(box(0.045, 0.1, 0.075, t.mag, 0, -0.2, -0.03));
-    g.add(box(0.048, 0.02, 0.08, t.glow, 0, -0.26, -0.02));
+    fallback.add(box(0.045, 0.14, 0.08, t.mag, 0, -0.12, -0.06));
+    fallback.add(box(0.045, 0.1, 0.075, t.mag, 0, -0.2, -0.03));
+    fallback.add(box(0.048, 0.02, 0.08, t.glow, 0, -0.26, -0.02));
     // Grip
-    g.add(grip(t.body, t.rail, 0, -0.04, 0.1, 0.4));
+    fallback.add(grip(t.body, t.rail, 0, -0.04, 0.1, 0.4));
     // Stock tube + pad
-    g.add(cyl(0.018, 0.16, t.steel, 0, 0.01, 0.2));
-    g.add(box(0.05, 0.06, 0.14, t.tan, 0, 0.0, 0.3));
-    g.add(box(0.065, 0.12, 0.035, t.body, 0, -0.01, 0.38));
+    fallback.add(cyl(0.018, 0.16, t.steel, 0, 0.01, 0.2));
+    fallback.add(box(0.05, 0.06, 0.14, t.tan, 0, 0.0, 0.3));
+    fallback.add(box(0.065, 0.12, 0.035, t.body, 0, -0.01, 0.38));
     // Holo / red-dot on top rail
-    redDotOptic(g, t.rail, glass, reticle, 0, 0.095, -0.02);
+    redDotOptic(fallback, t.rail, glass, reticle, 0, 0.095, -0.02);
     // Backup front sight (folded look)
-    g.add(box(0.014, 0.028, 0.012, t.steel, 0, 0.08, -0.48));
+    fallback.add(box(0.014, 0.028, 0.012, t.steel, 0, 0.08, -0.48));
 
-    g.add(triggerHand({ x: 0, y: -0.105, z: 0.075 }));
-    g.add(supportHand({ x: 0, y: -0.0225, z: -0.32, rise: 0.052 }));
+    g.add(triggerHand({ x: 0, y: -0.085, z: 0.05 }));
+    g.add(supportHand({ x: 0, y: -0.015, z: -0.2, rise: 0.045 }));
 
-    addMuzzle(g, 0, 0.02, -0.76, 1.0);
+    addMuzzle(g, 0, 0.04, -0.42, 0.55);
+    mountAssaultRifle(modelHost, {
+      targetLength: 0.55,
+      offset: { x: 0, y: -0.02, z: 0.02 },
+    }).then((loaded) => {
+      if (loaded) fallback.visible = false;
+    });
     return g;
   },
 
@@ -396,14 +406,24 @@ export const AVATAR_GUN_BUILDERS = {
     const t = THEMES.assault();
     const glass = mat(0x0b1220, { emissive: 0xf87171, emissiveIntensity: 1.0, roughness: 0.3 });
     const reticle = mat(0x0b1220, { emissive: 0xff2a2a, emissiveIntensity: 2.0, roughness: 0.25 });
-    g.add(box(0.065, 0.06, 0.28, t.rail, 0, 0.03, -0.06));
-    g.add(box(0.068, 0.065, 0.18, t.tan, 0, 0.01, -0.28));
-    g.add(cyl(0.012, 0.2, t.barrel, 0, 0.015, -0.48));
-    g.add(box(0.04, 0.12, 0.07, t.mag, 0, -0.1, -0.04));
-    g.add(grip(t.body, t.rail, 0, -0.03, 0.1, 0.38));
-    g.add(box(0.05, 0.05, 0.12, t.tan, 0, 0.0, 0.22));
-    redDotOptic(g, t.rail, glass, reticle, 0, 0.08, -0.04);
-    g.userData.length = 1.0;
+    const fallback = new THREE.Group();
+    const modelHost = new THREE.Group();
+    g.add(fallback, modelHost);
+    fallback.add(box(0.065, 0.06, 0.28, t.rail, 0, 0.03, -0.06));
+    fallback.add(box(0.068, 0.065, 0.18, t.tan, 0, 0.01, -0.28));
+    fallback.add(cyl(0.012, 0.2, t.barrel, 0, 0.015, -0.48));
+    fallback.add(box(0.04, 0.12, 0.07, t.mag, 0, -0.1, -0.04));
+    fallback.add(grip(t.body, t.rail, 0, -0.03, 0.1, 0.38));
+    fallback.add(box(0.05, 0.05, 0.12, t.tan, 0, 0.0, 0.22));
+    redDotOptic(fallback, t.rail, glass, reticle, 0, 0.08, -0.04);
+    mountAssaultRifle(modelHost, {
+      targetLength: 0.95,
+      castShadow: true,
+      offset: { x: 0, y: -0.02, z: 0.02 },
+    }).then((loaded) => {
+      if (loaded) fallback.visible = false;
+    });
+    g.userData.length = 0.95;
     return g;
   },
   shotgun() {
@@ -522,6 +542,7 @@ export class ViewModel {
     if (!this.weapon) return;
     this.holder.remove(this.weapon);
     this.weapon.traverse((child) => {
+      child.userData.disposed = true;
       if (child.geometry) child.geometry.dispose();
       if (child.material) {
         const mats = Array.isArray(child.material) ? child.material : [child.material];

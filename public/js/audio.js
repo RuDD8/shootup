@@ -12,6 +12,7 @@ export class Audio {
     this.ctx = null;
     this.noise = null;
     this.master = null;
+    this.volume = 0.55;
   }
 
   // Must be called from a user gesture or browsers keep the context suspended.
@@ -21,11 +22,19 @@ export class Audio {
       if (!Ctor) return;
       this.ctx = new Ctor();
       this.master = this.ctx.createGain();
-      this.master.gain.value = 0.55;
+      this.master.gain.value = this.volume;
       this.master.connect(this.ctx.destination);
       this.noise = this.makeNoise(1.0);
     }
     if (this.ctx.state === 'suspended') this.ctx.resume();
+  }
+
+  setVolume(value) {
+    if (!Number.isFinite(value)) return;
+    this.volume = Math.max(0, Math.min(1, value));
+    if (this.master && this.ctx) {
+      this.master.gain.setTargetAtTime(this.volume, this.ctx.currentTime, 0.015);
+    }
   }
 
   makeNoise(seconds) {
@@ -127,6 +136,26 @@ export class Audio {
     const env = this.ctx.createGain();
     env.gain.setValueAtTime(gain, t);
     env.gain.exponentialRampToValueAtTime(0.0001, t + 0.08);
+    src.connect(filter).connect(env).connect(this.master);
+    src.start(t);
+    src.stop(t + 0.1);
+  }
+
+  footstep(surface = 'default', gain = 1) {
+    if (!this.ctx) return;
+    const t = this.now;
+    const src = this.ctx.createBufferSource();
+    src.buffer = this.noise;
+    src.playbackRate.value = 1.8 + Math.random() * 0.55;
+
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = surface === 'snow' ? 'bandpass' : 'lowpass';
+    filter.frequency.value = surface === 'snow' ? 1050 : 420;
+    filter.Q.value = surface === 'snow' ? 0.8 : 1.3;
+
+    const env = this.ctx.createGain();
+    env.gain.setValueAtTime(0.12 * gain, t);
+    env.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
     src.connect(filter).connect(env).connect(this.master);
     src.start(t);
     src.stop(t + 0.1);

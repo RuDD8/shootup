@@ -76,7 +76,9 @@ export const WEAPONS = {
     auto: false,
     magazine: 5,
     reload: 3.0,
-    spread: 0.0006,
+    // Hip fire is deliberately unreliable; scoping restores precision.
+    spread: 0.04,
+    scopedSpread: 0.0006,
     bloom: 0.03,
     maxBloom: 0.09,
     bloomDecay: 0.04,
@@ -103,6 +105,12 @@ export function isPrimaryWeaponId(id) {
 
 export function weaponById(id) {
   return WEAPONS[id] || WEAPONS.pistol;
+}
+
+export function shotSpread(weapon, bloom = 0, zooming = false) {
+  if (!zooming) return weapon.spread + bloom;
+  const base = weapon.scopedSpread ?? weapon.spread * 0.25;
+  return base + bloom * 0.25;
 }
 
 export const HEADSHOT_MULT = 1.8;

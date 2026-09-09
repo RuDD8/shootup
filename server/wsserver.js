@@ -7,7 +7,7 @@ import { EventEmitter } from 'node:events';
 
 const GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 const MAX_PAYLOAD = 1 << 20;
-const PING_INTERVAL_MS = 25000;
+const PING_INTERVAL_MS = 5000;
 
 const OP = { CONT: 0x0, TEXT: 0x1, BINARY: 0x2, CLOSE: 0x8, PING: 0x9, PONG: 0xa };
 
@@ -37,8 +37,11 @@ export class WSConnection extends EventEmitter {
     this.buffer = Buffer.alloc(0);
     this.fragments = [];
     this.fragmentOpcode = null;
+    this.fragmentBytes = 0;
     this.closed = false;
     this.isAlive = true;
+    this.pingSentAt = 0;
+    this.rttMs = 0;
 
     socket.setNoDelay(true);
     socket.on('data', (chunk) => this.receive(chunk));
@@ -60,10 +63,13 @@ export class WSConnection extends EventEmitter {
       const b0 = buf[0];
       const b1 = buf[1];
       const fin = (b0 & 0x80) !== 0;
+      const reserved = b0 & 0x70;
       const opcode = b0 & 0x0f;
       const masked = (b1 & 0x80) !== 0;
       let len = b1 & 0x7f;
       let offset = 2;
+
+      if (reserved !== 0 || !masked) return this.close(1002);
 
       if (len === 126) {
         if (buf.length < 4) return;
@@ -77,6 +83,7 @@ export class WSConnection extends EventEmitter {
         offset = 10;
       }
       if (len > MAX_PAYLOAD) return this.close(1009);
+      if (opcode >= 0x8 && (!fin || len > 125)) return this.close(1002);
 
       let mask = null;
       if (masked) {
@@ -104,29 +111,37 @@ export class WSConnection extends EventEmitter {
         return;
       case OP.PONG:
         this.isAlive = true;
+        if (this.pingSentAt) {
+          const sample = Date.now() - this.pingSentAt;
+          this.rttMs = this.rttMs ? this.rttMs * 0.75 + sample * 0.25 : sample;
+          this.pingSentAt = 0;
+        }
         return;
       case OP.CLOSE:
         this.close(1000);
         return;
       case OP.TEXT:
       case OP.BINARY:
+        if (this.fragmentOpcode !== null) return this.close(1002);
         if (fin) {
           this.emitMessage(opcode, payload);
         } else {
           this.fragmentOpcode = opcode;
           this.fragments = [payload];
+          this.fragmentBytes = payload.length;
         }
         return;
       case OP.CONT: {
-        if (this.fragmentOpcode === null) return;
+        if (this.fragmentOpcode === null) return this.close(1002);
         this.fragments.push(payload);
-        const total = this.fragments.reduce((n, f) => n + f.length, 0);
-        if (total > MAX_PAYLOAD) return this.close(1009);
+        this.fragmentBytes += payload.length;
+        if (this.fragmentBytes > MAX_PAYLOAD) return this.close(1009);
         if (fin) {
           const joined = Buffer.concat(this.fragments);
           const op = this.fragmentOpcode;
           this.fragments = [];
           this.fragmentOpcode = null;
+          this.fragmentBytes = 0;
           this.emitMessage(op, joined);
         }
         return;
@@ -153,6 +168,7 @@ export class WSConnection extends EventEmitter {
   ping() {
     if (this.closed || this.socket.destroyed) return;
     this.isAlive = false;
+    this.pingSentAt = Date.now();
     this.socket.write(encodeFrame(OP.PING, Buffer.alloc(0)));
   }
 
@@ -211,6 +227,7 @@ export function attachWebSocket(server, onConnection) {
     conn.on('close', () => connections.delete(conn));
     if (head && head.length) conn.receive(head);
     onConnection(conn, req);
+    conn.ping();
   });
 
   const heartbeat = setInterval(() => {

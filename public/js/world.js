@@ -469,6 +469,7 @@ export function createAvatar(scene, slot) {
     if (!gun) return;
     gunHold.remove(gun);
     gun.traverse((child) => {
+      child.userData.disposed = true;
       if (child.geometry) child.geometry.dispose();
       if (child.material) {
         const mats = Array.isArray(child.material) ? child.material : [child.material];

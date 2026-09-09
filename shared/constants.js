@@ -57,7 +57,9 @@ export const ACCEL = 60;
 export const FRICTION = 9;
 export const AIR_ACCEL = 8;
 export const GRAVITY = 22;
-export const JUMP_SPEED = 7.6;
+// Gives enough clearance to mount 1.5 m cover without requiring a
+// frame-perfect horizontal crossing at the very top of the jump.
+export const JUMP_SPEED = 8.2;
 export const STEP_UP = 0.35;
 
 export const MAX_HEALTH = 100;

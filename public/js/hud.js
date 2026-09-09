@@ -88,7 +88,8 @@ export class Hud {
         `<span class="lb-rank">${i + 1}</span>` +
         `<span class="lb-dot" style="background:${entry.color}"></span>` +
         `<span class="lb-name">${escapeHtml(entry.name)}</span>` +
-        `<span class="lb-kills">${entry.kills}</span>`;
+        `<span class="lb-kills">${entry.kills}</span>` +
+        `<span class="lb-deaths">${entry.deaths}</span>`;
       this.dmList.appendChild(li);
     });
   }
@@ -134,6 +135,7 @@ export class Hud {
 
   setScope(on) {
     this.scope.classList.toggle('hidden', !on);
+    this.root.classList.toggle('scoped', on);
   }
 
   setSpawnShield(on) {

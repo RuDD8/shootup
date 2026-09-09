@@ -44,7 +44,7 @@
       <div id="dm-leaderboard" class="hud-panel hidden">
         <div class="dm-lb-head">
           <span class="dm-lb-title">LEADERBOARD</span>
-          <span class="dm-lb-unit">KILLS</span>
+          <span class="dm-lb-unit">K / D</span>
         </div>
         <ol id="dm-lb-list"></ol>
       </div>
@@ -55,10 +55,10 @@
           <span class="net-div"></span>
           <span class="net-stat"><i id="ping-dot"></i><b id="ping">--</b>ms</span>
         </div>
-        <div id="killfeed"></div>
+        <div id="killfeed" aria-live="polite" aria-relevant="additions"></div>
       </div>
 
-      <div id="banner"></div>
+      <div id="banner" aria-live="assertive"></div>
       <div id="spawn-shield" class="hidden">INVULNERABLE</div>
 
       <div id="bottom-left">
@@ -111,8 +111,8 @@
           <div class="field">
             <span>Game mode</span>
             <div id="mode-select" class="mode-select">
-              <button type="button" class="mode-btn active" data-mode="duel">1 vs 1</button>
-              <button type="button" class="mode-btn" data-mode="deathmatch">Deathmatch</button>
+              <button type="button" class="mode-btn active" data-mode="duel" aria-pressed="true">1 vs 1</button>
+              <button type="button" class="mode-btn" data-mode="deathmatch" aria-pressed="false">Deathmatch</button>
             </div>
           </div>
 
@@ -129,13 +129,27 @@
             </select>
           </label>
 
+          <div class="field preferences">
+            <span>Preferences</span>
+            <label class="preference-row">
+              <span>Mouse sensitivity</span>
+              <input id="sensitivity" type="range" min="1" max="10" value="4" step="1" />
+              <output id="sensitivity-val" for="sensitivity">4</output>
+            </label>
+            <label class="preference-row">
+              <span>Sound volume</span>
+              <input id="volume" type="range" min="0" max="100" value="55" step="5" />
+              <output id="volume-val" for="volume">55%</output>
+            </label>
+          </div>
+
           <button id="btn-create" class="primary">CREATE MATCH</button>
           <div class="or">or</div>
           <div class="join-row">
             <input id="code-input" type="text" maxlength="4" placeholder="CODE" autocomplete="off" spellcheck="false" />
             <button id="btn-join">JOIN</button>
           </div>
-          <p id="menu-error"></p>
+          <p id="menu-error" role="alert"></p>
         </div>
 
         <div id="menu-lobby" class="hidden">
@@ -146,7 +160,7 @@
           <ul id="lobby-players"></ul>
           <button id="btn-add-bot" class="secondary hidden">+ Add Bot</button>
           <button id="btn-start" class="primary hidden">START MATCH</button>
-          <p id="lobby-status">Waiting for players…</p>
+          <p id="lobby-status" aria-live="polite">Waiting for players…</p>
           <div class="spinner"></div>
         </div>
 
@@ -173,7 +187,7 @@
     <div id="weapon-pick" class="hidden">
       <div id="weapon-pick-card">
         <strong>Choose primary weapon</strong>
-        <small>Pistol is always equipped as secondary — press <b>2</b> to swap</small>
+        <small id="respawn-note">Pistol is always equipped as secondary — press <b>2</b> to swap</small>
         <div class="pick-grid">
           <button type="button" class="pick-btn" data-pw="assault">Assault Rifle</button>
           <button type="button" class="pick-btn" data-pw="sniper">Sniper Rifle</button>
@@ -182,20 +196,27 @@
       </div>
     </div>
 
-    <div id="click-to-play" class="hidden">
+    <div id="click-to-play" class="hidden" role="button" tabindex="0">
       <div>
         <strong>Click to play</strong>
         <small>Esc releases the mouse</small>
       </div>
     </div>
 
-    <div id="disconnected" class="hidden">
+    <div id="disconnected" class="hidden" role="alert">
       <div>
         <strong id="disc-title">Connection lost</strong>
         <small id="disc-detail">Reload the page to start again.</small>
       </div>
     </div>
 
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "/vendor/three.module.js"
+        }
+      }
+    </script>
     <script type="module" src="/js/main.js"></script>
   </body>
 </html>
