@@ -122,6 +122,9 @@ const localGun = {
   overheatedUntil: 0,
   chargeStartAt: 0,
   chargeFrac: 0,
+  // Single shared hum for the laser beam; stopped when beam shots cease.
+  beamSound: null,
+  lastBeamShotAt: 0,
 };
 
 const tmpOrigin = new THREE.Vector3();
@@ -454,8 +457,14 @@ function fireLocal({ chargeFrac = 1, beam = false, melee = false, projectile = f
   state.shake = Math.min(2.4, state.shake + w.shake * 0.5);
   viewModel.addRecoil(w.recoil * 0.32);
   input.addKick((Math.random() - 0.5) * w.recoil * 0.004, w.recoil * 0.006);
-  if (beam) audio.beamLoop(0.1);
-  else audio.shot(w.id, 1);
+  if (beam) {
+    // One shared hum for the whole burst. Starting a new beamLoop per shot
+    // (60/s at laser RPM) leaked unstoppable oscillators that droned forever.
+    localGun.lastBeamShotAt = performance.now();
+    if (!localGun.beamSound) localGun.beamSound = audio.beamLoop(0.1);
+  } else {
+    audio.shot(w.id, 1);
+  }
 }
 
 function updateLocalGun(mask) {
@@ -1381,6 +1390,13 @@ function frame(now) {
   });
 
   effects.update(dt, camera);
+
+  // Kill the laser hum once beam shots stop for any reason: trigger released,
+  // overheated, weapon switched, or death. Shots refresh lastBeamShotAt.
+  if (localGun.beamSound && performance.now() - localGun.lastBeamShotAt > 90) {
+    localGun.beamSound.stop();
+    localGun.beamSound = null;
+  }
 
   // Keep each rocket's scream glued to its projectile; drop sounds whose
   // projectile is gone (flew out of the world without an impact event).
