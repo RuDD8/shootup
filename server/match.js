@@ -164,6 +164,7 @@ export class Match {
       kills: 0,
       deaths: 0,
       respawnAtTick: 0,
+      wantsRespawn: false,
       spawnProtectUntil: 0,
       history: [],
       inputQueue: [],
@@ -249,6 +250,17 @@ export class Match {
   queueInput(id, msg) {
     const player = this.players.find((p) => p.id === id);
     if (!player) return;
+
+    // Click-to-respawn request; only honored once the respawn delay passed.
+    if (
+      msg.rq === 1 &&
+      !player.alive &&
+      this.state === MATCH_STATE.LIVE &&
+      player.respawnAtTick &&
+      this.tick >= player.respawnAtTick
+    ) {
+      player.wantsRespawn = true;
+    }
 
     const yaw = normalizeAngle(finiteNumber(msg.y, player.yaw));
     const pitch = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, finiteNumber(msg.p, player.pitch)));
@@ -720,6 +732,8 @@ export class Match {
   processRespawns() {
     for (const p of this.players) {
       if (p.alive || !p.respawnAtTick || this.tick < p.respawnAtTick) continue;
+      // Humans respawn on request (click); bots come back automatically.
+      if (!p.isBot && !p.wantsRespawn) continue;
       this.respawnPlayer(p);
     }
   }
@@ -753,6 +767,7 @@ export class Match {
       this.initDmLoadout(player);
     }
     player.respawnAtTick = 0;
+    player.wantsRespawn = false;
     const protectSec = this.isGunGame
       ? GUNGAME_SPAWN_PROTECT_SECONDS
       : DM_SPAWN_PROTECT_SECONDS;
@@ -1318,6 +1333,7 @@ export class Match {
     if (this.isGunGame || this.isDM) {
       const respawnSec = this.isGunGame ? GUNGAME_RESPAWN_SECONDS : DM_RESPAWN_SECONDS;
       victim.respawnAtTick = this.tick + Math.round(respawnSec * TICK_RATE);
+      victim.wantsRespawn = false;
       return;
     }
 
@@ -1343,6 +1359,7 @@ export class Match {
 
     if (this.isDM) {
       victim.respawnAtTick = this.tick + Math.round(DM_RESPAWN_SECONDS * TICK_RATE);
+      victim.wantsRespawn = false;
       return;
     }
 
@@ -1398,6 +1415,7 @@ export class Match {
 
     const respawnSec = GUNGAME_RESPAWN_SECONDS;
     victim.respawnAtTick = this.tick + Math.round(respawnSec * TICK_RATE);
+    victim.wantsRespawn = false;
   }
 
   sendSnapshot() {

@@ -103,6 +103,7 @@ const state = {
   respawnAtMs: 0,
   footstepTimer: 0,
   weaponPickDismissed: false,
+  deathInfo: null,
   lastLeaderboardAt: 0,
   gunGameOrder: [],
   gunGameLevel: 0,
@@ -234,8 +235,58 @@ function updateRespawnNote() {
     note.innerHTML = 'Pistol is always equipped as secondary — press <b>2</b> to swap';
     return;
   }
-  const seconds = Math.max(0, (state.respawnAtMs - performance.now()) / 1000);
-  note.textContent = `Respawning in ${seconds.toFixed(1)}s · choose your next primary`;
+  note.innerHTML = 'Choose your next primary · <b>click anywhere else to respawn</b>';
+}
+
+// Full-screen death overlay shown while dead in DM / Gun Game.
+function updateDeathScreen() {
+  const dead =
+    (isDM() || isGunGame()) &&
+    state.phase === 'game' &&
+    state.matchState === MATCH_STATE.LIVE &&
+    !state.alive;
+  $('death-screen').classList.toggle('show', dead);
+  if (!dead) return;
+
+  const info = state.deathInfo;
+  $('death-cause').textContent = info?.killer
+    ? info.head
+      ? `headshot by ${info.killer}`
+      : `eliminated by ${info.killer}`
+    : 'you died to your own mess';
+
+  const seconds = (state.respawnAtMs - performance.now()) / 1000;
+  const respawnEl = $('death-respawn');
+  if (seconds > 0) {
+    respawnEl.textContent = `RESPAWN IN ${seconds.toFixed(1)}`;
+    respawnEl.classList.remove('ready');
+  } else {
+    respawnEl.textContent = 'CLICK ANYWHERE TO RESPAWN';
+    respawnEl.classList.add('ready');
+  }
+}
+
+// Dead and past the respawn delay: the server is waiting for our click.
+function respawnReady() {
+  return (
+    (isDM() || isGunGame()) &&
+    state.phase === 'game' &&
+    state.matchState === MATCH_STATE.LIVE &&
+    !state.alive &&
+    performance.now() >= state.respawnAtMs
+  );
+}
+
+function requestRespawn() {
+  state.seq += 1;
+  net.send({
+    t: 'i',
+    s: state.seq,
+    k: 0,
+    y: Math.round(input.yaw * 1000) / 1000,
+    p: Math.round(input.pitch * 1000) / 1000,
+    rq: 1,
+  });
 }
 
 function updateFootsteps(dt) {
@@ -1114,10 +1165,11 @@ function handleEvents(events) {
       });
       if (ev.p === state.myId) {
         state.shake = 2.4;
-        if (isDM()) {
-          hud.banner('ELIMINATED', 'Pick a weapon · respawning…', 2.5);
-          syncWeaponPickPointer();
-        }
+        state.deathInfo = {
+          killer: killer && ev.by !== state.myId ? killer.name : null,
+          head: !!ev.head,
+        };
+        if (isDM()) syncWeaponPickPointer();
       }
     } else if (ev.k === 'respawn') {
       if (ev.p === state.myId) {
@@ -1502,6 +1554,7 @@ function updateHud(reloading, reloadProgress) {
   hud.setScope(state.zooming);
   hud.setSpawnShield(state.spawnProtect > 0);
   updateRespawnNote();
+  updateDeathScreen();
 
   const spread = (w.spread + state.bloom) * (state.zooming ? 0.25 : 1);
   hud.setCrosshairGap(5 + spread * 620);
@@ -1644,6 +1697,21 @@ $('btn-start').addEventListener('click', () => {
 
 $('btn-add-bot').addEventListener('click', () => {
   net.send({ t: 'addbot' });
+});
+
+// Dead and past the respawn delay: a click anywhere on the screen respawns.
+// Only the weapon-pick buttons are exempt so the player can still change
+// primary without instantly respawning.
+document.addEventListener('click', (event) => {
+  if (!respawnReady()) return;
+  if (event.target.closest?.('.pick-btn')) return;
+  requestRespawn();
+  if (!input.locked) {
+    // DM: pointer is free for the weapon picker; re-lock in the same click.
+    state.weaponPickDismissed = true;
+    syncWeaponPickPointer();
+    beginPlay();
+  }
 });
 
 $('click-to-play').addEventListener('click', beginPlay);

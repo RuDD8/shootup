@@ -400,7 +400,7 @@ export class Audio {
 
   // The FAHH meme scream, attached to a flying rocket. Returns a handle so the
   // caller can move the sound with the projectile and cut it off on impact.
-  fahhTracked(x, y, z, gain = 0.95) {
+  fahhTracked(x, y, z, gain = 0.55) {
     if (!this.ctx) return null;
     const panner = this.spatial(x, y, z, 50);
     const src = this.playSample('fahh', gain, panner, 0.03);
