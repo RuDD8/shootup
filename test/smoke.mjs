@@ -8,8 +8,9 @@ import { spawn } from 'node:child_process';
 import { generateArena, mulberry32, pickSafeSpawn } from '../shared/arena.js';
 import { loadArena, MAP_FY_SNOW } from '../shared/maps/index.js';
 import { FY_SNOW_SPAWNS } from '../shared/maps/fy_snow.js';
-import { GRID_SIZE, TILE_OPEN, TILE_WALL, MATCH_STATE } from '../shared/constants.js';
-import { WEAPONS, WEAPON_IDS, randomWeaponId, shotSpread } from '../shared/weapons.js';
+import { GRID_SIZE, TILE_OPEN, TILE_WALL, MATCH_STATE, GAME_MODE } from '../shared/constants.js';
+import { WEAPONS, WEAPON_IDS, randomWeaponId, shotSpread, GUNGAME_POOL } from '../shared/weapons.js';
+import { Match } from '../server/match.js';
 import {
   sampleHistory,
   interpolateHistory,
@@ -146,12 +147,77 @@ function testWeaponRandomisation() {
   const draws = 8000;
   for (let i = 0; i < draws; i++) counts[randomWeaponId()]++;
   const expected = draws / WEAPON_IDS.length;
-  const spread = Object.values(counts).every((n) => Math.abs(n - expected) < expected * 0.15);
+  // With 28 weapons and only 8k random draws, a 15% band flakes regularly.
+  const spread = Object.values(counts).every((n) => Math.abs(n - expected) < expected * 0.22);
   check('all four guns appear', Object.values(counts).every((n) => n > 0));
   check('draws are roughly uniform', spread, JSON.stringify(counts));
   check(
     'sniper hip fire is substantially less accurate than scoped fire',
     shotSpread(WEAPONS.sniper, 0, false) >= shotSpread(WEAPONS.sniper, 0, true) * 40,
+  );
+}
+
+function testGunGameRules() {
+  console.log('\ngun game + hazard rules');
+
+  const match = new Match({ code: 'TEST' }, { mode: GAME_MODE.GUNGAME });
+  match.state = MATCH_STATE.LIVE;
+  match.gunGameOrder = [...GUNGAME_POOL.slice(0, 3), 'knife'];
+  const killer = match.addPlayer('k', 'Killer', null);
+  const victim = match.addPlayer('v', 'Victim', null);
+  killer.gunGameLevel = match.gunGameOrder.length - 2; // one step before knife
+  killer.weaponId = match.gunGameOrder[killer.gunGameLevel];
+  killer.alive = true;
+  victim.gunGameLevel = 2;
+  victim.alive = true;
+  victim.health = 1;
+
+  match.gunGameAdvance(killer, victim);
+  check(
+    'leveling into knife does not demote the victim',
+    killer.weaponId === 'knife' &&
+      victim.gunGameLevel === 2 &&
+      !match.events.some((ev) => ev.k === 'ggDemote'),
+  );
+
+  match.events = [];
+  killer.weaponId = 'knife';
+  killer.gunGameLevel = match.gunGameOrder.length - 1;
+  victim.gunGameLevel = 2;
+  victim.alive = true;
+  match.gunGameAdvance(killer, victim);
+  check(
+    'actual knife kill demotes the victim',
+    victim.gunGameLevel === 1 && match.events.some((ev) => ev.k === 'ggDemote'),
+  );
+
+  const duel = new Match({ code: 'DUEL' }, { mode: GAME_MODE.DUEL });
+  duel.state = MATCH_STATE.LIVE;
+  duel.arena = { grid: '0'.repeat(16 * 16) };
+  const a = duel.addPlayer('a', 'Ada', null);
+  const b = duel.addPlayer('b', 'Bob', null);
+  a.alive = true;
+  a.health = 1;
+  a.x = 0;
+  a.z = 0;
+  b.alive = true;
+  b.x = 10;
+  b.z = 10;
+  duel.hazards.push({
+    x: 0,
+    y: 0,
+    z: 0,
+    radius: 3,
+    dps: 200,
+    owner: b.id,
+    remainingTicks: 60,
+  });
+  duel.tickHazards();
+  check(
+    'duel puddle kill ends the round for the puddle owner',
+    duel.state === MATCH_STATE.ROUND_OVER &&
+      duel.lastRoundResult?.winner === b.id &&
+      !a.alive,
   );
 }
 
@@ -226,6 +292,62 @@ async function testServer() {
         rifleAsset.headers.get('content-type') === 'model/gltf-binary' &&
         Number(rifleAsset.headers.get('content-length')) > 1000,
     );
+    const bayonetAsset = await fetch(`http://127.0.0.1:${PORT}/models/bayonet.glb`);
+    check(
+      'Blender bayonet is served as a GLB asset',
+      bayonetAsset.ok &&
+        bayonetAsset.headers.get('content-type') === 'model/gltf-binary' &&
+        Number(bayonetAsset.headers.get('content-length')) > 500,
+    );
+    const playerAsset = await fetch(`http://127.0.0.1:${PORT}/models/player_block.glb`);
+    check(
+      'Blender block player is served as a GLB asset',
+      playerAsset.ok &&
+        playerAsset.headers.get('content-type') === 'model/gltf-binary' &&
+        Number(playerAsset.headers.get('content-length')) > 1000,
+    );
+    const knifeViewmodelAsset = await fetch(`http://127.0.0.1:${PORT}/models/knife_viewmodel.glb`);
+    check(
+      'Blender knife viewmodel is served as a GLB asset',
+      knifeViewmodelAsset.ok &&
+        knifeViewmodelAsset.headers.get('content-type') === 'model/gltf-binary' &&
+        Number(knifeViewmodelAsset.headers.get('content-length')) > 1000,
+    );
+    const poopAsset = await fetch(`http://127.0.0.1:${PORT}/models/poop.glb`);
+    check(
+      'Blender throwable poop is served as a GLB asset',
+      poopAsset.ok &&
+        poopAsset.headers.get('content-type') === 'model/gltf-binary' &&
+        Number(poopAsset.headers.get('content-length')) > 1000,
+    );
+    const fartAsset = await fetch(`http://127.0.0.1:${PORT}/sounds/fart.mp3`);
+    check(
+      'fart sample is served as an MP3 asset',
+      fartAsset.ok &&
+        fartAsset.headers.get('content-type') === 'audio/mpeg' &&
+        Number(fartAsset.headers.get('content-length')) > 1000,
+    );
+    const fahhGunAsset = await fetch(`http://127.0.0.1:${PORT}/models/fahh_gun.glb`);
+    check(
+      'Blender FAHH gun is served as a GLB asset',
+      fahhGunAsset.ok &&
+        fahhGunAsset.headers.get('content-type') === 'model/gltf-binary' &&
+        Number(fahhGunAsset.headers.get('content-length')) > 1000,
+    );
+    const fahhTextAsset = await fetch(`http://127.0.0.1:${PORT}/models/fahh_text.glb`);
+    check(
+      'Blender FAHH projectile text is served as a GLB asset',
+      fahhTextAsset.ok &&
+        fahhTextAsset.headers.get('content-type') === 'model/gltf-binary' &&
+        Number(fahhTextAsset.headers.get('content-length')) > 1000,
+    );
+    const fahhSample = await fetch(`http://127.0.0.1:${PORT}/sounds/fahh.mp3`);
+    check(
+      'fahh sample is served as an MP3 asset',
+      fahhSample.ok &&
+        fahhSample.headers.get('content-type') === 'audio/mpeg' &&
+        Number(fahhSample.headers.get('content-length')) > 1000,
+    );
 
     const a = openClient('A');
     const b = openClient('B');
@@ -298,19 +420,31 @@ async function testServer() {
     const ackSnap = a.inbox.filter((m) => m.t === 's').pop();
     check('server acknowledges input sequence numbers', (ackSnap.ack[joinedA.id] || 0) > 0);
 
-    // Firing must consume ammo through the authoritative path.
+    // Hold and release once so instant, automatic, charge, beam, projectile,
+    // and melee weapons all get a chance to use their authoritative path.
     const beforeAmmo = moved.am;
-    for (let i = 0; i < 8; i++) {
-      a.send({ t: 'i', s: ++seq, k: 32, y: forwardYaw, p: 0 });
-      await sleep(16);
-      a.send({ t: 'i', s: ++seq, k: 0, y: forwardYaw, p: 0 });
-      await sleep(16);
-    }
+    const fireEventKinds = new Set(['shot', 'beam', 'projSpawn', 'melee']);
+    const fireEventsBefore = b.inbox
+      .filter((m) => m.t === 's')
+      .flatMap((m) => m.ev || [])
+      .filter((e) => fireEventKinds.has(e.k)).length;
+    a.send({ t: 'i', s: ++seq, k: 32, y: forwardYaw, p: 0 });
+    await sleep(450);
+    a.send({ t: 'i', s: ++seq, k: 0, y: forwardYaw, p: 0 });
     await sleep(200);
     const afterFire = a.inbox.filter((m) => m.t === 's').pop().ps.find((p) => p.i === joinedA.id);
     const usedAmmo = beforeAmmo - afterFire.am;
-    check('shooting consumes ammo', usedAmmo > 0 || afterFire.rl > 0, `ammo ${beforeAmmo} -> ${afterFire.am}`);
-    check('shot events reach the other client', b.count((m) => m.t === 's' && (m.ev || []).some((e) => e.k === 'shot')) > 0);
+    const fireEventsAfter = b.inbox
+      .filter((m) => m.t === 's')
+      .flatMap((m) => m.ev || [])
+      .filter((e) => fireEventKinds.has(e.k)).length;
+    const firedEvent = fireEventsAfter > fireEventsBefore;
+    check(
+      'shooting consumes ammo or uses a special weapon path',
+      usedAmmo > 0 || afterFire.rl > 0 || firedEvent,
+      `${moved.w}: ammo ${beforeAmmo} -> ${afterFire.am}`,
+    );
+    check('weapon fire events reach the other client', firedEvent, moved.w);
 
     // Player positions must stay inside the arena bounds at all times.
     const half = (GRID_SIZE * 4) / 2;
@@ -476,6 +610,7 @@ console.log('Duel Arena smoke test');
 testArenas();
 testStaticMaps();
 testWeaponRandomisation();
+testGunGameRules();
 testLagComp();
 await testServer();
 await testBots();

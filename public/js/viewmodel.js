@@ -1,8 +1,19 @@
 import * as THREE from '/vendor/three.module.js';
-import { mountAssaultRifle } from './model-assets.js';
+import {
+  mountAssaultRifle,
+  mountBayonet,
+  mountFahhGun,
+  mountKnifeViewModel,
+  mountPoopModel,
+} from './model-assets.js';
 
 // The viewmodel lives in its own scene rendered after the world with the depth
 // buffer cleared, which is the standard way to stop the gun clipping into walls.
+
+function smoothstep01(value) {
+  const t = THREE.MathUtils.clamp(value, 0, 1);
+  return t * t * (3 - 2 * t);
+}
 
 function mat(hex, { roughness = 0.55, metalness = 0.2, emissive = 0, emissiveIntensity = 0 } = {}) {
   return new THREE.MeshStandardMaterial({
@@ -281,6 +292,13 @@ const THEMES = {
     trim: mat(0x8a6a22, { roughness: 0.65, metalness: 0.1 }),
     glow: mat(0x0b1220, { emissive: 0xa3e635, emissiveIntensity: 1.4, roughness: 0.4 }),
   }),
+  fahgun: () => ({
+    body: mat(0x556644, { roughness: 0.68, metalness: 0.14 }),
+    dark: mat(0x232a30, { roughness: 0.55, metalness: 0.3 }),
+    accent: mat(0xd8352a, { roughness: 0.5, metalness: 0.15 }),
+    steel: mat(0x848d99, { roughness: 0.35, metalness: 0.5 }),
+    glow: mat(0x0b1220, { emissive: 0xff7a1f, emissiveIntensity: 1.6, roughness: 0.4 }),
+  }),
   knife: () => ({
     blade: mat(0x4a5060, { roughness: 0.2, metalness: 0.7 }),
     edge: mat(0xc0c8d0, { roughness: 0.15, metalness: 0.75 }),
@@ -329,15 +347,12 @@ function redDotOptic(g, housingMat, glassMat, accentMat, x = 0, y = 0.1, z = -0.
   g.add(optic);
 }
 
-// Tactical gloves rather than bare skin. The guns span tan, wood, olive, navy
-// and bright steel, so no single glove colour contrasts with all of them —
-// instead every finger segment gets a pale pad, and the resulting striped
-// banding reads as a hand against any of the weapons.
-const GLOVE = () => mat(0x2f3338, { roughness: 0.82, metalness: 0.06 });
-const GLOVE_DARK = () => mat(0x14171a, { roughness: 0.85, metalness: 0.05 });
-const PAD = () => mat(0xb6a893, { roughness: 0.68, metalness: 0.08 });
+// Match the Blender avatar's deliberately simple block gloves. First-person
+// fingers looked like a different character and obscured smaller weapons.
+const GLOVE = () => mat(0x141a21, { roughness: 0.8, metalness: 0.08 });
+const FINGER = () => mat(0xd0a07b, { roughness: 0.82, metalness: 0.01 });
 const SLEEVE = () => mat(0x2b3a52, { roughness: 0.85, metalness: 0.04 });
-const CUFF = () => mat(0x151c27, { roughness: 0.85, metalness: 0.05 });
+const CUFF = () => mat(0x0d1117, { roughness: 0.85, metalness: 0.05 });
 
 /**
  * Sleeved forearm receding toward the camera. `pitch` drops the far end,
@@ -358,34 +373,33 @@ function forearm(pitch, yaw, length) {
 // readable detail — knuckles, fingertips, thumb — on the -X side.
 
 /**
- * Left hand supporting the weapon from underneath. `y` is the bottom of the
- * forend: the hand cups it from below and the fingers only come part-way up the
- * near side, so nothing reaches over the top of the weapon.
+ * Left block-glove supporting the weapon from underneath.
  */
 function supportHand({ x, y, z, rise = 0.05, spread = 0, armPitch = 0.95, armYaw = -0.42, armLength = 0.5 }) {
   const glove = GLOVE();
-  const dark = GLOVE_DARK();
-  const pad = PAD();
+  const fingerMat = FINGER();
+  const cuff = CUFF();
   const g = new THREE.Group();
   g.position.set(x, y, z);
 
   const handX = -0.008 - spread;
   const handY = -0.023;
-  const fingerY = handY + rise / 2 + 0.012;
 
-  // Back of the hand cupping the forend from below
-  g.add(box(0.09, 0.058, 0.142, glove, handX, handY, 0));
-  // Fingers coming up the near side, padded so they read against the gun
+  // Block palm with four separate cuboid fingers and a thumb.
+  g.add(box(0.1, 0.065, 0.12, glove, handX, handY, 0.012));
   for (let i = 0; i < 4; i++) {
-    const fz = -0.05 + i * 0.033;
-    g.add(box(0.03, rise, 0.028, glove, handX - 0.042, fingerY, fz));
-    g.add(box(0.013, rise - 0.014, 0.028, pad, handX - 0.06, fingerY + 0.002, fz));
-    if (i < 3) g.add(box(0.058, rise + 0.004, 0.008, dark, handX - 0.05, fingerY, fz + 0.0165));
+    g.add(box(
+      0.032,
+      0.04 + rise * 0.25,
+      0.026,
+      fingerMat,
+      handX - 0.052,
+      handY + 0.018,
+      -0.03 + i * 0.031,
+    ));
   }
-  // Thumb laid along the far side
-  g.add(box(0.028, 0.03, 0.088, glove, handX + 0.046, handY + 0.022, -0.05));
-  // Wrist and forearm heading off-screen
-  g.add(box(0.072, 0.062, 0.05, dark, handX, handY - 0.006, 0.094));
+  g.add(box(0.034, 0.045, 0.075, fingerMat, handX + 0.055, handY + 0.012, -0.018));
+  g.add(box(0.105, 0.07, 0.055, cuff, handX, handY - 0.006, 0.096));
   const wrist = new THREE.Group();
   wrist.position.set(handX, handY - 0.008, 0.106);
   wrist.add(forearm(armPitch, armYaw, armLength));
@@ -395,42 +409,78 @@ function supportHand({ x, y, z, rise = 0.05, spread = 0, armPitch = 0.95, armYaw
 }
 
 /**
- * Right hand on a pistol grip. The palm hides behind the grip; the fingers wrap
- * around the front and their tips come back out on the camera side, with the
- * thumb riding along the near flank.
+ * Right block-glove centered around a weapon's pistol grip.
  */
-function triggerHand({ x, y, z, armPitch = 0.78, armYaw = 0.32, armLength = 0.36 }) {
+function triggerHand({
+  x,
+  y,
+  z,
+  armPitch = 0.78,
+  armYaw = 0.32,
+  armLength = 0.36,
+  verticalGrip = false,
+}) {
   const glove = GLOVE();
-  const dark = GLOVE_DARK();
-  const pad = PAD();
+  const fingerMat = FINGER();
+  const cuff = CUFF();
   const g = new THREE.Group();
   g.position.set(x, y, z);
 
-  // Palm behind the grip, on the far side
-  g.add(box(0.05, 0.125, 0.1, glove, 0.052, 0.0, 0.005));
-  // Fingers wrapping the front of the grip, tips protruding on the near side
-  for (let i = 0; i < 3; i++) {
-    const fy = 0.006 - i * 0.034;
-    g.add(box(0.098, 0.028, 0.027, glove, 0.006, fy, -0.04));
-    g.add(box(0.03, 0.028, 0.042, glove, -0.046, fy, -0.02));
-    g.add(box(0.012, 0.022, 0.036, pad, -0.063, fy, -0.018));
-    if (i < 2) {
-      g.add(box(0.1, 0.008, 0.03, dark, 0.006, fy - 0.017, -0.042));
-      g.add(box(0.05, 0.008, 0.044, dark, -0.05, fy - 0.017, -0.02));
+  // Block palm plus distinct fingers wrapping the grip.
+  const hand = box(0.09, 0.12, 0.1, glove, 0.025, 0, 0.012);
+  hand.rotation.z = -0.08;
+  g.add(hand);
+  for (let i = 0; i < 4; i++) {
+    if (verticalGrip) {
+      g.add(box(0.055, 0.022, 0.02, fingerMat, -0.012, 0.13, -0.055 + i * 0.026));
+    } else {
+      const fy = 0.045 - i * 0.03;
+      g.add(box(0.055, 0.021, 0.03, fingerMat, -0.012, fy + 0.09, -0.05));
     }
   }
-  // Index finger reaching forward to the trigger
-  g.add(box(0.028, 0.026, 0.085, glove, -0.03, 0.046, -0.07));
-  g.add(box(0.03, 0.018, 0.026, pad, -0.03, 0.06, -0.096));
-  // Thumb along the near flank, above the fingers
-  g.add(box(0.03, 0.03, 0.075, glove, -0.042, 0.05, 0.01));
-  // Wrist and forearm heading off-screen
-  g.add(box(0.076, 0.082, 0.05, dark, 0.04, 0.028, 0.075));
+  g.add(box(0.028, 0.032, 0.058, fingerMat, -0.038, 0.12, 0.012));
+  g.add(box(0.105, 0.09, 0.055, cuff, 0.035, 0.025, 0.076));
   const wrist = new THREE.Group();
   wrist.position.set(0.048, 0.028, 0.088);
   wrist.add(forearm(armPitch, armYaw, armLength));
   g.add(wrist);
 
+  return g;
+}
+
+/** Relaxed off-hand used by the Counter-Strike-style knife stance. */
+function readyHand({ x, y, z }) {
+  const glove = GLOVE();
+  const fingerMat = FINGER();
+  const cuff = CUFF();
+  const g = new THREE.Group();
+  g.position.set(x, y, z);
+  g.rotation.set(-0.08, -0.12, 0.16);
+
+  g.add(box(0.11, 0.09, 0.065, glove, 0, 0, 0));
+  for (let i = 0; i < 4; i++) {
+    const finger = new THREE.Group();
+    finger.position.set(0.047, -0.027 + i * 0.018, -0.008);
+    finger.rotation.z = 0.08 - i * 0.025;
+    const length = 0.044 - Math.abs(1.5 - i) * 0.004;
+    finger.add(box(length, 0.021, 0.03, fingerMat, length / 2, 0, 0));
+    const tip = new THREE.Group();
+    tip.position.set(length, 0, 0);
+    tip.rotation.z = -0.52;
+    tip.add(box(0.03, 0.02, 0.029, fingerMat, 0.015, 0, 0));
+    finger.add(tip);
+    g.add(finger);
+  }
+
+  const thumb = box(0.054, 0.026, 0.034, fingerMat, 0.027, -0.052, -0.002);
+  thumb.rotation.z = -0.42;
+  g.add(thumb);
+  g.add(box(0.105, 0.068, 0.05, cuff, 0, 0, 0.078));
+
+  const wrist = new THREE.Group();
+  wrist.position.set(0, 0, 0.096);
+  wrist.add(forearm(0.62, -0.28, 0.3));
+  g.add(wrist);
   return g;
 }
 
@@ -1360,64 +1410,140 @@ const BUILDERS = {
   poopgun() {
     const g = new THREE.Group();
     const t = THEMES.poopgun();
-    // Squirt gun body (bulky, rounded-ish)
-    g.add(box(0.075, 0.08, 0.22, t.body, 0, 0.03, -0.02));
-    g.add(box(0.07, 0.06, 0.18, t.grip, 0, -0.01, 0.0));
-    // Plunger-style nozzle
-    g.add(cyl(0.018, 0.16, t.nozzle, 0, 0.035, -0.2));
-    g.add(cyl(0.03, 0.03, t.trim, 0, 0.035, -0.29));
-    // Plunger cup at end
-    g.add(cyl(0.035, 0.02, t.body, 0, 0.035, -0.31));
-    // Tank on top (pressurized goo container)
-    g.add(cyl(0.035, 0.16, t.tank, 0, 0.1, -0.02));
-    g.add(cyl(0.02, 0.02, t.trim, 0, 0.12, 0.06));
-    // Pressure gauge
-    g.add(cyl(0.012, 0.015, t.glow, 0.04, 0.1, -0.02, 'x'));
-    // Pump handle
-    g.add(box(0.06, 0.04, 0.05, t.grip, 0, -0.04, -0.12));
-    g.add(box(0.065, 0.015, 0.04, t.trim, 0, -0.02, -0.12));
-    // Trigger area
-    g.add(box(0.04, 0.01, 0.05, t.body, 0, -0.02, 0.02));
-    // Grip
-    g.add(grip(t.grip, t.trim, 0, -0.01, 0.04, 0.3));
-    // Drip detail
-    g.add(box(0.01, 0.025, 0.01, t.glow, 0.015, 0.02, -0.3));
-    g.add(box(0.01, 0.015, 0.01, t.glow, -0.012, 0.02, -0.28));
+    const throwPivot = new THREE.Group();
+    const payloadHost = new THREE.Group();
+    const fallback = new THREE.Group();
 
-    g.add(triggerHand({ x: 0, y: -0.085, z: 0.02, armPitch: 0.82, armYaw: 0.28, armLength: 0.32 }));
-    g.add(supportHand({ x: 0, y: -0.05, z: -0.12, rise: 0.05, armPitch: 0.88, armYaw: -0.28, armLength: 0.34 }));
-    addMuzzle(g, 0, 0.035, -0.32, 0.4);
+    // Small fallback swirl while the authored GLB is loading.
+    fallback.add(cyl(0.075, 0.08, t.body, 0, 0, 0, 'z'));
+    fallback.add(cyl(0.06, 0.07, t.nozzle, 0.015, 0.065, 0, 'z'));
+    fallback.add(cyl(0.04, 0.06, t.body, -0.01, 0.12, 0, 'z'));
+    payloadHost.add(fallback);
+    payloadHost.position.set(-0.015, 0.06, -0.09);
+    payloadHost.rotation.set(0.1, -0.15, -0.12);
+    throwPivot.add(payloadHost);
+
+    // Open hand cupping the payload from below: palm slab under the base,
+    // fingers curling up behind it, thumb bracing the near-right side.
+    const gloveMat = GLOVE();
+    const fingerMat = FINGER();
+    const cuffMat = CUFF();
+    const hand = new THREE.Group();
+    hand.position.set(-0.015, 0.03, -0.09);
+    hand.add(box(0.115, 0.035, 0.115, gloveMat, 0, 0, 0.01));
+    for (let i = 0; i < 4; i++) {
+      const fx = -0.034 + i * 0.0225;
+      hand.add(box(0.026, 0.06, 0.028, fingerMat, fx, 0.028, -0.058));
+      hand.add(box(0.026, 0.028, 0.034, fingerMat, fx, 0.06, -0.044));
+    }
+    hand.add(box(0.032, 0.05, 0.03, fingerMat, 0.066, 0.022, 0.028));
+    hand.add(box(0.105, 0.07, 0.05, cuffMat, 0.012, -0.045, 0.075));
+    const wrist = new THREE.Group();
+    wrist.position.set(0.012, -0.05, 0.085);
+    wrist.add(forearm(0.7, 0.35, 0.34));
+    hand.add(wrist);
+    throwPivot.add(hand);
+    throwPivot.position.set(0, -0.01, 0.02);
+    g.add(throwPivot);
+    g.userData.throwPivot = throwPivot;
+    g.userData.throwPayload = payloadHost;
+
+    mountPoopModel(payloadHost, { targetLength: 0.18 }).then((mounted) => {
+      if (mounted) fallback.visible = false;
+    });
+    addMuzzle(g, -0.015, 0.11, -0.18, 0.3);
+    return g;
+  },
+
+  fahgun() {
+    const g = new THREE.Group();
+    const t = THEMES.fahgun();
+    const fallback = new THREE.Group();
+    const modelHost = new THREE.Group();
+    g.add(fallback, modelHost);
+
+    // Main launch tube
+    fallback.add(cyl(0.055, 0.62, t.body, 0, 0.03, -0.12));
+    // Bell muzzle
+    fallback.add(cyl(0.075, 0.12, t.dark, 0, 0.03, -0.46));
+    fallback.add(cyl(0.079, 0.02, t.accent, 0, 0.03, -0.52));
+    // Rear exhaust flare
+    fallback.add(cyl(0.068, 0.1, t.dark, 0, 0.03, 0.22));
+    // Top carry handle / sight
+    fallback.add(box(0.03, 0.05, 0.12, t.dark, 0, 0.1, -0.08));
+    fallback.add(box(0.018, 0.018, 0.02, t.glow, 0, 0.13, -0.12));
+    // Side warning stripe
+    fallback.add(box(0.006, 0.03, 0.3, t.accent, 0.057, 0.045, -0.1));
+    // Grip
+    fallback.add(grip(t.dark, t.body, 0, -0.03, 0.06, 0.35));
+
+    g.add(triggerHand({ x: 0, y: -0.09, z: 0.08 }));
+    g.add(supportHand({ x: 0, y: -0.04, z: -0.24, rise: 0.05 }));
+
+    addMuzzle(g, 0, 0.03, -0.55, 0.85);
+    mountFahhGun(modelHost, { targetLength: 0.62 }).then((loaded) => {
+      if (loaded) fallback.visible = false;
+    });
     return g;
   },
 
   knife() {
     const g = new THREE.Group();
     const t = THEMES.knife();
-    // Blade (held forward)
-    g.add(box(0.035, 0.018, 0.22, t.blade, 0, 0.04, -0.16));
-    // Cutting edge (slightly offset for bevel look)
-    g.add(box(0.032, 0.006, 0.2, t.edge, 0, 0.03, -0.15));
-    // Blade tip (narrowing)
-    g.add(box(0.025, 0.015, 0.04, t.blade, 0, 0.04, -0.29));
-    g.add(box(0.015, 0.012, 0.03, t.edge, 0, 0.038, -0.32));
-    // Fuller / blood groove
-    g.add(box(0.025, 0.005, 0.14, t.guard, 0, 0.045, -0.14));
-    // Cross guard
-    g.add(box(0.07, 0.024, 0.025, t.guard, 0, 0.038, -0.04));
-    // Handle
-    g.add(box(0.04, 0.042, 0.1, t.handle, 0, 0.035, 0.02));
-    g.add(box(0.038, 0.02, 0.09, t.trim, 0, 0.055, 0.02));
-    // Handle wrap ridges
-    g.add(box(0.042, 0.044, 0.012, t.guard, 0, 0.035, -0.01));
-    g.add(box(0.042, 0.044, 0.012, t.guard, 0, 0.035, 0.02));
-    g.add(box(0.042, 0.044, 0.012, t.guard, 0, 0.035, 0.05));
-    // Pommel
-    g.add(box(0.045, 0.035, 0.025, t.guard, 0, 0.035, 0.085));
-    g.add(box(0.02, 0.02, 0.015, t.trim, 0, 0.035, 0.098));
+    const fallbackRig = new THREE.Group();
+    const knifeRig = new THREE.Group();
+    const fallback = new THREE.Group();
+    knifeRig.rotation.set(1.12, 0.04, -0.08);
+    knifeRig.position.set(0.05, 0.01, 0);
+    knifeRig.add(fallback);
+    fallbackRig.add(knifeRig);
+    g.add(fallbackRig);
 
-    g.add(triggerHand({ x: 0, y: -0.02, z: 0.02, armPitch: 0.78, armYaw: 0.25, armLength: 0.3 }));
-    g.add(supportHand({ x: 0, y: -0.12, z: 0.04, rise: 0.04, armPitch: 0.92, armYaw: -0.22, armLength: 0.3 }));
-    addMuzzle(g, 0, 0.04, -0.34, 0.15);
+    // Blade (held forward)
+    fallback.add(box(0.035, 0.018, 0.22, t.blade, 0, 0.04, -0.16));
+    // Cutting edge (slightly offset for bevel look)
+    fallback.add(box(0.032, 0.006, 0.2, t.edge, 0, 0.03, -0.15));
+    // Blade tip (narrowing)
+    fallback.add(box(0.025, 0.015, 0.04, t.blade, 0, 0.04, -0.29));
+    fallback.add(box(0.015, 0.012, 0.03, t.edge, 0, 0.038, -0.32));
+    // Fuller / blood groove
+    fallback.add(box(0.025, 0.005, 0.14, t.guard, 0, 0.045, -0.14));
+    // Cross guard
+    fallback.add(box(0.07, 0.024, 0.025, t.guard, 0, 0.038, -0.04));
+    // Handle
+    fallback.add(box(0.04, 0.042, 0.1, t.handle, 0, 0.035, 0.02));
+    fallback.add(box(0.038, 0.02, 0.09, t.trim, 0, 0.055, 0.02));
+    // Handle wrap ridges
+    fallback.add(box(0.042, 0.044, 0.012, t.guard, 0, 0.035, -0.01));
+    fallback.add(box(0.042, 0.044, 0.012, t.guard, 0, 0.035, 0.02));
+    fallback.add(box(0.042, 0.044, 0.012, t.guard, 0, 0.035, 0.05));
+    // Pommel
+    fallback.add(box(0.045, 0.035, 0.025, t.guard, 0, 0.035, 0.085));
+    fallback.add(box(0.02, 0.02, 0.015, t.trim, 0, 0.035, 0.098));
+
+    // Compact one-handed grip; the old two-hand pose obscured the entire knife.
+    const knifeHand = triggerHand({
+      x: 0.025,
+      y: -0.02,
+      z: 0.06,
+      armPitch: 0.82,
+      armYaw: 0.3,
+      armLength: 0.22,
+      verticalGrip: true,
+    });
+    knifeHand.scale.setScalar(0.68);
+    knifeRig.add(knifeHand);
+    const offHand = readyHand({ x: -0.25, y: 0.04, z: 0.04 });
+    offHand.scale.setScalar(0.8);
+    fallbackRig.add(offHand);
+    addMuzzle(g, 0, 0.04, -0.34, 0.34);
+    mountKnifeViewModel(g, {
+      scale: 0.72,
+    }).then((model) => {
+      if (!model) return;
+      fallbackRig.visible = false;
+      g.userData.knifeHold = model.getObjectByName('Right_Hold_Pose');
+    });
     return g;
   },
 };
@@ -1794,24 +1920,54 @@ export const AVATAR_GUN_BUILDERS = {
   poopgun() {
     const g = new THREE.Group();
     const t = THEMES.poopgun();
-    g.add(box(0.065, 0.07, 0.18, t.body, 0, 0.025, -0.01));
-    g.add(cyl(0.016, 0.12, t.nozzle, 0, 0.03, -0.16));
-    g.add(cyl(0.028, 0.02, t.body, 0, 0.03, -0.23));
-    g.add(cyl(0.03, 0.12, t.tank, 0, 0.085, -0.01));
-    g.add(box(0.05, 0.035, 0.04, t.grip, 0, -0.035, -0.08));
-    g.add(grip(t.grip, t.trim, 0, -0.01, 0.03, 0.28));
-    g.userData.length = 0.4;
+    const fallback = new THREE.Group();
+    const modelHost = new THREE.Group();
+    fallback.add(cyl(0.07, 0.08, t.body, 0, 0, 0, 'z'));
+    fallback.add(cyl(0.05, 0.065, t.nozzle, 0.01, 0.06, 0, 'z'));
+    modelHost.add(fallback);
+    g.add(modelHost);
+    mountPoopModel(modelHost, { targetLength: 0.2, castShadow: true }).then((mounted) => {
+      if (mounted) fallback.visible = false;
+    });
+    g.userData.length = 0.2;
+    return g;
+  },
+  fahgun() {
+    const g = new THREE.Group();
+    const t = THEMES.fahgun();
+    const fallback = new THREE.Group();
+    const modelHost = new THREE.Group();
+    g.add(fallback, modelHost);
+    fallback.add(cyl(0.06, 0.68, t.body, 0, 0.03, -0.05));
+    fallback.add(cyl(0.08, 0.12, t.dark, 0, 0.03, -0.42));
+    fallback.add(cyl(0.07, 0.1, t.dark, 0, 0.03, 0.32));
+    fallback.add(box(0.03, 0.05, 0.12, t.dark, 0, 0.1, -0.05));
+    fallback.add(grip(t.dark, t.body, 0, -0.03, 0.1, 0.3));
+    mountFahhGun(modelHost, { targetLength: 1.0, castShadow: true }).then((loaded) => {
+      if (loaded) fallback.visible = false;
+    });
+    g.userData.length = 1.0;
     return g;
   },
   knife() {
     const g = new THREE.Group();
     const t = THEMES.knife();
-    g.add(box(0.03, 0.015, 0.18, t.blade, 0, 0.035, -0.12));
-    g.add(box(0.028, 0.005, 0.16, t.edge, 0, 0.027, -0.11));
-    g.add(box(0.06, 0.02, 0.02, t.guard, 0, 0.033, -0.02));
-    g.add(box(0.035, 0.035, 0.08, t.handle, 0, 0.03, 0.03));
-    g.add(box(0.038, 0.028, 0.02, t.guard, 0, 0.03, 0.075));
-    g.userData.length = 0.15;
+    const fallback = new THREE.Group();
+    const modelHost = new THREE.Group();
+    g.add(fallback, modelHost);
+    fallback.add(box(0.03, 0.015, 0.18, t.blade, 0, 0.035, -0.12));
+    fallback.add(box(0.028, 0.005, 0.16, t.edge, 0, 0.027, -0.11));
+    fallback.add(box(0.06, 0.02, 0.02, t.guard, 0, 0.033, -0.02));
+    fallback.add(box(0.035, 0.035, 0.08, t.handle, 0, 0.03, 0.03));
+    fallback.add(box(0.038, 0.028, 0.02, t.guard, 0, 0.03, 0.075));
+    mountBayonet(modelHost, {
+      targetLength: 0.38,
+      castShadow: true,
+      offset: { x: 0, y: 0.01, z: -0.055 },
+    }).then((loaded) => {
+      if (loaded) fallback.visible = false;
+    });
+    g.userData.length = 0.38;
     return g;
   },
 };
@@ -2020,12 +2176,19 @@ export const AVATAR_HOLDS = {
     leftArm: [0.92, 0, 0.5],
     gunOffset: [0, 0.082, -0.02],
   },
+  fahgun: {
+    rightShoulder: [0.33, 1.3, 0.06],
+    leftShoulder: [-0.33, 1.16, -0.16],
+    rightArm: [1.05, 0, -0.64],
+    leftArm: [1.45, 0, 0.56],
+    gunOffset: [0, 0.12, -0.06],
+  },
   knife: {
-    rightShoulder: [0.33, 1.3, 0.02],
-    leftShoulder: [-0.36, 1.28, 0],
-    rightArm: [0.95, 0, -0.55],
-    leftArm: [0.85, 0, 0.48],
-    gunOffset: [0, 0.075, -0.01],
+    rightShoulder: [0.34, 1.32, 0.08],
+    leftShoulder: [-0.34, 1.2, -0.04],
+    rightArm: [1.15, 0.15, -0.35],
+    leftArm: [0.55, 0, 0.35],
+    gunOffset: [0, 0.07, -0.02],
   },
 };
 
@@ -2033,6 +2196,7 @@ export const AVATAR_HOLDS = {
 // sitting so close to the camera that the stock pokes into frame.
 const VIEWMODEL_FOV = 54;
 const HOME = new THREE.Vector3(0.43, -0.18, -0.8);
+const KNIFE_HOME = new THREE.Vector3(0.1, -0.13, -0.82);
 const SCOPED = new THREE.Vector3(0.01, -0.16, -0.75);
 const VIEWMODEL_SCALE = 1.5;
 
@@ -2064,6 +2228,8 @@ export class ViewModel {
     this.sway = new THREE.Vector2();
     this.swayTarget = new THREE.Vector2();
     this.reloadPhase = 0;
+    this.swing = 0;
+    this.throwPhase = 0;
     this.hidden = false;
   }
 
@@ -2072,11 +2238,23 @@ export class ViewModel {
     this.clear();
     const build = BUILDERS[id] || BUILDERS.pistol;
     this.weapon = build();
-    // Yawed and canted like a real FPS viewmodel: the buttstock swings off the
-    // right edge instead of into frame, and the cant tips the top of the weapon
-    // toward the player so the support hand stays visible.
-    this.weapon.rotation.set(0, 0.2, 0.1);
+    if (id === 'knife') {
+      // Counter-Strike-style stance: vertical knife in the right hand with
+      // the relaxed left hand visible near the lower centre.
+      this.weapon.rotation.set(0, 0.04, -0.02);
+      this.weapon.scale.setScalar(0.95);
+    } else if (id === 'poopgun') {
+      // Hold the throwable cocked near the right shoulder.
+      this.weapon.rotation.set(-0.08, 0.08, 0.02);
+      this.weapon.scale.setScalar(0.85);
+    } else {
+      // Yawed and canted like a real FPS viewmodel: the buttstock swings off
+      // the right edge instead of into frame.
+      this.weapon.rotation.set(0, 0.2, 0.1);
+    }
     this.weaponId = id;
+    this.swing = 0;
+    this.throwPhase = 0;
     this.holder.add(this.weapon);
   }
 
@@ -2093,6 +2271,8 @@ export class ViewModel {
     });
     this.weapon = null;
     this.weaponId = null;
+    this.swing = 0;
+    this.throwPhase = 0;
   }
 
   get barrelLength() {
@@ -2108,6 +2288,16 @@ export class ViewModel {
     this.recoil = Math.min(1.4, this.recoil + amount);
   }
 
+  /** Start a first-person bayonet/knife slash. */
+  playSwing() {
+    this.swing = 1;
+  }
+
+  /** Release the held throwable with a grenade-style overhand motion. */
+  playThrow() {
+    this.throwPhase = 1;
+  }
+
   look(dYaw, dPitch) {
     this.swayTarget.set(
       THREE.MathUtils.clamp(dYaw * 6, -0.09, 0.09),
@@ -2115,7 +2305,7 @@ export class ViewModel {
     );
   }
 
-  update(dt, { moving, onGround, crouching, sliding, zooming, reloading, reloadProgress }) {
+  update(dt, { moving, onGround, crouching, sliding, zooming, reloading, reloadProgress, ammo }) {
     if (!this.weapon) return;
 
     this.hidden = Boolean(zooming);
@@ -2125,29 +2315,122 @@ export class ViewModel {
     this.sway.lerp(this.swayTarget, Math.min(1, dt * 12));
     this.swayTarget.multiplyScalar(Math.exp(-dt * 7));
 
+    if (this.swing > 0) this.swing = Math.max(0, this.swing - dt * 2.5);
+    if (this.throwPhase > 0) this.throwPhase = Math.max(0, this.throwPhase - dt * 2.8);
+
     if (moving && onGround && !sliding) this.bobTime += dt * 9.5;
     else this.bobTime += dt * 1.6;
 
     const bobX = sliding ? 0 : Math.cos(this.bobTime) * (moving && onGround ? 0.014 : 0.003);
     const bobY = sliding ? 0 : Math.abs(Math.sin(this.bobTime)) * (moving && onGround ? 0.012 : 0.002);
 
-    const home = zooming ? SCOPED : HOME;
+    const home = zooming ? SCOPED : this.weaponId === 'knife' ? KNIFE_HOME : HOME;
     const crouchDrop = crouching ? 0.06 : 0;
     const slideDrop = sliding ? 0.1 : 0;
 
     this.reloadPhase = reloading ? Math.min(1, this.reloadPhase + dt * 4) : Math.max(0, this.reloadPhase - dt * 5);
-    const reloadDip = Math.sin(Math.PI * Math.min(1, reloadProgress || 0)) * this.reloadPhase;
+    // The poopgun has its own reach-behind reload move on the throw pivot, so
+    // skip the generic barrel dip for it.
+    const reloadDip = this.weaponId === 'poopgun'
+      ? 0
+      : Math.sin(Math.PI * Math.min(1, reloadProgress || 0)) * this.reloadPhase;
+
+    // Knife stab: short anticipation pulling the arm back, a fast thrust that
+    // pitches the vertical blade toward the target, then a smooth recovery.
+    // The gripping hierarchy moves as one rigid unit so the authored wrist,
+    // fingers, and knife alignment are never disturbed.
+    const swingT = 1 - this.swing;
+    let wind = 0;
+    let strike = 0;
+    if (this.swing > 0 && swingT < 0.16) {
+      wind = smoothstep01(swingT / 0.16);
+    } else if (this.swing > 0 && swingT < 0.4) {
+      const hit = (swingT - 0.16) / 0.24;
+      strike = 1 - (1 - hit) * (1 - hit); // fast launch, decelerating into impact
+      wind = 1 - strike;
+    } else if (this.swing > 0) {
+      strike = 1 - smoothstep01((swingT - 0.4) / 0.6);
+    }
+    const knifeHold = this.weaponId === 'knife' ? this.weapon.userData.knifeHold : null;
+    if (knifeHold) {
+      // Move only the authored gripping arm; the ready hand stays planted.
+      if (!knifeHold.userData.swingRest) {
+        knifeHold.userData.swingRest = {
+          position: knifeHold.position.clone(),
+          rotation: knifeHold.rotation.clone(),
+        };
+      }
+      const rest = knifeHold.userData.swingRest;
+      knifeHold.position.set(
+        rest.position.x + wind * 0.03 - strike * 0.14,
+        rest.position.y + wind * 0.02 + strike * 0.01,
+        rest.position.z + wind * 0.06 - strike * 0.3,
+      );
+      knifeHold.rotation.set(
+        rest.rotation.x + wind * 0.16 - strike * 0.68,
+        rest.rotation.y - wind * 0.05 + strike * 0.3,
+        rest.rotation.z + wind * 0.06 - strike * 0.18,
+      );
+    }
+    const holderSlash = knifeHold ? 0 : strike;
+    const holderWind = knifeHold ? 0 : wind;
+
+    const throwPivot = this.weaponId === 'poopgun' ? this.weapon.userData.throwPivot : null;
+    if (throwPivot) {
+      if (!throwPivot.userData.throwRest) {
+        throwPivot.userData.throwRest = {
+          position: throwPivot.position.clone(),
+          rotation: throwPivot.rotation.clone(),
+        };
+      }
+      const rest = throwPivot.userData.throwRest;
+      const t = 1 - this.throwPhase;
+      const followThrough = this.throwPhase > 0 ? Math.sin(Math.min(1, t) * Math.PI) : 0;
+      // Reload: the hand sweeps down and back toward the player's rear, pauses
+      // off-screen for the grab, then swings back up holding a fresh poop.
+      const rp = reloading ? Math.min(1, reloadProgress || 0) : 0;
+      let reach = 0;
+      if (rp > 0) {
+        if (rp < 0.35) reach = smoothstep01(rp / 0.35);
+        else if (rp < 0.5) reach = 1;
+        else reach = 1 - smoothstep01((rp - 0.5) / 0.5);
+      }
+      throwPivot.position.set(
+        rest.position.x - followThrough * 0.25 + reach * 0.22,
+        rest.position.y + followThrough * 0.12 - reach * 0.42,
+        rest.position.z - followThrough * 0.32 + reach * 0.3,
+      );
+      throwPivot.rotation.set(
+        rest.rotation.x - followThrough * 0.9 + reach * 1.3,
+        rest.rotation.y + followThrough * 0.18 - reach * 0.6,
+        rest.rotation.z - followThrough * 0.48 - reach * 0.45,
+      );
+      const payload = this.weapon.userData.throwPayload;
+      if (payload) {
+        const empty = typeof ammo === 'number' && ammo <= 0;
+        const released = this.throwPhase > 0 && t >= 0.1;
+        if (reloading) {
+          // Empty hand on the way down; the poop reappears mid-grab so the
+          // hand visibly comes back up holding the fresh one.
+          payload.visible = rp >= 0.5;
+        } else {
+          // Hide the held poop once it leaves the hand, and keep the hand
+          // empty while out of ammo until the reload restocks it.
+          payload.visible = !empty && !released;
+        }
+      }
+    }
 
     this.holder.position.set(
-      home.x + this.sway.x + bobX,
-      home.y + this.sway.y + bobY - reloadDip * 0.14 - crouchDrop - slideDrop,
-      home.z + this.recoil * 0.075,
+      home.x + this.sway.x + bobX + holderSlash * -0.18 + holderWind * 0.08,
+      home.y + this.sway.y + bobY - reloadDip * 0.14 - crouchDrop - slideDrop + holderSlash * 0.04 + holderWind * 0.06,
+      home.z + this.recoil * 0.075 + holderSlash * -0.1,
     );
 
     this.holder.rotation.set(
-      this.recoil * 0.24 + reloadDip * 0.5 + (sliding ? 0.25 : 0),
-      -this.sway.x * 1.6,
-      this.sway.y * 0.9 + reloadDip * 0.3,
+      this.recoil * 0.24 + reloadDip * 0.5 + (sliding ? 0.25 : 0) + holderSlash * 0.55 + holderWind * -0.35,
+      -this.sway.x * 1.6 + holderSlash * 0.85 + holderWind * -0.45,
+      this.sway.y * 0.9 + reloadDip * 0.3 + holderSlash * -1.35 + holderWind * 0.55,
     );
   }
 

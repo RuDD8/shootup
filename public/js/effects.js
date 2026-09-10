@@ -1,4 +1,5 @@
 import * as THREE from '/vendor/three.module.js';
+import { mountPoopModel, mountFahhText } from './model-assets.js';
 
 // Every visual is drawn from a fixed pool. Nothing is allocated during a
 // firefight, so there are no GC hitches mid-duel.
@@ -95,6 +96,10 @@ export class Effects {
     for (let i = 0; i < PROJECTILE_COUNT; i++) {
       const group = new THREE.Group();
 
+      // Poop visual (default projectile kind).
+      const poopHost = new THREE.Group();
+      const fallback = new THREE.Group();
+
       const bodyGeo = new THREE.SphereGeometry(0.22, 8, 6);
       bodyGeo.scale(1, 0.75, 1);
       const bodyMat = new THREE.MeshStandardMaterial({
@@ -105,21 +110,48 @@ export class Effects {
         opacity: 0,
       });
       const body = new THREE.Mesh(bodyGeo, bodyMat);
-      group.add(body);
+      fallback.add(body);
 
       const lump1Geo = new THREE.SphereGeometry(0.11, 6, 5);
       const lump1 = new THREE.Mesh(lump1Geo, bodyMat);
       lump1.position.set(0.1, 0.08, 0.05);
-      group.add(lump1);
+      fallback.add(lump1);
 
       const lump2Geo = new THREE.SphereGeometry(0.09, 6, 5);
       const lump2 = new THREE.Mesh(lump2Geo, bodyMat);
       lump2.position.set(-0.07, 0.06, -0.08);
-      group.add(lump2);
+      fallback.add(lump2);
+
+      poopHost.add(fallback);
+      mountPoopModel(poopHost, { targetLength: 0.34, castShadow: true }).then((mounted) => {
+        if (mounted) fallback.visible = false;
+      });
+      group.add(poopHost);
+
+      // Flying "FAHH" text for the fahgun rocket.
+      const fahhHost = new THREE.Group();
+      const fahhFallbackMat = new THREE.MeshStandardMaterial({
+        color: 0xffb020,
+        emissive: 0xff5a1f,
+        emissiveIntensity: 1.4,
+        roughness: 0.4,
+      });
+      const fahhFallback = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.32, 0.1), fahhFallbackMat);
+      fahhHost.add(fahhFallback);
+      mountFahhText(fahhHost, { targetLength: 0.42, castShadow: true }).then((mounted) => {
+        if (mounted) fahhFallback.visible = false;
+      });
+      fahhHost.visible = false;
+      group.add(fahhHost);
 
       group.visible = false;
       scene.add(group);
-      this.projectilePool.push({ mesh: group, mat: bodyMat, id: null, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, active: false, spin: Math.random() * Math.PI * 2 });
+      this.projectilePool.push({
+        mesh: group, mat: bodyMat, poopHost, fahhHost,
+        id: null, kind: 'poopgun', gravity: 15,
+        x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0,
+        active: false, spin: Math.random() * Math.PI * 2,
+      });
     }
     this.projCursor = 0;
 
@@ -216,10 +248,14 @@ export class Effects {
     this.flashLightLife = FLASH_LIFE;
   }
 
-  spawnProjectile(id, x, y, z, vx, vy, vz) {
+  spawnProjectile(id, x, y, z, vx, vy, vz, kind = 'poopgun') {
     const slot = this.projectilePool[this.projCursor];
     this.projCursor = (this.projCursor + 1) % PROJECTILE_COUNT;
     slot.id = id;
+    slot.kind = kind;
+    slot.gravity = kind === 'fahgun' ? 4 : 15;
+    slot.poopHost.visible = kind !== 'fahgun';
+    slot.fahhHost.visible = kind === 'fahgun';
     slot.x = x;
     slot.y = y;
     slot.z = z;
@@ -231,6 +267,13 @@ export class Effects {
     slot.mesh.visible = true;
     slot.mat.opacity = 1;
     slot.mesh.position.set(x, y, z);
+  }
+
+  getProjectilePosition(id) {
+    for (const slot of this.projectilePool) {
+      if (slot.active && slot.id === id) return { x: slot.x, y: slot.y, z: slot.z };
+    }
+    return null;
   }
 
   removeProjectile(id) {
@@ -261,7 +304,13 @@ export class Effects {
     slot.maxLife = duration;
   }
 
-  update(dt) {
+  // A rocket-style detonation: oversized flash plus a dense spark burst.
+  explosion(x, y, z, radius = 4) {
+    this.flash(x, y, z, 3.2);
+    this.spark(x, y, z, 'wall', 42, radius);
+  }
+
+  update(dt, camera = null) {
     this.time += dt;
 
     for (const slot of this.tracers) {
@@ -315,13 +364,19 @@ export class Effects {
 
     for (const slot of this.projectilePool) {
       if (!slot.active) continue;
-      slot.vy -= 15 * dt;
+      slot.vy -= slot.gravity * dt;
       slot.x += slot.vx * dt;
       slot.y += slot.vy * dt;
       slot.z += slot.vz * dt;
       slot.spin += dt * 8;
       slot.mesh.position.set(slot.x, slot.y, slot.z);
-      slot.mesh.rotation.set(slot.spin, slot.spin * 0.7, 0);
+      if (slot.kind === 'fahgun' && camera) {
+        // Billboard the text toward the viewer, with a frantic little wobble.
+        const yaw = Math.atan2(camera.position.x - slot.x, camera.position.z - slot.z);
+        slot.mesh.rotation.set(0, yaw, Math.sin(this.time * 11 + slot.spin) * 0.14);
+      } else {
+        slot.mesh.rotation.set(slot.spin, slot.spin * 0.7, 0);
+      }
       if (slot.y < -5) {
         slot.active = false;
         slot.mesh.visible = false;

@@ -388,7 +388,7 @@ export class Match {
     player.weaponId = wid;
     player.activeSlot = 'primary';
     const w = WEAPONS[wid];
-    player.ammo = w.melee ? w.magazine : w.magazine;
+    player.ammo = w.magazine;
     player.primaryAmmo = player.ammo;
     player.secondaryAmmo = 0;
     player.heat = 0;
@@ -563,6 +563,7 @@ export class Match {
   }
 
   endRound(winner, reason) {
+    if (this.state !== MATCH_STATE.LIVE) return;
     if (winner) winner.score += 1;
     this.lastRoundResult = {
       winner: winner ? winner.id : null,
@@ -808,8 +809,9 @@ export class Match {
       player.bloom = Math.max(0, player.bloom - weapon.bloomDecay * TICK_DT);
     }
 
-    // Overheat decay when not shooting
-    if (weapon.overheat && !input.shoot) {
+    // Cool while not firing, and always during an overheat lockout so holding
+    // fire through the cooldown cannot immediately re-lock the weapon.
+    if (weapon.overheat && (!input.shoot || this.tick < player.overheatedUntilTick)) {
       player.heat = Math.max(0, player.heat - weapon.heatDecay);
     }
 
@@ -821,6 +823,18 @@ export class Match {
       }
       if (this.isGunGame) player.primaryAmmo = player.ammo;
       player.reloadUntilTick = 0;
+    }
+
+    // Poopgun reload gag: broadcast a fart when the reaching hand arrives at
+    // the player's rear (35% into the reload) so nearby players hear it too.
+    if (!player.reloadUntilTick) {
+      player.fartedThisReload = false;
+    } else if (player.weaponId === 'poopgun' && !player.fartedThisReload) {
+      const grabTick = player.reloadUntilTick - Math.round(weapon.reload * TICK_RATE * 0.65);
+      if (this.tick >= grabTick) {
+        player.fartedThisReload = true;
+        this.events.push({ k: 'fart', p: player.id, x: player.x, y: player.y, z: player.z });
+      }
     }
 
     // Process burst continuation (fires remaining burst shots automatically)
@@ -1051,7 +1065,7 @@ export class Match {
       y: oy,
       z: oz,
       vx: dx * weapon.projSpeed,
-      vy: dy * weapon.projSpeed + 3,
+      vy: dy * weapon.projSpeed + (weapon.projArc ?? 3),
       vz: dz * weapon.projSpeed,
       age: 0,
     };
@@ -1060,9 +1074,37 @@ export class Match {
       k: 'projSpawn',
       p: player.id,
       id: proj.id,
+      w: weapon.id,
       x: ox, y: oy, z: oz,
       vx: proj.vx, vy: proj.vy, vz: proj.vz,
     });
+  }
+
+  // Radial explosion damage with distance falloff. The direct-hit victim (if
+  // any) already took the projectile's contact damage and is excluded.
+  explodeProjectile(proj, x, y, z, directHitId = null) {
+    const weapon = proj.weapon;
+    if (!weapon.explodeRadius) return;
+    const owner = this.players.find((p) => p.id === proj.owner);
+    for (const target of this.players) {
+      if (!target.alive || target.id === directHitId) continue;
+      if (this.tick < target.spawnProtectUntil) continue;
+      const dx = target.x - x;
+      const dy = target.y + playerHeight(target.crouching) * 0.5 - y;
+      const dz = target.z - z;
+      const dist = Math.hypot(dx, dy, dz);
+      if (dist > weapon.explodeRadius) continue;
+      const falloff = 1 - dist / weapon.explodeRadius;
+      let dmg = Math.round((weapon.explodeDamage || 60) * (0.35 + 0.65 * falloff));
+      if (target.id === proj.owner) dmg = Math.round(dmg * 0.5); // softer self-blast
+      if (dmg <= 0) continue;
+      target.health -= dmg;
+      this.events.push({ k: 'hurt', p: target.id, by: proj.owner, dmg, head: false });
+      if (target.health <= 0) {
+        if (owner && owner.id !== target.id) this.handleKill(owner, target, false);
+        else this.handleEnvironmentalDeath(target);
+      }
+    }
   }
 
   fireMelee(player, weapon, ox, oy, oz) {
@@ -1139,7 +1181,9 @@ export class Match {
           id: proj.id,
           x: hx, y: Math.max(0, hy), z: hz,
           direct: false,
+          boom: proj.weapon.explodeRadius || 0,
         });
+        this.explodeProjectile(proj, hx, Math.max(0, hy), hz);
 
         if (proj.weapon.hazardRadius) {
           this.hazards.push({
@@ -1203,7 +1247,14 @@ export class Match {
             dur: proj.weapon.hazardDuration || 5,
           });
         }
-        this.events.push({ k: 'projImpact', id: proj.id, x: nx, y: ny, z: nz, direct: true });
+        this.events.push({
+          k: 'projImpact',
+          id: proj.id,
+          x: nx, y: ny, z: nz,
+          direct: true,
+          boom: proj.weapon.explodeRadius || 0,
+        });
+        this.explodeProjectile(proj, nx, ny, nz, hitPlayer.id);
         toRemove.push(i);
         continue;
       }
@@ -1229,35 +1280,26 @@ export class Match {
         this.events.push({ k: 'hazardExpire', x: hz.x, y: hz.y, z: hz.z });
         continue;
       }
+      if (this.state !== MATCH_STATE.LIVE) continue;
+
       const dmgPerTick = (hz.dps || 8) / TICK_RATE;
       for (const player of this.players) {
         if (!player.alive) continue;
         if (this.tick < player.spawnProtectUntil) continue;
         const dx = player.x - hz.x;
         const dz = player.z - hz.z;
-        if (Math.hypot(dx, dz) < hz.radius + HIT_RADIUS) {
-          const dmg = Math.round(dmgPerTick * 100) / 100;
-          player.health -= dmg;
-          if (player.health <= 0) {
-            player.health = 0;
-            player.alive = false;
-            player.deaths += 1;
-            const killer = this.players.find((p) => p.id === hz.owner);
-            if (killer && killer.id !== player.id) {
-              killer.kills += 1;
-              this.events.push({ k: 'die', p: player.id, by: killer.id, head: false });
-              if (this.isGunGame) this.gunGameAdvance(killer, player);
-              else if (this.isDM) {
-                player.respawnAtTick = this.tick + Math.round(DM_RESPAWN_SECONDS * TICK_RATE);
-              }
-            } else {
-              this.events.push({ k: 'die', p: player.id, by: player.id, head: false });
-              if (this.isDM || this.isGunGame) {
-                const respawnSec = this.isGunGame ? GUNGAME_RESPAWN_SECONDS : DM_RESPAWN_SECONDS;
-                player.respawnAtTick = this.tick + Math.round(respawnSec * TICK_RATE);
-              }
-            }
-          }
+        if (Math.hypot(dx, dz) >= hz.radius + HIT_RADIUS) continue;
+
+        const dmg = Math.round(dmgPerTick * 100) / 100;
+        player.health -= dmg;
+        if (player.health > 0) continue;
+
+        const killer = this.players.find((p) => p.id === hz.owner);
+        if (killer && killer.id !== player.id) {
+          // Same kill pipeline as bullets so duel rounds and Gun Game advance correctly.
+          this.handleKill(killer, player, false);
+        } else {
+          this.handleEnvironmentalDeath(player);
         }
       }
     }
@@ -1266,7 +1308,28 @@ export class Match {
     }
   }
 
+  handleEnvironmentalDeath(victim) {
+    if (!victim.alive && victim.health > 0) return;
+    victim.health = 0;
+    victim.alive = false;
+    victim.deaths += 1;
+    this.events.push({ k: 'die', p: victim.id, by: victim.id, head: false });
+
+    if (this.isGunGame || this.isDM) {
+      const respawnSec = this.isGunGame ? GUNGAME_RESPAWN_SECONDS : DM_RESPAWN_SECONDS;
+      victim.respawnAtTick = this.tick + Math.round(respawnSec * TICK_RATE);
+      return;
+    }
+
+    // Duel suicide / self-puddle: award the round to the remaining opponent.
+    const foe = this.opponentOf(victim);
+    this.endRound(foe, 'suicide');
+  }
+
   handleKill(killer, victim, headshot) {
+    if (!victim.alive && victim.health <= 0) return;
+    if (this.state !== MATCH_STATE.LIVE) return;
+
     victim.health = 0;
     victim.alive = false;
     victim.deaths += 1;
@@ -1287,6 +1350,9 @@ export class Match {
   }
 
   gunGameAdvance(killer, victim) {
+    // Capture the kill weapon before any level-up swap. Leveling *into* knife
+    // must not demote the victim; only an actual knife kill should.
+    const killedWithKnife = killer.weaponId === 'knife';
     const oldLevel = killer.gunGameLevel;
     killer.gunGameLevel = Math.min(killer.gunGameLevel + 1, this.gunGameOrder.length - 1);
     killer.score = killer.gunGameLevel;
@@ -1314,8 +1380,7 @@ export class Match {
       });
     }
 
-    // Demote victim on knife death
-    if (GUNGAME_DEMOTE_ON_KNIFE_DEATH && killer.weaponId === 'knife' && victim.gunGameLevel > 0) {
+    if (GUNGAME_DEMOTE_ON_KNIFE_DEATH && killedWithKnife && victim.gunGameLevel > 0) {
       victim.gunGameLevel = Math.max(0, victim.gunGameLevel - 1);
       victim.score = victim.gunGameLevel;
       this.events.push({
@@ -1325,7 +1390,7 @@ export class Match {
       });
     }
 
-    // Check win condition: killed with the last weapon (knife)
+    // Win only when the killer was already on the final knife level.
     if (oldLevel === this.gunGameOrder.length - 1) {
       this.endGunGame(killer);
       return;
@@ -1384,7 +1449,7 @@ export class Match {
       ev: this.events,
     };
 
-    if (this.isGunGame) {
+    if (this.projectiles.length || this.hazards.length) {
       payload.projs = this.projectiles.map((pr) => ({
         id: pr.id, x: round(pr.x), y: round(pr.y), z: round(pr.z),
       }));

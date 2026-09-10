@@ -11,6 +11,7 @@ import {
 } from '/shared/constants.js';
 import { cellCenter } from '/shared/arena.js';
 import { AVATAR_GUN_BUILDERS, AVATAR_HOLDS } from './viewmodel.js';
+import { mountBlockPlayer } from './model-assets.js';
 
 const SKY_TOP = new THREE.Color('#1b2f4d');
 const SKY_BOTTOM = new THREE.Color('#41618a');
@@ -384,6 +385,7 @@ export function createAvatar(scene, slot) {
   const group = new THREE.Group();
   const root = new THREE.Group();
   group.add(root);
+  let blenderRig = null;
 
   // --- Legs (pivot at hip) ---
   const leftLeg = new THREE.Group();
@@ -450,19 +452,165 @@ export function createAvatar(scene, slot) {
   let gun = null;
   let gunId = null;
   let hold = AVATAR_HOLDS.pistol;
+  let meleeSwing = 0;
+  let throwAnim = 0;
+  const combinedArmRotation = new THREE.Quaternion();
 
   function applyHold() {
     hold = AVATAR_HOLDS[gunId] || AVATAR_HOLDS.pistol;
     rightArm.position.fromArray(hold.rightShoulder);
     leftArm.position.fromArray(hold.leftShoulder);
-    if (gun) gun.position.fromArray(hold.gunOffset);
+    if (gun) {
+      if (blenderRig) {
+        if (gunId === 'knife') gun.position.set(0, 0, -0.045);
+        else if (gunId === 'poopgun') gun.position.set(0, 0.025, 0.02);
+        else gun.position.set(0, 0.015, -0.015);
+      } else {
+        gun.position.fromArray(hold.gunOffset);
+      }
+    }
   }
 
   /** Pose both arms onto the weapon and keep the gun aimed down the body's -Z. */
   function holdArms(swing = 0, drop = 0) {
+    if (blenderRig) {
+      const right = blenderRig.rightArm;
+      const left = blenderRig.leftArm;
+      const rightForearm = blenderRig.rightForearm;
+      const leftForearm = blenderRig.leftForearm;
+
+      if (throwAnim > 0 && gunId === 'poopgun') {
+        const t = 1 - throwAnim;
+        const follow = Math.sin(Math.min(1, t) * Math.PI);
+        // Cocked beside the shoulder, then extend rapidly toward the target.
+        right.rotation.set(-0.58 - follow * 0.85, follow * 0.12, -0.32 - follow * 0.22);
+        rightForearm.rotation.set(-1.05 + follow * 0.82, 0, follow * -0.18);
+        left.rotation.set(-hold.leftArm[0] * 0.45, hold.leftArm[1], hold.leftArm[2] * 0.45);
+        leftForearm.rotation.set(-0.5, 0, 0);
+      } else if (gunId === 'poopgun') {
+        right.rotation.set(-0.58, 0, -0.32);
+        rightForearm.rotation.set(-1.05, 0, 0);
+        left.rotation.set(-hold.leftArm[0] * 0.45, hold.leftArm[1], hold.leftArm[2] * 0.45);
+        leftForearm.rotation.set(-0.5, 0, 0);
+      } else if (meleeSwing > 0 && gunId === 'knife') {
+        const t = 1 - meleeSwing;
+        const slash = Math.sin(Math.min(1, t * 1.05) * Math.PI);
+        const wind = Math.sin(Math.min(1, t * 2) * Math.PI) * (t < 0.35 ? 1 : 0);
+        right.rotation.set(
+          -0.55 - slash * 1.0 + wind * 0.35,
+          slash * 0.45 - wind * 0.3,
+          -0.3 - slash * 0.7 + wind * 0.35,
+        );
+        rightForearm.rotation.set(-0.5 - slash * 0.35, 0, slash * -0.2);
+        // Keep the taunt arm raised and steady through the attack. The half
+        // twist around the forearm axis turns the gesture outward so it aims
+        // at the opponent instead of back at the player.
+        left.rotation.set(-1.05, 0, 0.25);
+        leftForearm.rotation.set(-1.95, Math.PI, 0);
+      } else if (gunId === 'knife') {
+        right.rotation.set(
+          -hold.rightArm[0] * 0.72 + drop - swing * 0.04,
+          hold.rightArm[1],
+          hold.rightArm[2] * 0.72,
+        );
+        rightForearm.rotation.set(-0.35, 0, 0);
+        // Taunt: raise the left fist so the extended middle finger points up,
+        // with the hand twisted outward to face the opponent.
+        left.rotation.set(-1.05 + drop * 0.4, 0, 0.25);
+        leftForearm.rotation.set(-1.95, Math.PI, 0);
+      } else {
+        right.rotation.set(
+          -hold.rightArm[0] * 0.72 + drop - swing * 0.04,
+          hold.rightArm[1],
+          hold.rightArm[2] * 0.72,
+        );
+        left.rotation.set(
+          -hold.leftArm[0] * 0.72 + drop * 0.8 - swing * 0.035,
+          hold.leftArm[1],
+          hold.leftArm[2] * 0.72,
+        );
+        rightForearm.rotation.set(-0.62, 0, 0);
+        leftForearm.rotation.set(-0.68, 0, 0);
+      }
+
+      // Knife taunt: curl every left finger except the extended middle one.
+      const fingers = blenderRig.leftFingers;
+      if (fingers) {
+        const fold = gunId === 'knife' ? 1.5 : 0;
+        fingers.index.rotation.x = fold;
+        fingers.ring.rotation.x = fold;
+        fingers.little.rotation.x = fold;
+        fingers.thumb.rotation.x = gunId === 'knife' ? 1.1 : 0;
+        fingers.middle.rotation.x = 0;
+      }
+
+      combinedArmRotation.copy(right.quaternion).multiply(rightForearm.quaternion);
+      if (gunId === 'poopgun') {
+        // A throwable follows the hand instead of being counter-rotated like a gun.
+        gunHold.quaternion.identity();
+      } else {
+        gunHold.quaternion.copy(combinedArmRotation).invert();
+        // Counter the imported player's 180-degree facing correction.
+        gunHold.rotateY(Math.PI);
+      }
+      if (gun) {
+        if (gunId === 'poopgun') {
+          const throwT = 1 - throwAnim;
+          gun.rotation.set(0, 0, 0);
+          gun.visible = throwAnim === 0 || throwT < 0.08 || throwT > 0.84;
+        } else if (meleeSwing > 0 && gunId === 'knife') {
+          const t = 1 - meleeSwing;
+          const slash = Math.sin(Math.min(1, t * 1.05) * Math.PI);
+          gun.rotation.set(slash * 0.28, slash * 0.2, slash * -0.75);
+        } else {
+          gun.rotation.set(0, 0, 0);
+        }
+      }
+      return;
+    }
+
+    if (throwAnim > 0 && gunId === 'poopgun') {
+      const t = 1 - throwAnim;
+      const follow = Math.sin(Math.min(1, t) * Math.PI);
+      rightArm.rotation.set(
+        hold.rightArm[0] - follow * 1.0,
+        hold.rightArm[1] + follow * 0.18,
+        hold.rightArm[2] - follow * 0.3,
+      );
+      leftArm.rotation.set(hold.leftArm[0] * 0.5, hold.leftArm[1], hold.leftArm[2] * 0.5);
+      gunHold.quaternion.identity();
+      if (gun) gun.visible = t < 0.08 || t > 0.84;
+      return;
+    }
+
+    if (meleeSwing > 0 && gunId === 'knife') {
+      const t = 1 - meleeSwing;
+      const slash = Math.sin(Math.min(1, t * 1.05) * Math.PI);
+      const wind = Math.sin(Math.min(1, t * 2) * Math.PI) * (t < 0.35 ? 1 : 0);
+      rightArm.rotation.set(
+        hold.rightArm[0] - 0.55 + slash * 1.35 + wind * -0.4,
+        hold.rightArm[1] + slash * 0.55 + wind * -0.35,
+        hold.rightArm[2] - slash * 0.85 + wind * 0.4,
+      );
+      leftArm.rotation.set(
+        hold.leftArm[0] + slash * 0.25,
+        hold.leftArm[1],
+        hold.leftArm[2] + slash * 0.2,
+      );
+      gunHold.quaternion.copy(rightArm.quaternion).invert();
+      if (gun) {
+        gun.rotation.set(slash * 0.35, slash * 0.25, slash * -0.9);
+      }
+      return;
+    }
+
     rightArm.rotation.set(hold.rightArm[0] - drop + swing * 0.05, hold.rightArm[1], hold.rightArm[2]);
     leftArm.rotation.set(hold.leftArm[0] - drop * 0.8 + swing * 0.04, hold.leftArm[1], hold.leftArm[2]);
     gunHold.quaternion.copy(rightArm.quaternion).invert();
+    if (gun) {
+      gun.visible = true;
+      gun.rotation.set(0, 0, 0);
+    }
   }
 
   function disposeGun() {
@@ -484,6 +632,7 @@ export function createAvatar(scene, slot) {
     const next = AVATAR_GUN_BUILDERS[id] ? id : 'pistol';
     if (next === gunId) return;
     disposeGun();
+    throwAnim = 0;
     const build = AVATAR_GUN_BUILDERS[next] || AVATAR_GUN_BUILDERS.pistol;
     gun = build();
     gunId = next;
@@ -495,6 +644,15 @@ export function createAvatar(scene, slot) {
   setWeapon('pistol');
 
   scene.add(group);
+  mountBlockPlayer(group, { color: colorHex }).then((rig) => {
+    if (!rig || group.userData.disposed) return;
+    blenderRig = rig;
+    root.visible = false;
+    rig.rightHandSocket.add(gunHold);
+    gunHold.position.set(0, 0, 0);
+    applyHold();
+    holdArms();
+  });
 
   let walkPhase = 0;
 
@@ -502,6 +660,12 @@ export function createAvatar(scene, slot) {
     group,
     gun,
     setWeapon,
+    playSwing() {
+      meleeSwing = 1;
+    },
+    playThrow() {
+      throwAnim = 1;
+    },
     setWeaponLength(length) {
       // Kept for older call sites; prefer setWeapon(id).
       if (gun) gun.scale.z = Math.max(0.6, length);
@@ -514,6 +678,9 @@ export function createAvatar(scene, slot) {
       if (speed > 0.4 && !sliding) walkPhase += 0.18 * Math.min(speed / 5, 1.6);
       else walkPhase *= 0.85;
 
+      if (meleeSwing > 0) meleeSwing = Math.max(0, meleeSwing - 0.085);
+      if (throwAnim > 0) throwAnim = Math.max(0, throwAnim - 0.075);
+
       const swing = Math.sin(walkPhase) * Math.min(1, speed / 4) * 0.55;
 
       if (sliding) {
@@ -523,6 +690,13 @@ export function createAvatar(scene, slot) {
         rightLeg.rotation.x = -0.35;
         holdArms(0, 0.45);
         head.rotation.x = -0.25;
+        if (blenderRig) {
+          blenderRig.root.position.y = -0.15;
+          blenderRig.root.rotation.x = 0.95;
+          blenderRig.leftLeg.rotation.x = -1.1;
+          blenderRig.rightLeg.rotation.x = -0.35;
+          blenderRig.head.rotation.x = -0.25;
+        }
       } else if (crouching) {
         root.position.y = -0.35;
         root.rotation.x = 0.18;
@@ -530,6 +704,13 @@ export function createAvatar(scene, slot) {
         rightLeg.rotation.x = -1.15 - swing * 0.2;
         holdArms(swing * 0.5, 0.12);
         head.rotation.x = 0.1;
+        if (blenderRig) {
+          blenderRig.root.position.y = -0.35;
+          blenderRig.root.rotation.x = 0.18;
+          blenderRig.leftLeg.rotation.x = -1.15 + swing * 0.2;
+          blenderRig.rightLeg.rotation.x = -1.15 - swing * 0.2;
+          blenderRig.head.rotation.x = 0.1;
+        }
       } else {
         root.position.y = 0;
         root.rotation.x = 0;
@@ -537,10 +718,18 @@ export function createAvatar(scene, slot) {
         rightLeg.rotation.x = -swing;
         holdArms(swing);
         head.rotation.x = 0;
+        if (blenderRig) {
+          blenderRig.root.position.y = 0;
+          blenderRig.root.rotation.x = 0;
+          blenderRig.leftLeg.rotation.x = swing;
+          blenderRig.rightLeg.rotation.x = -swing;
+          blenderRig.head.rotation.x = 0;
+        }
       }
     },
     dispose() {
       disposeGun();
+      group.userData.disposed = true;
       scene.remove(group);
       group.traverse((child) => {
         if (child.geometry) child.geometry.dispose();

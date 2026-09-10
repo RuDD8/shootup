@@ -48,6 +48,15 @@ const viewModel = new ViewModel();
 const effects = new Effects(scene);
 const hud = new Hud();
 const audio = new Audio();
+
+// Screams pinned to live FAHH rockets, keyed by projectile id. Each handle
+// moves its 3D audio source along with the projectile and stops on impact.
+const projSounds = new Map();
+
+function clearProjSounds() {
+  for (const sound of projSounds.values()) sound.stop();
+  projSounds.clear();
+}
 const input = new InputController(canvas);
 const net = new Net();
 
@@ -109,6 +118,10 @@ const localGun = {
   nextShotAt: 0,
   reloadEndsAt: 0,
   prevShoot: false,
+  heat: 0,
+  overheatedUntil: 0,
+  chargeStartAt: 0,
+  chargeFrac: 0,
 };
 
 const tmpOrigin = new THREE.Vector3();
@@ -349,7 +362,7 @@ function localTrace(ox, oy, oz, dir) {
   let dist = world.hit ? world.dist : MAX_RANGE;
   let kind = world.surface || 'air';
 
-  const targets = isDM() ? remoteTargets() : [opponent()].filter(Boolean);
+  const targets = isMultiPlayer() ? remoteTargets() : [opponent()].filter(Boolean);
   for (const foe of targets) {
     const t = rayCylinder(
       ox, oy, oz,
@@ -379,7 +392,7 @@ function muzzleWorld(out) {
 
 // -------------------------------------------------------------------- firing
 
-function fireLocal() {
+function fireLocal({ chargeFrac = 1, beam = false, melee = false, projectile = false } = {}) {
   const w = weapon();
   const view = input.viewAngles();
 
@@ -388,9 +401,36 @@ function fireLocal() {
   const oz = state.local.z;
 
   muzzleWorld(tmpMuzzle);
-  effects.flash(tmpMuzzle.x, tmpMuzzle.y, tmpMuzzle.z, w.id === 'shotgun' ? 1.5 : 1.1);
 
-  const spreadBase = shotSpread(w, state.bloom, state.zooming);
+  if (melee) {
+    state.shake = Math.min(2.4, state.shake + w.shake * 0.5);
+    viewModel.playSwing();
+    audio.shot(w.id, 1);
+    return;
+  }
+
+  if (projectile) {
+    // No locally predicted projectile: the server-broadcast projSpawn event is
+    // the single visual source, otherwise the thrower sees two poops.
+    state.shake = Math.min(2.4, state.shake + w.shake * 0.5);
+    if (w.id === 'poopgun') {
+      viewModel.playThrow();
+    } else {
+      viewModel.addRecoil(w.recoil * 0.32);
+      input.addKick((Math.random() - 0.5) * w.recoil * 0.004, w.recoil * 0.006);
+    }
+    // The fahgun's scream is attached to the projectile itself when the
+    // server confirms the spawn, so everyone (shooter included) hears it
+    // travel with the rocket.
+    if (w.id !== 'fahgun') audio.shot(w.id, 1);
+    return;
+  }
+
+  if (!beam) {
+    effects.flash(tmpMuzzle.x, tmpMuzzle.y, tmpMuzzle.z, w.id === 'shotgun' ? 1.5 : 1.1);
+  }
+
+  const spreadBase = shotSpread(w, state.bloom, state.zooming, chargeFrac);
 
   for (let i = 0; i < w.pellets; i++) {
     const angle = Math.random() * Math.PI * 2;
@@ -402,7 +442,9 @@ function fireLocal() {
     const { dist, kind } = localTrace(ox, oy, oz, tmpDir);
     tmpEnd.set(ox, oy, oz).addScaledVector(tmpDir, dist);
 
-    effects.tracer(tmpMuzzle, tmpEnd, w.id === 'sniper' ? 0.03 : 0.02);
+    if (!beam) {
+      effects.tracer(tmpMuzzle, tmpEnd, w.id === 'sniper' ? 0.03 : 0.02);
+    }
     if (kind !== 'air') {
       effects.spark(tmpEnd.x, tmpEnd.y, tmpEnd.z, kind, kind === 'player' ? 6 : 4);
     }
@@ -412,7 +454,8 @@ function fireLocal() {
   state.shake = Math.min(2.4, state.shake + w.shake * 0.5);
   viewModel.addRecoil(w.recoil * 0.32);
   input.addKick((Math.random() - 0.5) * w.recoil * 0.004, w.recoil * 0.006);
-  audio.shot(w.id, 1);
+  if (beam) audio.beamLoop(0.1);
+  else audio.shot(w.id, 1);
 }
 
 function updateLocalGun(mask) {
@@ -420,9 +463,14 @@ function updateLocalGun(mask) {
   const now = performance.now();
   const pressed = (mask & KEY.SHOOT) !== 0;
   const fresh = pressed && !localGun.prevShoot;
-  localGun.prevShoot = pressed;
+  const released = !pressed && localGun.prevShoot;
 
   const canAct = state.matchState === MATCH_STATE.LIVE && state.alive;
+
+  // Match server: heat always cools during lockout, and when not firing.
+  if (w.overheat && (!pressed || now < localGun.overheatedUntil)) {
+    localGun.heat = Math.max(0, localGun.heat - (w.heatDecay || 0.02));
+  }
 
   if (localGun.reloadEndsAt) {
     if (now >= localGun.reloadEndsAt) {
@@ -433,35 +481,102 @@ function updateLocalGun(mask) {
       }
       localGun.reloadEndsAt = 0;
     } else {
+      localGun.prevShoot = pressed;
       return;
     }
   }
 
-  if (!canAct) return;
+  if (!canAct) {
+    localGun.chargeStartAt = 0;
+    localGun.chargeFrac = 0;
+    localGun.prevShoot = pressed;
+    return;
+  }
 
-  if ((mask & KEY.RELOAD) !== 0 && localGun.ammo < w.magazine) {
+  if (
+    (mask & KEY.RELOAD) !== 0 &&
+    !w.overheat &&
+    !w.melee &&
+    localGun.ammo < w.magazine
+  ) {
     localGun.reloadEndsAt = now + w.reload * 1000;
+    localGun.chargeStartAt = 0;
     audio.reload();
+    localGun.prevShoot = pressed;
+    return;
+  }
+
+  if (w.overheat && now < localGun.overheatedUntil) {
+    localGun.prevShoot = pressed;
+    return;
+  }
+
+  // Bow / charge weapons: press to draw, release to fire.
+  if (w.charge) {
+    if (fresh && localGun.ammo > 0) {
+      localGun.chargeStartAt = now;
+    } else if (released && localGun.chargeStartAt > 0) {
+      const chargeFrac = Math.min(1, (now - localGun.chargeStartAt) / ((w.chargeTime || 1) * 1000));
+      localGun.chargeStartAt = 0;
+      localGun.chargeFrac = 0;
+      localGun.ammo -= 1;
+      if (isDM()) {
+        if (state.activeSlot === 'primary') localGun.primaryAmmo = localGun.ammo;
+        else localGun.secondaryAmmo = localGun.ammo;
+      }
+      localGun.nextShotAt = now + shotInterval(w) * 1000;
+      fireLocal({ chargeFrac });
+      if (localGun.ammo <= 0 && w.reload > 0) {
+        localGun.reloadEndsAt = now + w.reload * 1000;
+        audio.reload();
+      }
+    } else if (pressed && localGun.chargeStartAt > 0) {
+      localGun.chargeFrac = Math.min(
+        1,
+        (now - localGun.chargeStartAt) / ((w.chargeTime || 1) * 1000),
+      );
+    }
+    localGun.prevShoot = pressed;
     return;
   }
 
   const may = w.auto ? pressed : fresh;
+  localGun.prevShoot = pressed;
   if (!may) return;
   if (now < localGun.nextShotAt) return;
 
-  if (localGun.ammo <= 0) {
-    localGun.reloadEndsAt = now + w.reload * 1000;
-    audio.reload();
+  if (!w.melee && !w.overheat && localGun.ammo <= 0) {
+    if (w.reload > 0) {
+      localGun.reloadEndsAt = now + w.reload * 1000;
+      audio.reload();
+    }
     return;
   }
 
-  localGun.ammo -= 1;
-  if (isDM()) {
-    if (state.activeSlot === 'primary') localGun.primaryAmmo = localGun.ammo;
-    else localGun.secondaryAmmo = localGun.ammo;
+  if (w.beam && w.overheat) {
+    localGun.heat += w.heatPerTick || 0.012;
+    if (localGun.heat >= 1) {
+      localGun.heat = 1;
+      localGun.overheatedUntil = now + (w.overheatCooldown || 2) * 1000;
+      return;
+    }
+    fireLocal({ beam: true });
+    return;
   }
+
+  if (!w.melee && !w.overheat) {
+    localGun.ammo -= 1;
+    if (isDM()) {
+      if (state.activeSlot === 'primary') localGun.primaryAmmo = localGun.ammo;
+      else localGun.secondaryAmmo = localGun.ammo;
+    }
+  }
+
   localGun.nextShotAt = now + shotInterval(w) * 1000;
-  fireLocal();
+  fireLocal({
+    melee: Boolean(w.melee),
+    projectile: Boolean(w.projectile),
+  });
 }
 
 // ------------------------------------------------------------------ net flow
@@ -504,6 +619,7 @@ net.on('round', (msg) => {
   state.matchState = MATCH_STATE.COUNTDOWN;
   state.lastCountdownStep = -1;
   state.weaponPickDismissed = false;
+  clearProjSounds();
   if (msg.gunGameOrder) state.gunGameOrder = msg.gunGameOrder;
 
   applyMapTheme(scene, state.mapId);
@@ -581,6 +697,10 @@ net.on('round', (msg) => {
   localGun.nextShotAt = 0;
   localGun.reloadEndsAt = 0;
   localGun.prevShoot = false;
+  localGun.heat = 0;
+  localGun.overheatedUntil = 0;
+  localGun.chargeStartAt = 0;
+  localGun.chargeFrac = 0;
   if (!isDM()) localGun.ammo = weapon().magazine;
 
   viewModel.setWeapon(state.weaponId);
@@ -753,6 +873,19 @@ function onSnapshot(msg) {
       ? performance.now() + (entry.rs / TICK_RATE) * 1000
       : 0;
 
+    if (Number.isFinite(entry.ht)) localGun.heat = entry.ht;
+    if (entry.oh > 0) {
+      localGun.overheatedUntil = performance.now() + (entry.oh / TICK_RATE) * 1000;
+    } else if (entry.oh === 0) {
+      localGun.overheatedUntil = Math.min(localGun.overheatedUntil, performance.now());
+    }
+    if (entry.cs > 0 && !localGun.chargeStartAt) {
+      localGun.chargeStartAt = performance.now() - (entry.cs / TICK_RATE) * 1000;
+    } else if (entry.cs === 0) {
+      localGun.chargeStartAt = 0;
+      localGun.chargeFrac = 0;
+    }
+
     const ack = msg.ack[state.myId] || 0;
     while (state.pending.length && state.pending[0].seq <= ack) state.pending.shift();
 
@@ -900,15 +1033,52 @@ function handleEvents(events) {
     } else if (ev.k === 'melee') {
       if (ev.p !== state.myId) {
         audio.shot('knife', 0.6);
+        const attacker = state.players.get(ev.p);
+        if (attacker?.avatar) attacker.avatar.playSwing();
       }
     } else if (ev.k === 'projSpawn') {
-      effects.spawnProjectile(ev.id, ev.x, ev.y, ev.z, ev.vx, ev.vy, ev.vz);
+      const kind = ev.w || 'poopgun';
+      effects.spawnProjectile(ev.id, ev.x, ev.y, ev.z, ev.vx, ev.vy, ev.vz, kind);
+      if (kind === 'fahgun') {
+        // Everyone, shooter included, hears the scream fly with the rocket.
+        const sound = audio.fahhTracked(ev.x, ev.y, ev.z);
+        if (sound) projSounds.set(ev.id, sound);
+      }
+      if (ev.p !== state.myId && kind !== 'fahgun') {
+        audio.shot(kind, 0.5);
+        const thrower = state.players.get(ev.p);
+        if (thrower?.avatar) thrower.avatar.playThrow();
+      }
+    } else if (ev.k === 'fart') {
+      // The local player already farts in sync with its own reload animation.
       if (ev.p !== state.myId) {
-        audio.shot('poopgun', 0.5);
+        const src = state.players.get(ev.p);
+        const sx = src?.render?.x ?? ev.x;
+        const sy = (src?.render?.y ?? ev.y) + 1;
+        const sz = src?.render?.z ?? ev.z;
+        if (Math.hypot(sx - state.local.x, sz - state.local.z) < 30) {
+          // World-positioned: the live listener pose keeps the sound coming
+          // from the farter's direction even while the camera turns.
+          audio.fart(1.15, { x: sx, y: sy, z: sz });
+        }
       }
     } else if (ev.k === 'projImpact') {
+      const sound = projSounds.get(ev.id);
+      if (sound) {
+        sound.stop();
+        projSounds.delete(ev.id);
+      }
       effects.removeProjectile(ev.id);
-      effects.spark(ev.x, ev.y, ev.z, 'wall', 8, 2);
+      if (ev.boom) {
+        effects.explosion(ev.x, ev.y, ev.z, ev.boom);
+        audio.explosion(1, { x: ev.x, y: ev.y, z: ev.z });
+        const dist = Math.hypot(ev.x - state.local.x, ev.z - state.local.z);
+        if (dist < ev.boom * 2.5) {
+          state.shake = Math.min(3, state.shake + Math.max(0.4, 1.8 - dist * 0.15));
+        }
+      } else {
+        effects.spark(ev.x, ev.y, ev.z, 'wall', 8, 2);
+      }
     } else if (ev.k === 'hazardSpawn') {
       effects.spawnHazard(ev.x, ev.y, ev.z, ev.r, ev.dur);
     } else if (ev.k === 'hurt') {
@@ -1165,11 +1335,39 @@ function frame(now) {
   applyRemoteInterpolation();
   updateCamera(dt);
 
+  // Keep the audio listener glued to the camera so positional sounds rotate
+  // with the view while they play.
+  {
+    const view = input.viewAngles();
+    audio.updateListener(
+      state.local.x,
+      state.local.y + playerEyeHeight(state.local.crouching),
+      state.local.z,
+      view.yaw,
+      view.pitch,
+    );
+  }
+
   const moving = Math.hypot(state.local.vx, state.local.vz) > 0.7;
   const reloading = localGun.reloadEndsAt > 0;
   const reloadProgress = reloading
     ? 1 - Math.max(0, (localGun.reloadEndsAt - performance.now()) / (w.reload * 1000))
     : 0;
+
+  // Poopgun reload gag: fart once when the reaching hand arrives at the rear.
+  // Armed only after the early phase of the reload has been seen, so the
+  // server-echo tail that re-arms reloadEndsAt near completion (snapshot
+  // reconciliation) cannot fire a duplicate.
+  if (w.id === 'poopgun' && reloading) {
+    if (reloadProgress < 0.35) {
+      localGun.fartArmed = true;
+    } else if (localGun.fartArmed) {
+      localGun.fartArmed = false;
+      audio.fart();
+    }
+  } else {
+    localGun.fartArmed = false;
+  }
 
   viewModel.update(dt, {
     moving,
@@ -1179,9 +1377,23 @@ function frame(now) {
     zooming: state.zooming,
     reloading,
     reloadProgress,
+    ammo: localGun.ammo,
   });
 
-  effects.update(dt);
+  effects.update(dt, camera);
+
+  // Keep each rocket's scream glued to its projectile; drop sounds whose
+  // projectile is gone (flew out of the world without an impact event).
+  for (const [id, sound] of projSounds) {
+    const pos = effects.getProjectilePosition(id);
+    if (pos) {
+      sound.move(pos.x, pos.y, pos.z);
+    } else {
+      sound.stop();
+      projSounds.delete(id);
+    }
+  }
+
   updateFootsteps(dt);
   hud.update(dt);
   updateHud(reloading, reloadProgress);

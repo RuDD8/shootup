@@ -1,7 +1,5 @@
-// All four guns are hitscan. Balance intent, roughly by time-to-kill on body
-// shots: shotgun wins point blank and falls off a cliff past ~12m, AR is the
-// reliable mid-range pick, pistol trades damage for accuracy and mobility,
-// sniper one-shots on a headshot but punishes a miss with a long refire.
+// Weapon catalog for duel / deathmatch / gun game. Most guns are hitscan;
+// special flags add burst, charge, overheat beams, projectiles, and melee.
 
 export const WEAPONS = {
   pistol: {
@@ -583,7 +581,7 @@ export const WEAPONS = {
   },
   poopgun: {
     id: 'poopgun',
-    name: 'Poop Gun',
+    name: 'Poop',
     damage: 25,
     pellets: 1,
     rpm: 90,
@@ -607,6 +605,33 @@ export const WEAPONS = {
     hazardRadius: 2.5,
     hazardDps: 20,
     hazardDuration: 5,
+  },
+  fahgun: {
+    id: 'fahgun',
+    name: 'FAHH Gun',
+    damage: 75,
+    pellets: 1,
+    rpm: 45,
+    auto: false,
+    magazine: 1,
+    reload: 2.6,
+    spread: 0.005,
+    bloom: 0,
+    maxBloom: 0,
+    bloomDecay: 0,
+    moveMult: 0.85,
+    recoil: 2.4,
+    zoom: 1,
+    falloffStart: 100,
+    falloffEnd: 100,
+    falloffMin: 1,
+    shake: 1.4,
+    projectile: true,
+    projSpeed: 34,
+    projGravity: 4,
+    projArc: 0,
+    explodeRadius: 4,
+    explodeDamage: 70,
   },
   knife: {
     id: 'knife',

@@ -1,4 +1,6 @@
-// Everything is synthesised at runtime, so the game ships with no audio files.
+// Everything is synthesised at runtime except the fart sample
+// (public/sounds/fart.mp3, CC0 from bigsoundbank.com), because no oscillator
+// does a real fart justice.
 
 const SHOT_PROFILES = {
   // ── Original weapons ──────────────────────────────────────────────
@@ -45,6 +47,7 @@ const SHOT_PROFILES = {
   bow:     { dur: 0.12, cutoff: 3000, thump: 400, gain: 0.18, q: 1.8 },
   laser:   { dur: 0.04, cutoff: 5000, thump: 600, gain: 0.15, q: 2.0 },
   poopgun: { dur: 0.25, cutoff: 800,  thump: 50,  gain: 0.48, q: 0.4 },
+  fahgun:  { dur: 0.40, cutoff: 1400, thump: 70,  gain: 0.70, q: 1.0 },
   knife:   { dur: 0.08, cutoff: 4500, thump: 500, gain: 0.25, q: 1.6 },
 };
 
@@ -54,6 +57,8 @@ export class Audio {
     this.noise = null;
     this.master = null;
     this.volume = 0.55;
+    this.samples = {};
+    this.samplesLoading = {};
   }
 
   // Must be called from a user gesture or browsers keep the context suspended.
@@ -68,6 +73,37 @@ export class Audio {
       this.noise = this.makeNoise(1.0);
     }
     if (this.ctx.state === 'suspended') this.ctx.resume();
+    this.loadSample('fart', '/sounds/fart.mp3');
+    this.loadSample('fahh', '/sounds/fahh.mp3');
+  }
+
+  loadSample(key, url) {
+    if (this.samples[key] || this.samplesLoading[key] || !this.ctx) return;
+    this.samplesLoading[key] = true;
+    fetch(url)
+      .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((data) => this.ctx.decodeAudioData(data))
+      .then((buffer) => {
+        this.samples[key] = buffer;
+      })
+      .catch(() => {
+        // Retry on the next unlock; synth fallbacks cover the meantime.
+        this.samplesLoading[key] = false;
+      });
+  }
+
+  playSample(key, gain = 1, out = null, rateJitter = 0) {
+    const buffer = this.samples[key];
+    if (!buffer) return null;
+    const t = this.now;
+    const src = this.ctx.createBufferSource();
+    src.buffer = buffer;
+    src.playbackRate.value = 1 - rateJitter + Math.random() * rateJitter * 2;
+    const env = this.ctx.createGain();
+    env.gain.value = gain;
+    src.connect(env).connect(out || this.master);
+    src.start(t);
+    return src;
   }
 
   setVolume(value) {
@@ -88,6 +124,51 @@ export class Audio {
 
   get now() {
     return this.ctx.currentTime;
+  }
+
+  // Call once per frame with the camera pose so positional sounds keep
+  // tracking the view while they play (turning rotates the sound field).
+  updateListener(x, y, z, yaw, pitch) {
+    if (!this.ctx) return;
+    const l = this.ctx.listener;
+    const cp = Math.cos(pitch);
+    const fx = -Math.sin(yaw) * cp;
+    const fy = Math.sin(pitch);
+    const fz = -Math.cos(yaw) * cp;
+    if (l.positionX) {
+      l.positionX.value = x;
+      l.positionY.value = y;
+      l.positionZ.value = z;
+      l.forwardX.value = fx;
+      l.forwardY.value = fy;
+      l.forwardZ.value = fz;
+      l.upX.value = 0;
+      l.upY.value = 1;
+      l.upZ.value = 0;
+    } else if (l.setPosition) {
+      l.setPosition(x, y, z);
+      l.setOrientation(fx, fy, fz, 0, 1, 0);
+    }
+  }
+
+  // Output node fixed at a world position; the live listener pose from
+  // updateListener() gives direction and distance attenuation.
+  spatial(x, y, z, maxDist = 30) {
+    const p = this.ctx.createPanner();
+    p.panningModel = 'equalpower';
+    p.distanceModel = 'linear';
+    p.refDistance = 2;
+    p.maxDistance = maxDist;
+    p.rolloffFactor = 1;
+    if (p.positionX) {
+      p.positionX.value = x;
+      p.positionY.value = y;
+      p.positionZ.value = z;
+    } else if (p.setPosition) {
+      p.setPosition(x, y, z);
+    }
+    p.connect(this.master);
+    return p;
   }
 
   shot(weaponId, gain = 1) {
@@ -207,6 +288,66 @@ export class Audio {
     setTimeout(() => this.blip(240, 0.07, 0.18, 'sawtooth'), 120);
   }
 
+  // Real recorded fart for the poopgun reload, played when the hand reaches
+  // the player's rear to grab a fresh one. Pass `at` ({x, y, z}) to place the
+  // sound in the world so it pans and attenuates from the farter's direction.
+  fart(gain = 1, at = null) {
+    if (!this.ctx) return;
+    const t = this.now;
+    const out = at ? this.spatial(at.x, at.y, at.z) : this.master;
+
+    // Slight pitch variance so back-to-back reloads don't sound canned.
+    if (this.playSample('fart', 0.9 * gain, out, 0.09)) return;
+
+    // Synth fallback, only heard if the sample has not finished loading.
+    const dur = 0.45 + Math.random() * 0.2;
+
+    // Low buzz dropping in pitch, chopped by an irregular flutter envelope so
+    // it sputters instead of droning.
+    const osc = this.ctx.createOscillator();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(90 + Math.random() * 30, t);
+    osc.frequency.exponentialRampToValueAtTime(36, t + dur);
+
+    const lowpass = this.ctx.createBiquadFilter();
+    lowpass.type = 'lowpass';
+    lowpass.frequency.setValueAtTime(850, t);
+    lowpass.frequency.exponentialRampToValueAtTime(240, t + dur);
+    lowpass.Q.value = 2.4;
+
+    const env = this.ctx.createGain();
+    env.gain.setValueAtTime(0.0001, t);
+    let cursor = t;
+    let level = 0.5 * gain;
+    while (cursor < t + dur - 0.05) {
+      const step = 0.035 + Math.random() * 0.05;
+      env.gain.linearRampToValueAtTime(level * (0.45 + Math.random() * 0.55), cursor + step * 0.5);
+      env.gain.linearRampToValueAtTime(level * (0.05 + Math.random() * 0.2), cursor + step);
+      cursor += step;
+      level *= 0.92;
+    }
+    env.gain.linearRampToValueAtTime(0.0001, t + dur);
+
+    osc.connect(lowpass).connect(env).connect(out);
+    osc.start(t);
+    osc.stop(t + dur + 0.02);
+
+    // Breathy band-passed noise underneath for the wet texture.
+    const src = this.ctx.createBufferSource();
+    src.buffer = this.noise;
+    src.playbackRate.value = 0.5;
+    const nf = this.ctx.createBiquadFilter();
+    nf.type = 'bandpass';
+    nf.frequency.value = 300;
+    nf.Q.value = 0.7;
+    const nEnv = this.ctx.createGain();
+    nEnv.gain.setValueAtTime(0.16 * gain, t);
+    nEnv.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(nf).connect(nEnv).connect(out);
+    src.start(t);
+    src.stop(t + dur + 0.02);
+  }
+
   countdown(step) {
     this.blip(step === 0 ? 900 : 520, step === 0 ? 0.2 : 0.09, 0.3, 'triangle');
   }
@@ -255,6 +396,71 @@ export class Audio {
         lfo.stop(t + 0.1);
       },
     };
+  }
+
+  // The FAHH meme scream, attached to a flying rocket. Returns a handle so the
+  // caller can move the sound with the projectile and cut it off on impact.
+  fahhTracked(x, y, z, gain = 0.95) {
+    if (!this.ctx) return null;
+    const panner = this.spatial(x, y, z, 50);
+    const src = this.playSample('fahh', gain, panner, 0.03);
+    if (!src) {
+      // Fallback while the sample loads: a regular launcher thump.
+      this.shot('fahgun', gain);
+      return null;
+    }
+    return {
+      move: (nx, ny, nz) => {
+        if (panner.positionX) {
+          panner.positionX.value = nx;
+          panner.positionY.value = ny;
+          panner.positionZ.value = nz;
+        } else if (panner.setPosition) {
+          panner.setPosition(nx, ny, nz);
+        }
+      },
+      stop: () => {
+        try {
+          src.stop();
+        } catch {
+          // Source already ended on its own.
+        }
+      },
+    };
+  }
+
+  // Rocket detonation: a deep filtered noise boom with a sine thump.
+  explosion(gain = 1, at = null) {
+    if (!this.ctx) return;
+    const t = this.now;
+    const out = at ? this.spatial(at.x, at.y, at.z, 60) : this.master;
+
+    const src = this.ctx.createBufferSource();
+    src.buffer = this.noise;
+    src.playbackRate.value = 0.7;
+    const lp = this.ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(950, t);
+    lp.frequency.exponentialRampToValueAtTime(90, t + 0.7);
+    lp.Q.value = 0.9;
+    const env = this.ctx.createGain();
+    env.gain.setValueAtTime(0, t);
+    env.gain.linearRampToValueAtTime(0.9 * gain, t + 0.012);
+    env.gain.exponentialRampToValueAtTime(0.0001, t + 0.75);
+    src.connect(lp).connect(env).connect(out);
+    src.start(t);
+    src.stop(t + 0.8);
+
+    const osc = this.ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(60, t);
+    osc.frequency.exponentialRampToValueAtTime(26, t + 0.6);
+    const oe = this.ctx.createGain();
+    oe.gain.setValueAtTime(0.7 * gain, t);
+    oe.gain.exponentialRampToValueAtTime(0.0001, t + 0.65);
+    osc.connect(oe).connect(out);
+    osc.start(t);
+    osc.stop(t + 0.7);
   }
 
   // Quick whooshing slash for melee knife attacks.
