@@ -76,7 +76,12 @@ export const MAX_PITCH = Math.PI / 2 - 0.02;
 export const GAME_MODE = {
   DUEL: 'duel',
   DEATHMATCH: 'deathmatch',
+  GUNGAME: 'gungame',
 };
+
+export const GUNGAME_RESPAWN_SECONDS = 3;
+export const GUNGAME_SPAWN_PROTECT_SECONDS = 2;
+export const GUNGAME_DEMOTE_ON_KNIFE_DEATH = true;
 
 export const MAX_PLAYERS_DUEL = 2;
 export const MAX_PLAYERS_DM = 10;

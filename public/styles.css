@@ -842,6 +842,10 @@ button.secondary:hover {
   text-align: center;
   backdrop-filter: blur(8px);
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  max-width: 520px;
+  max-height: 340px;
+  display: flex;
+  flex-direction: column;
 }
 
 #weapon-pick-card strong {
@@ -849,31 +853,37 @@ button.secondary:hover {
   font-size: 13px;
   letter-spacing: 2px;
   margin-bottom: 4px;
+  flex-shrink: 0;
 }
 
 #weapon-pick-card small {
   display: block;
   color: var(--dim);
   font-size: 11px;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
+  flex-shrink: 0;
 }
 
 .pick-grid {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
   justify-content: center;
+  overflow-y: auto;
+  max-height: 240px;
+  padding: 4px 2px;
 }
 
 .pick-btn {
   font: inherit;
   cursor: pointer;
-  padding: 8px 14px;
-  border-radius: 6px;
+  padding: 5px 10px;
+  border-radius: 5px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(255, 255, 255, 0.04);
   color: var(--text);
-  letter-spacing: 0.5px;
+  font-size: 12px;
+  letter-spacing: 0.4px;
   transition: border-color 0.15s, background 0.15s;
 }
 
@@ -886,6 +896,19 @@ button.secondary:hover {
   border-color: var(--cyan);
   background: rgba(56, 189, 248, 0.18);
   color: #e0f2fe;
+}
+
+.pick-grid::-webkit-scrollbar {
+  width: 4px;
+}
+
+.pick-grid::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.pick-grid::-webkit-scrollbar-thumb {
+  background: rgba(56, 189, 248, 0.3);
+  border-radius: 2px;
 }
 
 #weapon-name {

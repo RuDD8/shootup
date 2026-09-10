@@ -51,9 +51,9 @@ export class Hud {
 
   setGameMode(mode) {
     this.mode = mode;
-    const isDM = mode === 'deathmatch';
-    this.scoreboard.classList.toggle('hidden', isDM);
-    this.dmBoard.classList.toggle('hidden', !isDM);
+    const isMulti = mode === 'deathmatch' || mode === 'gungame';
+    this.scoreboard.classList.toggle('hidden', isMulti);
+    this.dmBoard.classList.toggle('hidden', !isMulti);
   }
 
   setNames(mine, theirs) {
@@ -72,6 +72,10 @@ export class Hud {
 
   setDeathmatchLabel(minutes) {
     $('round-label').textContent = `DEATHMATCH · ${minutes} MIN`;
+  }
+
+  setGunGameLabel() {
+    $('round-label').textContent = 'GUN GAME';
   }
 
   setTimer(text, urgent = false) {

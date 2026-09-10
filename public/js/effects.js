@@ -6,6 +6,8 @@ import * as THREE from '/vendor/three.module.js';
 const TRACER_COUNT = 40;
 const SPARK_COUNT = 220;
 const FLASH_COUNT = 12;
+const PROJECTILE_COUNT = 8;
+const HAZARD_COUNT = 12;
 
 const TRACER_LIFE = 0.075;
 const FLASH_LIFE = 0.06;
@@ -88,6 +90,77 @@ export class Effects {
     this.flashLight = new THREE.PointLight(0xffd28a, 0, 9, 2);
     scene.add(this.flashLight);
     this.flashLightLife = 0;
+
+    this.projectilePool = [];
+    for (let i = 0; i < PROJECTILE_COUNT; i++) {
+      const group = new THREE.Group();
+
+      const bodyGeo = new THREE.SphereGeometry(0.22, 8, 6);
+      bodyGeo.scale(1, 0.75, 1);
+      const bodyMat = new THREE.MeshStandardMaterial({
+        color: 0x5a3210,
+        roughness: 0.9,
+        metalness: 0,
+        transparent: true,
+        opacity: 0,
+      });
+      const body = new THREE.Mesh(bodyGeo, bodyMat);
+      group.add(body);
+
+      const lump1Geo = new THREE.SphereGeometry(0.11, 6, 5);
+      const lump1 = new THREE.Mesh(lump1Geo, bodyMat);
+      lump1.position.set(0.1, 0.08, 0.05);
+      group.add(lump1);
+
+      const lump2Geo = new THREE.SphereGeometry(0.09, 6, 5);
+      const lump2 = new THREE.Mesh(lump2Geo, bodyMat);
+      lump2.position.set(-0.07, 0.06, -0.08);
+      group.add(lump2);
+
+      group.visible = false;
+      scene.add(group);
+      this.projectilePool.push({ mesh: group, mat: bodyMat, id: null, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, active: false, spin: Math.random() * Math.PI * 2 });
+    }
+    this.projCursor = 0;
+
+    this.hazardPool = [];
+    for (let i = 0; i < HAZARD_COUNT; i++) {
+      const group = new THREE.Group();
+
+      const baseGeo = new THREE.CircleGeometry(1, 24);
+      const baseMat = new THREE.MeshBasicMaterial({
+        color: 0x4a2a08,
+        transparent: true,
+        opacity: 0,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      });
+      const base = new THREE.Mesh(baseGeo, baseMat);
+      base.rotation.x = -Math.PI / 2;
+      group.add(base);
+
+      for (let j = 0; j < 5; j++) {
+        const splatGeo = new THREE.CircleGeometry(0.25 + Math.random() * 0.2, 8);
+        const splatMat = new THREE.MeshBasicMaterial({
+          color: 0x3d2006,
+          transparent: true,
+          opacity: 0,
+          side: THREE.DoubleSide,
+          depthWrite: false,
+        });
+        const splat = new THREE.Mesh(splatGeo, splatMat);
+        splat.rotation.x = -Math.PI / 2;
+        const angle = (j / 5) * Math.PI * 2 + Math.random() * 0.6;
+        const dist = 0.7 + Math.random() * 0.4;
+        splat.position.set(Math.cos(angle) * dist, 0.005, Math.sin(angle) * dist);
+        group.add(splat);
+      }
+
+      group.visible = false;
+      scene.add(group);
+      this.hazardPool.push({ mesh: group, baseMat, life: 0, maxLife: 5 });
+    }
+    this.hazardCursor = 0;
   }
 
   tracer(from, to, width = 0.022) {
@@ -143,6 +216,51 @@ export class Effects {
     this.flashLightLife = FLASH_LIFE;
   }
 
+  spawnProjectile(id, x, y, z, vx, vy, vz) {
+    const slot = this.projectilePool[this.projCursor];
+    this.projCursor = (this.projCursor + 1) % PROJECTILE_COUNT;
+    slot.id = id;
+    slot.x = x;
+    slot.y = y;
+    slot.z = z;
+    slot.vx = vx;
+    slot.vy = vy;
+    slot.vz = vz;
+    slot.active = true;
+    slot.spin = Math.random() * Math.PI * 2;
+    slot.mesh.visible = true;
+    slot.mat.opacity = 1;
+    slot.mesh.position.set(x, y, z);
+  }
+
+  removeProjectile(id) {
+    for (const slot of this.projectilePool) {
+      if (slot.id === id) {
+        slot.active = false;
+        slot.mesh.visible = false;
+        slot.mat.opacity = 0;
+        slot.id = null;
+        break;
+      }
+    }
+  }
+
+  spawnHazard(x, y, z, radius, duration) {
+    const slot = this.hazardPool[this.hazardCursor];
+    this.hazardCursor = (this.hazardCursor + 1) % HAZARD_COUNT;
+    slot.mesh.visible = true;
+    slot.mesh.position.set(x, y + 0.02, z);
+    slot.mesh.scale.setScalar(radius);
+    slot.baseMat.opacity = 0.7;
+    slot.mesh.traverse((child) => {
+      if (child.isMesh && child.material !== slot.baseMat) {
+        child.material.opacity = 0.8;
+      }
+    });
+    slot.life = duration;
+    slot.maxLife = duration;
+  }
+
   update(dt) {
     this.time += dt;
 
@@ -194,6 +312,42 @@ export class Effects {
       this.flashLight.intensity *= Math.max(0, this.flashLightLife / FLASH_LIFE);
       if (this.flashLightLife <= 0) this.flashLight.intensity = 0;
     }
+
+    for (const slot of this.projectilePool) {
+      if (!slot.active) continue;
+      slot.vy -= 15 * dt;
+      slot.x += slot.vx * dt;
+      slot.y += slot.vy * dt;
+      slot.z += slot.vz * dt;
+      slot.spin += dt * 8;
+      slot.mesh.position.set(slot.x, slot.y, slot.z);
+      slot.mesh.rotation.set(slot.spin, slot.spin * 0.7, 0);
+      if (slot.y < -5) {
+        slot.active = false;
+        slot.mesh.visible = false;
+        slot.mat.opacity = 0;
+      }
+    }
+
+    for (const slot of this.hazardPool) {
+      if (slot.life <= 0) continue;
+      slot.life -= dt;
+      if (slot.life <= 0) {
+        slot.mesh.visible = false;
+        slot.baseMat.opacity = 0;
+        slot.mesh.traverse((child) => {
+          if (child.isMesh) child.material.opacity = 0;
+        });
+      } else {
+        const fade = Math.min(1, slot.life / slot.maxLife * 2.5);
+        slot.baseMat.opacity = 0.7 * fade;
+        slot.mesh.traverse((child) => {
+          if (child.isMesh && child.material !== slot.baseMat) {
+            child.material.opacity = 0.8 * fade;
+          }
+        });
+      }
+    }
   }
 
   reset() {
@@ -204,5 +358,19 @@ export class Effects {
     }
     this.flashLight.intensity = 0;
     this.flashLightLife = 0;
+    for (const slot of this.projectilePool) {
+      slot.active = false;
+      slot.mesh.visible = false;
+      slot.mat.opacity = 0;
+      slot.id = null;
+    }
+    for (const slot of this.hazardPool) {
+      slot.life = 0;
+      slot.mesh.visible = false;
+      slot.baseMat.opacity = 0;
+      slot.mesh.traverse((child) => {
+        if (child.isMesh) child.material.opacity = 0;
+      });
+    }
   }
 }

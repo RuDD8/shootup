@@ -81,6 +81,213 @@ const THEMES = {
     glass: mat(0x0b1220, { emissive: 0x38bdf8, emissiveIntensity: 1.5, roughness: 0.35 }),
     steel: mat(0x8b949e, { roughness: 0.35, metalness: 0.5 }),
   }),
+  // --- Sidearms ---
+  revolver: () => ({
+    frame: mat(0x4a4e54, { roughness: 0.35, metalness: 0.55 }),
+    cylinder: mat(0x5c6068, { roughness: 0.3, metalness: 0.5 }),
+    barrel: mat(0x3a3e44, { roughness: 0.32, metalness: 0.5 }),
+    wood: mat(0x6b3a1f, { roughness: 0.78, metalness: 0.05 }),
+    brass: mat(0xd4a24c, { roughness: 0.4, metalness: 0.55 }),
+    glow: mat(0x0b1220, { emissive: 0xfbbf24, emissiveIntensity: 1.3, roughness: 0.4 }),
+  }),
+  machinepistol: () => ({
+    body: mat(0x2a2e34, { roughness: 0.5, metalness: 0.3 }),
+    slide: mat(0x1a1e24, { roughness: 0.45, metalness: 0.35 }),
+    grip: mat(0x111418, { roughness: 0.85, metalness: 0.05 }),
+    mag: mat(0x1e2228, { roughness: 0.6, metalness: 0.2 }),
+    trim: mat(0xff8c42, { roughness: 0.45, metalness: 0.2 }),
+    barrel: mat(0x16191e, { roughness: 0.5, metalness: 0.4 }),
+    glow: mat(0x0b1220, { emissive: 0xff8c42, emissiveIntensity: 1.3, roughness: 0.4 }),
+  }),
+  deagle: () => ({
+    body: mat(0xd8dce2, { roughness: 0.2, metalness: 0.7 }),
+    slide: mat(0xb8bcc2, { roughness: 0.22, metalness: 0.65 }),
+    grip: mat(0x1a1e22, { roughness: 0.85, metalness: 0.05 }),
+    gold: mat(0xc9a84c, { roughness: 0.3, metalness: 0.65 }),
+    barrel: mat(0xa0a4aa, { roughness: 0.25, metalness: 0.6 }),
+    glow: mat(0x0b1220, { emissive: 0xfbbf24, emissiveIntensity: 1.5, roughness: 0.35 }),
+  }),
+  // --- SMGs ---
+  smg: () => ({
+    body: mat(0x2e3238, { roughness: 0.5, metalness: 0.3 }),
+    rail: mat(0x22262c, { roughness: 0.55, metalness: 0.25 }),
+    grip: mat(0x14181c, { roughness: 0.85, metalness: 0.05 }),
+    mag: mat(0x1a1e22, { roughness: 0.65, metalness: 0.15 }),
+    barrel: mat(0x1a1e24, { roughness: 0.45, metalness: 0.4 }),
+    steel: mat(0x6e7680, { roughness: 0.35, metalness: 0.45 }),
+    glow: mat(0x0b1220, { emissive: 0x60a5fa, emissiveIntensity: 1.3, roughness: 0.4 }),
+  }),
+  p90: () => ({
+    body: mat(0x262a30, { roughness: 0.55, metalness: 0.25 }),
+    shell: mat(0x1e2228, { roughness: 0.6, metalness: 0.2 }),
+    mag: mat(0x32363c, { roughness: 0.5, metalness: 0.2 }),
+    barrel: mat(0x181c20, { roughness: 0.45, metalness: 0.4 }),
+    sight: mat(0x2a2e34, { roughness: 0.4, metalness: 0.3 }),
+    glow: mat(0x0b1220, { emissive: 0x4ade80, emissiveIntensity: 1.3, roughness: 0.4 }),
+  }),
+  vector: () => ({
+    body: mat(0x1e2228, { roughness: 0.5, metalness: 0.3 }),
+    rail: mat(0x282c32, { roughness: 0.5, metalness: 0.25 }),
+    grip: mat(0x111418, { roughness: 0.85, metalness: 0.05 }),
+    mag: mat(0x1a1e22, { roughness: 0.65, metalness: 0.15 }),
+    stock: mat(0x222630, { roughness: 0.55, metalness: 0.2 }),
+    barrel: mat(0x16191e, { roughness: 0.45, metalness: 0.4 }),
+    glow: mat(0x0b1220, { emissive: 0xfbbf24, emissiveIntensity: 1.3, roughness: 0.4 }),
+  }),
+  // --- Rifles ---
+  battlerifle: () => ({
+    body: mat(0x4f5d3a, { roughness: 0.65, metalness: 0.15 }),
+    rail: mat(0x2f3640, { roughness: 0.55, metalness: 0.25 }),
+    tan: mat(0xc4a574, { roughness: 0.75, metalness: 0.08 }),
+    mag: mat(0x2a3228, { roughness: 0.7, metalness: 0.1 }),
+    barrel: mat(0x1a1f24, { roughness: 0.45, metalness: 0.45 }),
+    steel: mat(0x7d8794, { roughness: 0.35, metalness: 0.5 }),
+    glow: mat(0x0b1220, { emissive: 0xff8c42, emissiveIntensity: 1.3, roughness: 0.4 }),
+  }),
+  burstrifle: () => ({
+    body: mat(0x3a4a32, { roughness: 0.65, metalness: 0.12 }),
+    rail: mat(0x2a3238, { roughness: 0.55, metalness: 0.25 }),
+    handguard: mat(0x444e3a, { roughness: 0.7, metalness: 0.1 }),
+    mag: mat(0x1e2620, { roughness: 0.75, metalness: 0.1 }),
+    barrel: mat(0x1a1f24, { roughness: 0.45, metalness: 0.45 }),
+    steel: mat(0x8a929c, { roughness: 0.35, metalness: 0.5 }),
+    glow: mat(0x0b1220, { emissive: 0xf87171, emissiveIntensity: 1.3, roughness: 0.4 }),
+  }),
+  dmr: () => ({
+    body: mat(0x3f4a32, { roughness: 0.68, metalness: 0.12 }),
+    rail: mat(0x2f3640, { roughness: 0.55, metalness: 0.25 }),
+    tan: mat(0xc4a574, { roughness: 0.72, metalness: 0.08 }),
+    optic: mat(0x2a3340, { roughness: 0.4, metalness: 0.35 }),
+    glass: mat(0x0b1220, { emissive: 0x38bdf8, emissiveIntensity: 1.4, roughness: 0.35 }),
+    barrel: mat(0x1a1f24, { roughness: 0.42, metalness: 0.45 }),
+    steel: mat(0x7d8794, { roughness: 0.35, metalness: 0.5 }),
+    glow: mat(0x0b1220, { emissive: 0x60a5fa, emissiveIntensity: 1.3, roughness: 0.4 }),
+  }),
+  carbine: () => ({
+    body: mat(0xb8a07a, { roughness: 0.7, metalness: 0.1 }),
+    rail: mat(0x3a3e42, { roughness: 0.55, metalness: 0.25 }),
+    green: mat(0x4a5a3a, { roughness: 0.65, metalness: 0.1 }),
+    mag: mat(0x2a3228, { roughness: 0.7, metalness: 0.1 }),
+    barrel: mat(0x1a1f24, { roughness: 0.45, metalness: 0.45 }),
+    steel: mat(0x7d8794, { roughness: 0.35, metalness: 0.5 }),
+    glow: mat(0x0b1220, { emissive: 0xfbbf24, emissiveIntensity: 1.3, roughness: 0.4 }),
+  }),
+  // --- Shotguns ---
+  autoshotgun: () => ({
+    body: mat(0x3a4a63, { roughness: 0.38, metalness: 0.5 }),
+    wood: mat(0x5c3a1e, { roughness: 0.82, metalness: 0.05 }),
+    steel: mat(0x8a929c, { roughness: 0.32, metalness: 0.5 }),
+    mag: mat(0x2a3038, { roughness: 0.5, metalness: 0.3 }),
+    barrel: mat(0x3a4050, { roughness: 0.35, metalness: 0.5 }),
+    glow: mat(0x0b1220, { emissive: 0xff6b4a, emissiveIntensity: 1.35, roughness: 0.4 }),
+  }),
+  slugshotgun: () => ({
+    body: mat(0x3e4e68, { roughness: 0.34, metalness: 0.52 }),
+    wood: mat(0x7a4a22, { roughness: 0.78, metalness: 0.05 }),
+    woodDark: mat(0x4e2e12, { roughness: 0.82, metalness: 0.04 }),
+    steel: mat(0x9aa3b0, { roughness: 0.3, metalness: 0.55 }),
+    brass: mat(0xd4a24c, { roughness: 0.4, metalness: 0.55 }),
+    glow: mat(0x0b1220, { emissive: 0xfbbf24, emissiveIntensity: 1.3, roughness: 0.4 }),
+  }),
+  doublebarrel: () => ({
+    body: mat(0x3a4858, { roughness: 0.36, metalness: 0.5 }),
+    wood: mat(0x8b5a2b, { roughness: 0.8, metalness: 0.05 }),
+    woodDark: mat(0x5c3a1e, { roughness: 0.85, metalness: 0.04 }),
+    steel: mat(0x9aa3b0, { roughness: 0.3, metalness: 0.55 }),
+    brass: mat(0xd4a24c, { roughness: 0.4, metalness: 0.55 }),
+    glow: mat(0x0b1220, { emissive: 0xfb923c, emissiveIntensity: 1.35, roughness: 0.4 }),
+  }),
+  // --- Snipers ---
+  scout: () => ({
+    body: mat(0x4a5a3a, { roughness: 0.68, metalness: 0.1 }),
+    tan: mat(0xc8b48a, { roughness: 0.72, metalness: 0.08 }),
+    black: mat(0x1a1f26, { roughness: 0.55, metalness: 0.3 }),
+    optic: mat(0x2a3340, { roughness: 0.4, metalness: 0.35 }),
+    glass: mat(0x0b1220, { emissive: 0x38bdf8, emissiveIntensity: 1.5, roughness: 0.35 }),
+    steel: mat(0x8b949e, { roughness: 0.35, metalness: 0.5 }),
+  }),
+  awp: () => ({
+    body: mat(0x2a3428, { roughness: 0.65, metalness: 0.12 }),
+    stock: mat(0x222c1e, { roughness: 0.7, metalness: 0.1 }),
+    black: mat(0x14181c, { roughness: 0.55, metalness: 0.3 }),
+    optic: mat(0x222c34, { roughness: 0.38, metalness: 0.35 }),
+    glass: mat(0x0b1220, { emissive: 0x4ade80, emissiveIntensity: 1.5, roughness: 0.35 }),
+    steel: mat(0x6e7880, { roughness: 0.35, metalness: 0.5 }),
+  }),
+  // --- Heavy ---
+  lmg: () => ({
+    body: mat(0x3a3e44, { roughness: 0.5, metalness: 0.35 }),
+    rail: mat(0x2a2e34, { roughness: 0.55, metalness: 0.3 }),
+    barrel: mat(0x22262c, { roughness: 0.42, metalness: 0.45 }),
+    mag: mat(0x2a2e34, { roughness: 0.55, metalness: 0.25 }),
+    brass: mat(0xd4a24c, { roughness: 0.4, metalness: 0.55 }),
+    steel: mat(0x6e7880, { roughness: 0.35, metalness: 0.5 }),
+    glow: mat(0x0b1220, { emissive: 0xfbbf24, emissiveIntensity: 1.3, roughness: 0.4 }),
+  }),
+  minigun: () => ({
+    body: mat(0x2e3238, { roughness: 0.45, metalness: 0.4 }),
+    barrels: mat(0x3a3e44, { roughness: 0.35, metalness: 0.5 }),
+    housing: mat(0x22262c, { roughness: 0.5, metalness: 0.35 }),
+    brass: mat(0xd4a24c, { roughness: 0.4, metalness: 0.55 }),
+    grip: mat(0x1a1e22, { roughness: 0.8, metalness: 0.05 }),
+    glow: mat(0x0b1220, { emissive: 0xf87171, emissiveIntensity: 1.4, roughness: 0.4 }),
+  }),
+  // --- Exotic ---
+  crossbow: () => ({
+    body: mat(0x6b4420, { roughness: 0.75, metalness: 0.08 }),
+    rail: mat(0x4a3218, { roughness: 0.7, metalness: 0.1 }),
+    limb: mat(0x2a2e34, { roughness: 0.5, metalness: 0.3 }),
+    brass: mat(0xd4a24c, { roughness: 0.4, metalness: 0.55 }),
+    string: mat(0xc8c0b0, { roughness: 0.9, metalness: 0.02 }),
+    steel: mat(0x7d8794, { roughness: 0.35, metalness: 0.5 }),
+  }),
+  sawedoff: () => ({
+    wood: mat(0x7a4a22, { roughness: 0.8, metalness: 0.05 }),
+    woodDark: mat(0x4e2e12, { roughness: 0.85, metalness: 0.04 }),
+    steel: mat(0x3a4a63, { roughness: 0.35, metalness: 0.55 }),
+    barrel: mat(0x4a5a70, { roughness: 0.32, metalness: 0.5 }),
+    brass: mat(0xd4a24c, { roughness: 0.4, metalness: 0.55 }),
+    glow: mat(0x0b1220, { emissive: 0xfb923c, emissiveIntensity: 1.35, roughness: 0.4 }),
+  }),
+  leveraction: () => ({
+    wood: mat(0x8b5a2b, { roughness: 0.78, metalness: 0.05 }),
+    woodDark: mat(0x5c3a1e, { roughness: 0.85, metalness: 0.04 }),
+    brass: mat(0xd4a24c, { roughness: 0.4, metalness: 0.55 }),
+    blue: mat(0x3a4a63, { roughness: 0.35, metalness: 0.55 }),
+    steel: mat(0x8a929c, { roughness: 0.32, metalness: 0.5 }),
+    glow: mat(0x0b1220, { emissive: 0xfbbf24, emissiveIntensity: 1.3, roughness: 0.4 }),
+  }),
+  // --- Special ---
+  bow: () => ({
+    wood: mat(0x8b6530, { roughness: 0.78, metalness: 0.05 }),
+    leather: mat(0x5c4028, { roughness: 0.82, metalness: 0.04 }),
+    string: mat(0xd0c8b8, { roughness: 0.9, metalness: 0.02 }),
+    dark: mat(0x3a2e20, { roughness: 0.8, metalness: 0.06 }),
+    tip: mat(0x6e7880, { roughness: 0.35, metalness: 0.45 }),
+  }),
+  laser: () => ({
+    body: mat(0xe8eef4, { roughness: 0.2, metalness: 0.6 }),
+    dark: mat(0x2a3040, { roughness: 0.4, metalness: 0.35 }),
+    cyan: mat(0x0b1220, { emissive: 0x22d3ee, emissiveIntensity: 2.0, roughness: 0.3 }),
+    glass: mat(0x0b1220, { emissive: 0x38bdf8, emissiveIntensity: 1.8, roughness: 0.3 }),
+    grip: mat(0x1a2030, { roughness: 0.7, metalness: 0.15 }),
+    chrome: mat(0xc0c8d0, { roughness: 0.15, metalness: 0.7 }),
+  }),
+  poopgun: () => ({
+    body: mat(0x7a5c2a, { roughness: 0.75, metalness: 0.08 }),
+    tank: mat(0x4a8a3a, { roughness: 0.7, metalness: 0.1 }),
+    nozzle: mat(0x5a4220, { roughness: 0.6, metalness: 0.15 }),
+    grip: mat(0x3a6a2a, { roughness: 0.8, metalness: 0.05 }),
+    trim: mat(0x8a6a22, { roughness: 0.65, metalness: 0.1 }),
+    glow: mat(0x0b1220, { emissive: 0xa3e635, emissiveIntensity: 1.4, roughness: 0.4 }),
+  }),
+  knife: () => ({
+    blade: mat(0x4a5060, { roughness: 0.2, metalness: 0.7 }),
+    edge: mat(0xc0c8d0, { roughness: 0.15, metalness: 0.75 }),
+    guard: mat(0x2a2e34, { roughness: 0.4, metalness: 0.5 }),
+    handle: mat(0x1a1e22, { roughness: 0.8, metalness: 0.08 }),
+    trim: mat(0xc0282a, { roughness: 0.45, metalness: 0.3 }),
+  }),
 };
 
 /** Classic pistol iron sights: rear notch + front post. */
@@ -383,6 +590,836 @@ const BUILDERS = {
     addMuzzle(g, 0, 0.02, -0.95, 1.4);
     return g;
   },
+
+  // === Sidearms ===
+
+  revolver() {
+    const g = new THREE.Group();
+    const t = THEMES.revolver();
+    // Frame
+    g.add(box(0.07, 0.055, 0.16, t.frame, 0, 0.04, -0.02));
+    // Cylinder
+    g.add(cyl(0.04, 0.065, t.cylinder, 0, 0.03, -0.06, 'x'));
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      g.add(cyl(0.008, 0.068, t.brass, Math.cos(a) * 0.025, 0.03 + Math.sin(a) * 0.025, -0.06, 'x'));
+    }
+    // Barrel shroud
+    g.add(box(0.042, 0.038, 0.18, t.frame, 0, 0.055, -0.2));
+    g.add(cyl(0.015, 0.22, t.barrel, 0, 0.04, -0.24));
+    // Front sight
+    g.add(box(0.012, 0.026, 0.014, t.brass, 0, 0.082, -0.28));
+    // Hammer
+    g.add(box(0.018, 0.04, 0.025, t.frame, 0, 0.085, 0.04));
+    // Grip
+    g.add(grip(t.wood, t.brass, 0, -0.01, 0.04, 0.35));
+    // Trigger guard
+    g.add(box(0.042, 0.012, 0.055, t.frame, 0, -0.02, -0.01));
+    g.add(box(0.012, 0.042, 0.012, t.frame, -0.014, -0.042, -0.01));
+    g.add(box(0.012, 0.042, 0.012, t.frame, 0.014, -0.042, -0.01));
+
+    g.add(triggerHand({ x: 0, y: -0.085, z: 0.02, armPitch: 0.82, armYaw: 0.28, armLength: 0.32 }));
+    g.add(supportHand({ x: 0, y: -0.14, z: 0.04, rise: 0.05, armPitch: 0.9, armYaw: -0.24, armLength: 0.34 }));
+    addMuzzle(g, 0, 0.04, -0.35, 0.55);
+    return g;
+  },
+
+  machinepistol() {
+    const g = new THREE.Group();
+    const t = THEMES.machinepistol();
+    // Slide
+    g.add(box(0.068, 0.045, 0.2, t.slide, 0, 0.055, -0.04));
+    // Frame
+    g.add(box(0.065, 0.045, 0.18, t.body, 0, 0.012, -0.03));
+    // Barrel housing
+    g.add(box(0.045, 0.032, 0.08, t.barrel, 0, 0.02, -0.18));
+    g.add(cyl(0.011, 0.06, t.barrel, 0, 0.02, -0.23));
+    // Extended mag
+    g.add(box(0.04, 0.18, 0.065, t.mag, 0, -0.14, -0.04));
+    g.add(box(0.042, 0.02, 0.067, t.trim, 0, -0.24, -0.04));
+    // Wire stock (folded along side)
+    g.add(box(0.01, 0.01, 0.22, t.body, 0.04, 0.065, 0.04));
+    g.add(box(0.01, 0.06, 0.01, t.body, 0.04, 0.035, 0.15));
+    // Grip
+    g.add(grip(t.grip, t.trim, 0, -0.01, 0.04, 0.32));
+    // Trigger guard
+    g.add(box(0.04, 0.01, 0.05, t.body, 0, -0.03, -0.01));
+    // Sights
+    pistolIronSights(g, t.slide, t.glow);
+    // Cocking handle
+    g.add(box(0.09, 0.016, 0.02, t.body, 0, 0.06, 0.02));
+
+    g.add(triggerHand({ x: 0, y: -0.085, z: 0.015, armPitch: 0.82, armYaw: 0.28, armLength: 0.32 }));
+    g.add(supportHand({ x: 0, y: -0.12, z: -0.06, rise: 0.05, armPitch: 0.88, armYaw: -0.26, armLength: 0.34 }));
+    addMuzzle(g, 0, 0.02, -0.27, 0.45);
+    return g;
+  },
+
+  deagle() {
+    const g = new THREE.Group();
+    const t = THEMES.deagle();
+    // Massive slide
+    g.add(box(0.088, 0.058, 0.28, t.slide, 0, 0.06, -0.08));
+    // Frame
+    g.add(box(0.082, 0.055, 0.24, t.body, 0, 0.01, -0.06));
+    // Heavy barrel
+    g.add(box(0.065, 0.04, 0.12, t.barrel, 0, 0.025, -0.24));
+    g.add(cyl(0.016, 0.08, t.barrel, 0, 0.025, -0.32));
+    // Compensator slots
+    g.add(box(0.09, 0.015, 0.04, t.gold, 0, 0.065, -0.2));
+    g.add(box(0.09, 0.015, 0.04, t.gold, 0, 0.065, -0.16));
+    // Grip
+    g.add(grip(t.grip, t.gold, 0, -0.01, 0.04, 0.3));
+    // Trigger guard
+    g.add(box(0.05, 0.012, 0.065, t.body, 0, -0.035, -0.02));
+    g.add(box(0.014, 0.05, 0.012, t.body, -0.018, -0.058, -0.02));
+    g.add(box(0.014, 0.05, 0.012, t.body, 0.018, -0.058, -0.02));
+    // Gold accents
+    g.add(box(0.084, 0.02, 0.06, t.gold, 0, 0.06, 0.02));
+    g.add(box(0.055, 0.02, 0.07, t.gold, 0, -0.18, 0.055));
+    // Iron sights
+    pistolIronSights(g, t.slide, t.glow, 0.094);
+
+    g.add(triggerHand({ x: 0, y: -0.09, z: 0.02, armPitch: 0.82, armYaw: 0.28, armLength: 0.34 }));
+    g.add(supportHand({ x: 0, y: -0.16, z: 0.04, rise: 0.055, armPitch: 0.9, armYaw: -0.24, armLength: 0.34 }));
+    addMuzzle(g, 0, 0.025, -0.36, 0.6);
+    return g;
+  },
+
+  // === SMGs ===
+
+  smg() {
+    const g = new THREE.Group();
+    const t = THEMES.smg();
+    // Upper receiver (tube shape via box)
+    g.add(box(0.068, 0.068, 0.26, t.body, 0, 0.03, -0.04));
+    // Handguard
+    g.add(box(0.072, 0.065, 0.16, t.rail, 0, 0.02, -0.24));
+    // Top rail
+    g.add(box(0.04, 0.015, 0.3, t.rail, 0, 0.07, -0.1));
+    // Barrel
+    g.add(cyl(0.012, 0.18, t.barrel, 0, 0.02, -0.42));
+    g.add(cyl(0.018, 0.04, t.steel, 0, 0.02, -0.52));
+    // Mag (curved)
+    g.add(box(0.04, 0.12, 0.065, t.mag, 0, -0.1, -0.05));
+    g.add(box(0.04, 0.08, 0.06, t.mag, 0, -0.18, -0.025));
+    g.add(box(0.042, 0.018, 0.065, t.glow, 0, -0.22, -0.02));
+    // Grip
+    g.add(grip(t.grip, t.rail, 0, -0.03, 0.1, 0.38));
+    // Folding stock
+    g.add(cyl(0.014, 0.12, t.steel, 0, 0.01, 0.18));
+    g.add(box(0.045, 0.055, 0.1, t.body, 0, 0.0, 0.28));
+    g.add(box(0.055, 0.09, 0.03, t.grip, 0, -0.01, 0.34));
+    // Iron sights
+    g.add(box(0.012, 0.028, 0.012, t.steel, -0.016, 0.088, 0.03));
+    g.add(box(0.012, 0.028, 0.012, t.steel, 0.016, 0.088, 0.03));
+    g.add(box(0.012, 0.03, 0.012, t.glow, 0, 0.09, -0.3));
+
+    g.add(triggerHand({ x: 0, y: -0.085, z: 0.05 }));
+    g.add(supportHand({ x: 0, y: -0.02, z: -0.18, rise: 0.045 }));
+    addMuzzle(g, 0, 0.02, -0.54, 0.5);
+    return g;
+  },
+
+  p90() {
+    const g = new THREE.Group();
+    const t = THEMES.p90();
+    // Bullpup body (rounded via overlapping boxes)
+    g.add(box(0.075, 0.08, 0.36, t.body, 0, 0.02, -0.02));
+    g.add(box(0.07, 0.06, 0.32, t.shell, 0, -0.01, 0.0));
+    // Top-mounted horizontal mag
+    g.add(box(0.065, 0.03, 0.26, t.mag, 0, 0.07, -0.04));
+    g.add(box(0.06, 0.025, 0.2, t.body, 0, 0.09, -0.04));
+    // Integrated sight housing
+    g.add(box(0.05, 0.03, 0.08, t.sight, 0, 0.1, -0.06));
+    g.add(box(0.03, 0.025, 0.01, t.glow, 0, 0.108, -0.09));
+    // Barrel (short, protruding)
+    g.add(cyl(0.012, 0.12, t.barrel, 0, 0.015, -0.26));
+    g.add(cyl(0.018, 0.03, t.body, 0, 0.015, -0.33));
+    // Integrated foregrip
+    g.add(box(0.04, 0.06, 0.06, t.shell, 0, -0.055, -0.1));
+    // Trigger area
+    g.add(box(0.04, 0.01, 0.05, t.shell, 0, -0.03, -0.02));
+    // Ejection port
+    g.add(box(0.02, 0.035, 0.06, t.glow, 0.042, 0.01, -0.12));
+    // Back plate
+    g.add(box(0.06, 0.08, 0.03, t.body, 0, 0.01, 0.18));
+
+    g.add(triggerHand({ x: 0, y: -0.085, z: 0.04, armPitch: 0.8, armYaw: 0.3, armLength: 0.34 }));
+    g.add(supportHand({ x: 0, y: -0.06, z: -0.12, rise: 0.05, armPitch: 0.88, armYaw: -0.32, armLength: 0.38 }));
+    addMuzzle(g, 0, 0.015, -0.36, 0.5);
+    return g;
+  },
+
+  vector() {
+    const g = new THREE.Group();
+    const t = THEMES.vector();
+    // Angular upper body
+    g.add(box(0.065, 0.065, 0.22, t.body, 0, 0.04, -0.02));
+    // Lower body (wider, angular)
+    g.add(box(0.07, 0.08, 0.2, t.body, 0, -0.02, 0.0));
+    // Top rail
+    g.add(box(0.04, 0.015, 0.26, t.rail, 0, 0.08, -0.02));
+    // Barrel
+    g.add(cyl(0.011, 0.16, t.barrel, 0, 0.035, -0.24));
+    g.add(cyl(0.018, 0.04, t.body, 0, 0.035, -0.34));
+    // Side-feeding mag
+    g.add(box(0.04, 0.14, 0.06, t.mag, 0, -0.12, -0.02));
+    g.add(box(0.042, 0.018, 0.062, t.glow, 0, -0.2, -0.02));
+    // Grip
+    g.add(grip(t.grip, t.rail, 0, -0.04, 0.1, 0.38));
+    // Vertical foregrip
+    g.add(box(0.035, 0.07, 0.035, t.grip, 0, -0.06, -0.14));
+    g.add(box(0.038, 0.02, 0.04, t.body, 0, -0.01, -0.14));
+    // Folding stock
+    g.add(box(0.04, 0.05, 0.14, t.stock, 0, 0.01, 0.18));
+    g.add(box(0.05, 0.08, 0.03, t.body, 0, 0.0, 0.26));
+    // Charging handle
+    g.add(box(0.08, 0.018, 0.02, t.body, 0, 0.06, 0.04));
+    // Iron sights
+    g.add(box(0.012, 0.024, 0.012, t.rail, -0.015, 0.1, 0.05));
+    g.add(box(0.012, 0.024, 0.012, t.rail, 0.015, 0.1, 0.05));
+    g.add(box(0.01, 0.026, 0.01, t.glow, 0, 0.1, -0.14));
+
+    g.add(triggerHand({ x: 0, y: -0.09, z: 0.05, armPitch: 0.8, armYaw: 0.3, armLength: 0.34 }));
+    g.add(supportHand({ x: 0, y: -0.06, z: -0.14, rise: 0.046, armPitch: 0.88, armYaw: -0.3, armLength: 0.38 }));
+    addMuzzle(g, 0, 0.035, -0.36, 0.48);
+    return g;
+  },
+
+  // === Rifles ===
+
+  battlerifle() {
+    const g = new THREE.Group();
+    const t = THEMES.battlerifle();
+    // Heavy upper receiver
+    g.add(box(0.075, 0.075, 0.32, t.body, 0, 0.04, -0.06));
+    // Lower receiver
+    g.add(box(0.07, 0.06, 0.28, t.rail, 0, -0.02, -0.04));
+    // Handguard
+    g.add(box(0.078, 0.075, 0.2, t.tan, 0, 0.02, -0.32));
+    g.add(box(0.05, 0.018, 0.18, t.rail, 0, 0.065, -0.32));
+    // Heavy barrel
+    g.add(cyl(0.015, 0.32, t.barrel, 0, 0.025, -0.58));
+    g.add(cyl(0.022, 0.05, t.steel, 0, 0.025, -0.76));
+    // Large mag
+    g.add(box(0.05, 0.16, 0.085, t.mag, 0, -0.13, -0.06));
+    g.add(box(0.052, 0.02, 0.087, t.glow, 0, -0.22, -0.05));
+    // Grip
+    g.add(grip(t.body, t.rail, 0, -0.04, 0.12, 0.4));
+    // Heavy stock
+    g.add(cyl(0.02, 0.16, t.steel, 0, 0.015, 0.2));
+    g.add(box(0.055, 0.07, 0.16, t.tan, 0, 0.01, 0.32));
+    g.add(box(0.07, 0.13, 0.04, t.body, 0, -0.01, 0.42));
+    // Carry handle / iron sights
+    g.add(box(0.04, 0.01, 0.12, t.rail, 0, 0.085, -0.06));
+    g.add(box(0.012, 0.03, 0.012, t.steel, 0, 0.1, -0.12));
+    g.add(box(0.012, 0.03, 0.012, t.steel, 0, 0.1, 0.0));
+    // Front sight
+    g.add(box(0.014, 0.028, 0.012, t.steel, 0, 0.088, -0.44));
+
+    g.add(triggerHand({ x: 0, y: -0.09, z: 0.06 }));
+    g.add(supportHand({ x: 0, y: -0.02, z: -0.22, rise: 0.046 }));
+    addMuzzle(g, 0, 0.025, -0.8, 0.65);
+    return g;
+  },
+
+  burstrifle() {
+    const g = new THREE.Group();
+    const t = THEMES.burstrifle();
+    // Upper receiver
+    g.add(box(0.07, 0.065, 0.28, t.body, 0, 0.04, -0.04));
+    // Lower receiver
+    g.add(box(0.066, 0.055, 0.24, t.rail, 0, -0.015, -0.02));
+    // Triangular handguard (approximated with boxes)
+    g.add(box(0.08, 0.06, 0.2, t.handguard, 0, 0.01, -0.28));
+    g.add(box(0.06, 0.04, 0.2, t.handguard, 0, -0.03, -0.28));
+    // Barrel
+    g.add(cyl(0.013, 0.26, t.barrel, 0, 0.02, -0.52));
+    g.add(cyl(0.02, 0.04, t.steel, 0, 0.02, -0.67));
+    // Carry handle with integral sight
+    g.add(box(0.044, 0.01, 0.14, t.rail, 0, 0.08, -0.02));
+    g.add(box(0.012, 0.04, 0.012, t.rail, -0.016, 0.1, -0.08));
+    g.add(box(0.012, 0.04, 0.012, t.rail, 0.016, 0.1, -0.08));
+    g.add(box(0.012, 0.04, 0.012, t.rail, 0, 0.1, 0.04));
+    g.add(box(0.03, 0.02, 0.04, t.rail, 0, 0.12, -0.08));
+    g.add(box(0.008, 0.01, 0.008, t.glow, 0, 0.12, 0.04));
+    // Mag
+    g.add(box(0.042, 0.13, 0.075, t.mag, 0, -0.12, -0.04));
+    g.add(box(0.044, 0.018, 0.077, t.glow, 0, -0.2, -0.03));
+    // Grip
+    g.add(grip(t.body, t.rail, 0, -0.04, 0.1, 0.4));
+    // Stock
+    g.add(cyl(0.016, 0.14, t.steel, 0, 0.01, 0.18));
+    g.add(box(0.05, 0.06, 0.12, t.handguard, 0, 0.0, 0.28));
+    g.add(box(0.06, 0.11, 0.03, t.body, 0, -0.01, 0.35));
+    // Front sight
+    g.add(box(0.014, 0.03, 0.012, t.steel, 0, 0.085, -0.42));
+
+    g.add(triggerHand({ x: 0, y: -0.09, z: 0.05 }));
+    g.add(supportHand({ x: 0, y: -0.02, z: -0.2, rise: 0.044 }));
+    addMuzzle(g, 0, 0.02, -0.7, 0.6);
+    return g;
+  },
+
+  dmr() {
+    const g = new THREE.Group();
+    const t = THEMES.dmr();
+    // Long chassis
+    g.add(box(0.07, 0.068, 0.38, t.body, 0, 0.02, -0.08));
+    g.add(box(0.066, 0.05, 0.34, t.tan, 0, -0.03, -0.06));
+    // Heavy barrel
+    g.add(cyl(0.014, 0.44, t.barrel, 0, 0.02, -0.5));
+    g.add(cyl(0.022, 0.05, t.steel, 0, 0.02, -0.74));
+    // Small scope (zoom: 1.5)
+    g.add(cyl(0.022, 0.2, t.optic, 0, 0.1, -0.1));
+    g.add(cyl(0.028, 0.03, t.glass, 0, 0.1, -0.22));
+    g.add(cyl(0.026, 0.025, t.steel, 0, 0.1, 0.02));
+    // Scope mounts
+    g.add(box(0.024, 0.03, 0.03, t.steel, 0, 0.07, -0.16));
+    g.add(box(0.024, 0.03, 0.03, t.steel, 0, 0.07, -0.04));
+    // Mag
+    g.add(box(0.042, 0.1, 0.065, t.body, 0, -0.08, -0.02));
+    // Grip
+    g.add(grip(t.body, t.rail, 0, -0.04, 0.1, 0.38));
+    // Stock + cheek riser
+    g.add(box(0.05, 0.055, 0.22, t.tan, 0, 0.0, 0.26));
+    g.add(box(0.055, 0.035, 0.1, t.body, 0, 0.045, 0.2));
+    g.add(box(0.065, 0.12, 0.03, t.body, 0, -0.01, 0.38));
+    // Bipod folded
+    g.add(box(0.032, 0.02, 0.02, t.steel, 0, 0.01, -0.38));
+    g.add(box(0.012, 0.065, 0.012, t.barrel, -0.022, -0.035, -0.38));
+    g.add(box(0.012, 0.065, 0.012, t.barrel, 0.022, -0.035, -0.38));
+
+    g.add(triggerHand({ x: 0, y: -0.11, z: 0.08 }));
+    g.add(supportHand({ x: 0, y: -0.05, z: -0.16, rise: 0.045 }));
+    addMuzzle(g, 0, 0.02, -0.78, 0.85);
+    return g;
+  },
+
+  carbine() {
+    const g = new THREE.Group();
+    const t = THEMES.carbine();
+    const glass = mat(0x0b1220, { emissive: 0xf87171, emissiveIntensity: 1.1, roughness: 0.3 });
+    const reticle = mat(0x0b1220, { emissive: 0xff2a2a, emissiveIntensity: 2.2, roughness: 0.25 });
+    // Compact receiver
+    g.add(box(0.065, 0.065, 0.22, t.rail, 0, 0.035, -0.03));
+    g.add(box(0.062, 0.055, 0.2, t.body, 0, -0.015, -0.02));
+    // Short handguard
+    g.add(box(0.068, 0.06, 0.15, t.green, 0, 0.01, -0.22));
+    // Short barrel
+    g.add(cyl(0.012, 0.16, t.barrel, 0, 0.02, -0.38));
+    g.add(cyl(0.018, 0.035, t.steel, 0, 0.02, -0.48));
+    // Mag
+    g.add(box(0.04, 0.11, 0.065, t.mag, 0, -0.1, -0.04));
+    g.add(box(0.042, 0.016, 0.067, t.glow, 0, -0.17, -0.03));
+    // Grip
+    g.add(grip(t.body, t.rail, 0, -0.035, 0.08, 0.38));
+    // Collapsible stock
+    g.add(cyl(0.014, 0.1, t.steel, 0, 0.01, 0.16));
+    g.add(box(0.04, 0.045, 0.08, t.green, 0, 0.0, 0.24));
+    g.add(box(0.05, 0.08, 0.025, t.body, 0, -0.005, 0.29));
+    // Red dot
+    redDotOptic(g, t.rail, glass, reticle, 0, 0.085, -0.02);
+    // Front sight
+    g.add(box(0.014, 0.026, 0.012, t.steel, 0, 0.08, -0.32));
+
+    g.add(triggerHand({ x: 0, y: -0.085, z: 0.04 }));
+    g.add(supportHand({ x: 0, y: -0.015, z: -0.16, rise: 0.044 }));
+    addMuzzle(g, 0, 0.02, -0.5, 0.5);
+    return g;
+  },
+
+  // === Shotguns ===
+
+  autoshotgun() {
+    const g = new THREE.Group();
+    const t = THEMES.autoshotgun();
+    // Receiver
+    g.add(box(0.08, 0.09, 0.24, t.body, 0, 0.025, -0.02));
+    // Thick barrel
+    g.add(cyl(0.024, 0.34, t.barrel, 0, 0.035, -0.36));
+    g.add(cyl(0.028, 0.04, t.steel, 0, 0.035, -0.54));
+    // Gas tube above barrel
+    g.add(cyl(0.012, 0.2, t.steel, 0, 0.07, -0.28));
+    // Box mag
+    g.add(box(0.055, 0.12, 0.08, t.mag, 0, -0.1, -0.04));
+    g.add(box(0.057, 0.02, 0.082, t.glow, 0, -0.17, -0.04));
+    // Handguard
+    g.add(box(0.08, 0.06, 0.14, t.wood, 0, -0.02, -0.22));
+    // Pistol grip
+    g.add(grip(t.wood, t.body, 0, -0.02, 0.08, 0.35));
+    // Stock
+    g.add(box(0.055, 0.065, 0.18, t.wood, 0, 0.0, 0.24));
+    g.add(box(0.065, 0.12, 0.035, t.body, 0, -0.01, 0.34));
+    // Front bead
+    g.add(box(0.014, 0.02, 0.014, t.glow, 0, 0.075, -0.5));
+    // Ejection port
+    g.add(box(0.02, 0.04, 0.07, t.glow, 0.045, 0.04, -0.06));
+
+    g.add(triggerHand({ x: 0, y: -0.09, z: 0.06 }));
+    g.add(supportHand({ x: 0, y: -0.05, z: -0.22, rise: 0.048, spread: 0.006 }));
+    addMuzzle(g, 0, 0.035, -0.56, 0.95);
+    return g;
+  },
+
+  slugshotgun() {
+    const g = new THREE.Group();
+    const t = THEMES.slugshotgun();
+    // Long receiver
+    g.add(box(0.078, 0.088, 0.28, t.body, 0, 0.025, -0.04));
+    // Long barrel
+    g.add(cyl(0.024, 0.46, t.steel, 0, 0.035, -0.46));
+    g.add(cyl(0.028, 0.04, t.brass, 0, 0.035, -0.7));
+    // Tube mag
+    g.add(cyl(0.015, 0.32, t.body, 0, -0.01, -0.36));
+    // Pump
+    g.add(box(0.082, 0.065, 0.14, t.wood, 0, -0.03, -0.3));
+    g.add(box(0.086, 0.014, 0.12, t.woodDark, 0, 0.006, -0.3));
+    // Rifle-style rear sight
+    g.add(box(0.04, 0.01, 0.03, t.steel, 0, 0.08, 0.02));
+    g.add(box(0.012, 0.025, 0.012, t.steel, -0.014, 0.095, 0.02));
+    g.add(box(0.012, 0.025, 0.012, t.steel, 0.014, 0.095, 0.02));
+    // Front sight
+    g.add(box(0.014, 0.024, 0.014, t.brass, 0, 0.075, -0.64));
+    // Trigger guard
+    g.add(box(0.04, 0.01, 0.055, t.body, 0, -0.03, 0.02));
+    g.add(box(0.012, 0.04, 0.012, t.body, -0.014, -0.05, 0.02));
+    g.add(box(0.012, 0.04, 0.012, t.body, 0.014, -0.05, 0.02));
+    // Stock
+    g.add(grip(t.wood, t.woodDark, 0, -0.01, 0.08, 0.28));
+    g.add(box(0.06, 0.075, 0.22, t.wood, 0, 0.0, 0.24));
+    g.add(box(0.07, 0.13, 0.035, t.woodDark, 0, -0.02, 0.36));
+    // Ejection port
+    g.add(box(0.018, 0.035, 0.065, t.glow, 0.044, 0.04, -0.06));
+
+    g.add(triggerHand({ x: 0, y: -0.085, z: 0.06 }));
+    g.add(supportHand({ x: 0, y: -0.065, z: -0.3, rise: 0.05, spread: 0.008 }));
+    addMuzzle(g, 0, 0.035, -0.72, 1.1);
+    return g;
+  },
+
+  doublebarrel() {
+    const g = new THREE.Group();
+    const t = THEMES.doublebarrel();
+    // Receiver / break action
+    g.add(box(0.09, 0.08, 0.16, t.body, 0, 0.025, -0.02));
+    // Twin barrels side by side
+    g.add(cyl(0.022, 0.44, t.steel, -0.022, 0.035, -0.38));
+    g.add(cyl(0.022, 0.44, t.steel, 0.022, 0.035, -0.38));
+    // Barrel rib on top
+    g.add(box(0.015, 0.008, 0.4, t.body, 0, 0.062, -0.36));
+    // Muzzle rings
+    g.add(cyl(0.026, 0.02, t.brass, -0.022, 0.035, -0.6));
+    g.add(cyl(0.026, 0.02, t.brass, 0.022, 0.035, -0.6));
+    // Break hinge
+    g.add(cyl(0.016, 0.08, t.brass, 0, 0.06, -0.1, 'x'));
+    // Front bead
+    g.add(box(0.012, 0.018, 0.012, t.brass, 0, 0.075, -0.58));
+    // Trigger guard
+    g.add(box(0.04, 0.01, 0.055, t.body, 0, -0.025, 0.02));
+    g.add(box(0.012, 0.04, 0.012, t.body, -0.014, -0.045, 0.02));
+    g.add(box(0.012, 0.04, 0.012, t.body, 0.014, -0.045, 0.02));
+    // Wood grip + stock
+    g.add(grip(t.wood, t.woodDark, 0, -0.01, 0.06, 0.28));
+    g.add(box(0.065, 0.08, 0.24, t.wood, 0, 0.0, 0.24));
+    g.add(box(0.075, 0.14, 0.035, t.woodDark, 0, -0.02, 0.37));
+    // Ejection accent
+    g.add(box(0.06, 0.02, 0.04, t.glow, 0, 0.072, -0.06));
+
+    g.add(triggerHand({ x: 0, y: -0.085, z: 0.04 }));
+    g.add(supportHand({ x: 0, y: -0.03, z: -0.3, rise: 0.046, spread: 0.01 }));
+    addMuzzle(g, 0, 0.035, -0.62, 1.0);
+    return g;
+  },
+
+  // === Snipers ===
+
+  scout() {
+    const g = new THREE.Group();
+    const t = THEMES.scout();
+    // Light chassis
+    g.add(box(0.062, 0.06, 0.34, t.body, 0, 0.015, -0.06));
+    g.add(box(0.06, 0.045, 0.3, t.tan, 0, -0.03, -0.04));
+    // Thin barrel
+    g.add(cyl(0.01, 0.42, t.black, 0, 0.02, -0.48));
+    g.add(cyl(0.016, 0.04, t.steel, 0, 0.02, -0.72));
+    // Medium scope
+    g.add(cyl(0.024, 0.22, t.optic, 0, 0.1, -0.1));
+    g.add(cyl(0.03, 0.03, t.glass, 0, 0.1, -0.23));
+    g.add(cyl(0.028, 0.025, t.steel, 0, 0.1, 0.02));
+    // Scope mounts
+    g.add(box(0.024, 0.03, 0.03, t.steel, 0, 0.065, -0.18));
+    g.add(box(0.024, 0.03, 0.03, t.steel, 0, 0.065, -0.02));
+    // Bolt
+    g.add(box(0.06, 0.016, 0.016, t.steel, 0.038, 0.035, 0.06));
+    g.add(cyl(0.01, 0.022, t.steel, 0.068, 0.035, 0.06, 'x'));
+    // Small mag
+    g.add(box(0.038, 0.06, 0.055, t.black, 0, -0.06, -0.02));
+    // Grip
+    g.add(grip(t.body, t.black, 0, -0.04, 0.1, 0.36));
+    // Light stock
+    g.add(box(0.048, 0.05, 0.2, t.tan, 0, 0.0, 0.26));
+    g.add(box(0.055, 0.1, 0.03, t.body, 0, -0.01, 0.37));
+
+    g.add(triggerHand({ x: 0, y: -0.11, z: 0.08 }));
+    g.add(supportHand({ x: 0, y: -0.05, z: -0.14, rise: 0.044 }));
+    addMuzzle(g, 0, 0.02, -0.74, 1.1);
+    return g;
+  },
+
+  awp() {
+    const g = new THREE.Group();
+    const t = THEMES.awp();
+    // Heavy chassis
+    g.add(box(0.075, 0.075, 0.46, t.body, 0, 0.018, -0.1));
+    g.add(box(0.072, 0.055, 0.4, t.stock, 0, -0.038, -0.08));
+    // Long heavy barrel
+    g.add(cyl(0.014, 0.58, t.black, 0, 0.022, -0.64));
+    g.add(cyl(0.024, 0.07, t.steel, 0, 0.022, -0.98));
+    // Large scope
+    g.add(cyl(0.035, 0.32, t.optic, 0, 0.115, -0.16));
+    g.add(cyl(0.042, 0.04, t.glass, 0, 0.115, -0.34));
+    g.add(cyl(0.04, 0.035, t.steel, 0, 0.115, 0.02));
+    // Scope mounts
+    g.add(box(0.03, 0.04, 0.04, t.steel, 0, 0.075, -0.26));
+    g.add(box(0.03, 0.04, 0.04, t.steel, 0, 0.075, -0.06));
+    // Bolt handle
+    g.add(box(0.075, 0.02, 0.02, t.steel, 0.045, 0.045, 0.1));
+    g.add(cyl(0.014, 0.028, t.steel, 0.088, 0.045, 0.1, 'x'));
+    // Heavy mag
+    g.add(box(0.05, 0.09, 0.075, t.black, 0, -0.09, -0.02));
+    // Grip
+    g.add(grip(t.body, t.black, 0, -0.055, 0.13, 0.4));
+    // Heavy stock + cheek riser
+    g.add(box(0.06, 0.065, 0.28, t.stock, 0, 0.0, 0.32));
+    g.add(box(0.065, 0.045, 0.14, t.body, 0, 0.055, 0.26));
+    g.add(box(0.075, 0.14, 0.04, t.body, 0, -0.015, 0.48));
+    // Bipod folded
+    g.add(box(0.036, 0.024, 0.026, t.steel, 0, 0.01, -0.5));
+    g.add(box(0.06, 0.012, 0.016, t.steel, 0, -0.002, -0.5));
+    g.add(box(0.012, 0.08, 0.012, t.black, -0.026, -0.044, -0.5));
+    g.add(box(0.012, 0.08, 0.012, t.black, 0.026, -0.044, -0.5));
+
+    g.add(triggerHand({ x: 0, y: -0.12, z: 0.1 }));
+    g.add(supportHand({ x: 0, y: -0.06, z: -0.2, rise: 0.048 }));
+    addMuzzle(g, 0, 0.022, -1.04, 1.5);
+    return g;
+  },
+
+  // === Heavy ===
+
+  lmg() {
+    const g = new THREE.Group();
+    const t = THEMES.lmg();
+    // Heavy receiver
+    g.add(box(0.08, 0.08, 0.32, t.body, 0, 0.035, -0.04));
+    g.add(box(0.076, 0.065, 0.28, t.rail, 0, -0.02, -0.02));
+    // Long heavy barrel with heat shield
+    g.add(cyl(0.016, 0.36, t.barrel, 0, 0.025, -0.52));
+    g.add(box(0.06, 0.05, 0.2, t.rail, 0, 0.025, -0.38));
+    g.add(cyl(0.024, 0.06, t.steel, 0, 0.025, -0.74));
+    // Carry handle
+    g.add(box(0.025, 0.012, 0.14, t.steel, 0, 0.09, -0.14));
+    g.add(box(0.012, 0.04, 0.012, t.steel, 0, 0.07, -0.21));
+    g.add(box(0.012, 0.04, 0.012, t.steel, 0, 0.07, -0.07));
+    // Box mag / ammo box
+    g.add(box(0.07, 0.1, 0.1, t.mag, 0, -0.12, -0.06));
+    g.add(box(0.072, 0.02, 0.102, t.brass, 0, -0.18, -0.06));
+    // Feed cover / top
+    g.add(box(0.082, 0.02, 0.14, t.body, 0, 0.08, -0.04));
+    // Grip
+    g.add(grip(t.body, t.rail, 0, -0.04, 0.12, 0.4));
+    // Stock
+    g.add(cyl(0.018, 0.14, t.steel, 0, 0.015, 0.2));
+    g.add(box(0.055, 0.065, 0.16, t.body, 0, 0.0, 0.32));
+    g.add(box(0.065, 0.12, 0.035, t.rail, 0, -0.01, 0.42));
+    // Bipod
+    g.add(box(0.04, 0.02, 0.02, t.steel, 0, 0.0, -0.5));
+    g.add(box(0.012, 0.08, 0.012, t.body, -0.028, -0.045, -0.5));
+    g.add(box(0.012, 0.08, 0.012, t.body, 0.028, -0.045, -0.5));
+    // Front sight
+    g.add(box(0.014, 0.026, 0.014, t.brass, 0, 0.085, -0.48));
+    // Ejection port
+    g.add(box(0.02, 0.04, 0.06, t.glow, 0.046, 0.04, -0.08));
+
+    g.add(triggerHand({ x: 0, y: -0.1, z: 0.06 }));
+    g.add(supportHand({ x: 0, y: -0.01, z: -0.24, rise: 0.046, spread: 0.008 }));
+    addMuzzle(g, 0, 0.025, -0.76, 0.8);
+    return g;
+  },
+
+  minigun() {
+    const g = new THREE.Group();
+    const t = THEMES.minigun();
+    // Motor housing (rear cylinder)
+    g.add(cyl(0.06, 0.14, t.housing, 0, 0.02, 0.04));
+    g.add(box(0.05, 0.08, 0.08, t.body, 0, 0.02, 0.12));
+    // Barrel cluster (6 barrels in a ring)
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      const bx = Math.cos(a) * 0.032;
+      const by = 0.02 + Math.sin(a) * 0.032;
+      g.add(cyl(0.008, 0.4, t.barrels, bx, by, -0.28));
+    }
+    // Front barrel clamp
+    g.add(cyl(0.055, 0.025, t.body, 0, 0.02, -0.1));
+    g.add(cyl(0.055, 0.025, t.body, 0, 0.02, -0.35));
+    // Flash hider ring
+    g.add(cyl(0.05, 0.03, t.brass, 0, 0.02, -0.49));
+    // Rear grip (spade style)
+    g.add(box(0.04, 0.1, 0.06, t.grip, 0.03, -0.06, 0.1));
+    g.add(box(0.04, 0.1, 0.06, t.grip, -0.03, -0.06, 0.1));
+    g.add(box(0.1, 0.02, 0.06, t.body, 0, -0.12, 0.1));
+    // Ammo feed / box
+    g.add(box(0.08, 0.08, 0.08, t.body, 0.06, -0.04, -0.04));
+    g.add(box(0.05, 0.04, 0.06, t.brass, 0.06, 0.02, -0.04));
+    // Trigger button
+    g.add(cyl(0.01, 0.02, t.glow, 0, -0.02, 0.08, 'x'));
+
+    g.add(triggerHand({ x: 0.03, y: -0.14, z: 0.08, armPitch: 0.85, armYaw: 0.35, armLength: 0.36 }));
+    g.add(supportHand({ x: -0.03, y: -0.14, z: 0.08, rise: 0.04, armPitch: 0.85, armYaw: -0.35, armLength: 0.36 }));
+    addMuzzle(g, 0, 0.02, -0.52, 0.7);
+    return g;
+  },
+
+  // === Exotic ===
+
+  crossbow() {
+    const g = new THREE.Group();
+    const t = THEMES.crossbow();
+    // Rail / stock body
+    g.add(box(0.055, 0.06, 0.36, t.body, 0, 0.02, -0.02));
+    g.add(box(0.05, 0.045, 0.24, t.rail, 0, -0.015, 0.02));
+    // Limbs (angled outward)
+    const limbG = new THREE.Group();
+    limbG.position.set(0, 0.02, -0.22);
+    limbG.add(box(0.24, 0.025, 0.04, t.limb, 0, 0, 0));
+    limbG.add(box(0.06, 0.02, 0.03, t.limb, -0.14, 0, 0.02));
+    limbG.add(box(0.06, 0.02, 0.03, t.limb, 0.14, 0, 0.02));
+    g.add(limbG);
+    // String
+    g.add(box(0.18, 0.006, 0.006, t.string, 0, 0.02, -0.18));
+    // Bolt / arrow on rail
+    g.add(cyl(0.005, 0.28, t.brass, 0, 0.055, -0.16));
+    // Bolt tip
+    g.add(box(0.015, 0.015, 0.025, t.steel, 0, 0.055, -0.31));
+    // Trigger mechanism
+    g.add(box(0.035, 0.025, 0.06, t.brass, 0, -0.01, -0.06));
+    // Grip
+    g.add(grip(t.body, t.brass, 0, -0.02, 0.08, 0.35));
+    // Stock
+    g.add(box(0.05, 0.055, 0.16, t.body, 0, 0.0, 0.22));
+    g.add(box(0.055, 0.09, 0.03, t.rail, 0, -0.01, 0.31));
+    // Simple top sight
+    g.add(box(0.012, 0.024, 0.012, t.steel, -0.014, 0.075, 0.02));
+    g.add(box(0.012, 0.024, 0.012, t.steel, 0.014, 0.075, 0.02));
+    g.add(box(0.01, 0.026, 0.01, t.brass, 0, 0.078, -0.18));
+
+    g.add(triggerHand({ x: 0, y: -0.09, z: 0.05 }));
+    g.add(supportHand({ x: 0, y: -0.02, z: -0.1, rise: 0.044 }));
+    addMuzzle(g, 0, 0.055, -0.36, 0.6);
+    return g;
+  },
+
+  sawedoff() {
+    const g = new THREE.Group();
+    const t = THEMES.sawedoff();
+    // Receiver
+    g.add(box(0.085, 0.075, 0.12, t.steel, 0, 0.025, 0.0));
+    // Twin short barrels
+    g.add(cyl(0.02, 0.2, t.barrel, -0.018, 0.035, -0.16));
+    g.add(cyl(0.02, 0.2, t.barrel, 0.018, 0.035, -0.16));
+    // Muzzle rings
+    g.add(cyl(0.024, 0.015, t.brass, -0.018, 0.035, -0.27));
+    g.add(cyl(0.024, 0.015, t.brass, 0.018, 0.035, -0.27));
+    // Break hinge
+    g.add(cyl(0.014, 0.07, t.brass, 0, 0.06, -0.06, 'x'));
+    // Grip only (no stock)
+    g.add(grip(t.wood, t.woodDark, 0, -0.01, 0.04, 0.3));
+    // Trigger guard
+    g.add(box(0.04, 0.01, 0.05, t.steel, 0, -0.025, 0.0));
+    g.add(box(0.012, 0.038, 0.012, t.steel, -0.014, -0.044, 0.0));
+    g.add(box(0.012, 0.038, 0.012, t.steel, 0.014, -0.044, 0.0));
+    // Side accent
+    g.add(box(0.02, 0.03, 0.06, t.glow, 0.048, 0.03, -0.02));
+
+    g.add(triggerHand({ x: 0, y: -0.085, z: 0.02, armPitch: 0.82, armYaw: 0.28, armLength: 0.32 }));
+    g.add(supportHand({ x: 0, y: -0.04, z: -0.08, rise: 0.05, armPitch: 0.88, armYaw: -0.26, armLength: 0.34 }));
+    addMuzzle(g, 0, 0.035, -0.28, 0.45);
+    return g;
+  },
+
+  leveraction() {
+    const g = new THREE.Group();
+    const t = THEMES.leveraction();
+    // Receiver
+    g.add(box(0.07, 0.075, 0.22, t.brass, 0, 0.03, -0.02));
+    // Octagonal barrel (approximated with box)
+    g.add(box(0.04, 0.04, 0.42, t.blue, 0, 0.04, -0.38));
+    g.add(box(0.044, 0.036, 0.42, t.blue, 0, 0.04, -0.38));
+    // Tube mag under barrel
+    g.add(cyl(0.012, 0.34, t.steel, 0, 0.0, -0.34));
+    // Muzzle
+    g.add(cyl(0.025, 0.03, t.brass, 0, 0.04, -0.6));
+    // Lever loop
+    g.add(box(0.05, 0.012, 0.1, t.brass, 0, -0.035, 0.01));
+    g.add(box(0.012, 0.06, 0.012, t.brass, -0.02, -0.06, -0.04));
+    g.add(box(0.012, 0.06, 0.012, t.brass, 0.02, -0.06, -0.04));
+    g.add(box(0.05, 0.012, 0.012, t.brass, 0, -0.09, -0.04));
+    // Trigger guard integrated with lever
+    g.add(box(0.012, 0.04, 0.012, t.brass, -0.02, -0.06, 0.06));
+    g.add(box(0.012, 0.04, 0.012, t.brass, 0.02, -0.06, 0.06));
+    // Grip
+    g.add(grip(t.wood, t.woodDark, 0, -0.01, 0.06, 0.28));
+    // Wood stock
+    g.add(box(0.06, 0.075, 0.24, t.wood, 0, 0.01, 0.24));
+    g.add(box(0.07, 0.13, 0.035, t.woodDark, 0, -0.01, 0.37));
+    // Front sight
+    g.add(box(0.012, 0.022, 0.012, t.brass, 0, 0.068, -0.56));
+    // Rear sight
+    g.add(box(0.03, 0.014, 0.02, t.steel, 0, 0.076, -0.04));
+    // Loading gate
+    g.add(box(0.02, 0.03, 0.05, t.glow, 0.04, 0.01, -0.02));
+
+    g.add(triggerHand({ x: 0, y: -0.085, z: 0.04 }));
+    g.add(supportHand({ x: 0, y: -0.04, z: -0.26, rise: 0.046, spread: 0.006 }));
+    addMuzzle(g, 0, 0.04, -0.62, 0.9);
+    return g;
+  },
+
+  // === Special ===
+
+  bow() {
+    const g = new THREE.Group();
+    const t = THEMES.bow();
+    // Riser (grip section)
+    g.add(box(0.04, 0.16, 0.06, t.leather, 0, 0.0, 0.0));
+    g.add(box(0.035, 0.08, 0.055, t.dark, 0, 0.0, 0.01));
+    // Upper limb (curving forward)
+    g.add(box(0.03, 0.2, 0.035, t.wood, 0, 0.18, -0.01));
+    g.add(box(0.028, 0.08, 0.03, t.wood, 0, 0.3, -0.03));
+    g.add(box(0.025, 0.04, 0.025, t.wood, 0, 0.34, -0.05));
+    // Lower limb (curving forward)
+    g.add(box(0.03, 0.2, 0.035, t.wood, 0, -0.18, -0.01));
+    g.add(box(0.028, 0.08, 0.03, t.wood, 0, -0.3, -0.03));
+    g.add(box(0.025, 0.04, 0.025, t.wood, 0, -0.34, -0.05));
+    // Limb tips
+    g.add(box(0.01, 0.015, 0.015, t.tip, 0, 0.365, -0.06));
+    g.add(box(0.01, 0.015, 0.015, t.tip, 0, -0.365, -0.06));
+    // String
+    g.add(box(0.004, 0.73, 0.004, t.string, 0, 0.0, -0.06));
+    // Arrow rest
+    g.add(box(0.02, 0.012, 0.04, t.dark, 0, 0.055, -0.02));
+    // Arrow nocked
+    g.add(cyl(0.004, 0.35, t.tip, 0, 0.055, -0.2));
+    g.add(box(0.015, 0.015, 0.02, t.tip, 0, 0.055, -0.38));
+    // Leather wrap detail
+    g.add(box(0.044, 0.025, 0.065, t.leather, 0, 0.04, 0.0));
+    g.add(box(0.044, 0.025, 0.065, t.leather, 0, -0.04, 0.0));
+
+    g.add(triggerHand({ x: 0, y: -0.12, z: 0.05, armPitch: 0.82, armYaw: 0.3, armLength: 0.34 }));
+    g.add(supportHand({ x: 0, y: -0.04, z: -0.02, rise: 0.06, armPitch: 0.85, armYaw: -0.3, armLength: 0.36 }));
+    addMuzzle(g, 0, 0.055, -0.38, 0.5);
+    return g;
+  },
+
+  laser() {
+    const g = new THREE.Group();
+    const t = THEMES.laser();
+    // Sleek body
+    g.add(box(0.065, 0.06, 0.28, t.body, 0, 0.035, -0.04));
+    g.add(box(0.06, 0.05, 0.24, t.dark, 0, -0.01, -0.02));
+    // Emitter barrel
+    g.add(cyl(0.02, 0.14, t.chrome, 0, 0.03, -0.24));
+    g.add(cyl(0.025, 0.03, t.cyan, 0, 0.03, -0.32));
+    // Glowing side panels
+    g.add(box(0.068, 0.015, 0.12, t.cyan, 0, 0.07, -0.06));
+    g.add(box(0.015, 0.04, 0.16, t.glass, -0.038, 0.03, -0.08));
+    g.add(box(0.015, 0.04, 0.16, t.glass, 0.038, 0.03, -0.08));
+    // Top rail / sight
+    g.add(box(0.03, 0.012, 0.18, t.chrome, 0, 0.07, -0.06));
+    g.add(box(0.02, 0.02, 0.03, t.cyan, 0, 0.08, -0.04));
+    // Power pack (rear)
+    g.add(box(0.06, 0.065, 0.1, t.dark, 0, 0.02, 0.16));
+    g.add(box(0.04, 0.04, 0.08, t.glass, 0, 0.04, 0.16));
+    // Grip
+    g.add(grip(t.grip, t.dark, 0, -0.02, 0.06, 0.34));
+    // Trigger guard
+    g.add(box(0.04, 0.01, 0.05, t.dark, 0, -0.03, 0.0));
+    // Vent details
+    g.add(box(0.07, 0.008, 0.02, t.cyan, 0, 0.065, -0.14));
+    g.add(box(0.07, 0.008, 0.02, t.cyan, 0, 0.065, -0.18));
+
+    g.add(triggerHand({ x: 0, y: -0.085, z: 0.03, armPitch: 0.8, armYaw: 0.3, armLength: 0.34 }));
+    g.add(supportHand({ x: 0, y: -0.02, z: -0.12, rise: 0.045, armPitch: 0.88, armYaw: -0.3, armLength: 0.36 }));
+    addMuzzle(g, 0, 0.03, -0.34, 0.5);
+    return g;
+  },
+
+  poopgun() {
+    const g = new THREE.Group();
+    const t = THEMES.poopgun();
+    // Squirt gun body (bulky, rounded-ish)
+    g.add(box(0.075, 0.08, 0.22, t.body, 0, 0.03, -0.02));
+    g.add(box(0.07, 0.06, 0.18, t.grip, 0, -0.01, 0.0));
+    // Plunger-style nozzle
+    g.add(cyl(0.018, 0.16, t.nozzle, 0, 0.035, -0.2));
+    g.add(cyl(0.03, 0.03, t.trim, 0, 0.035, -0.29));
+    // Plunger cup at end
+    g.add(cyl(0.035, 0.02, t.body, 0, 0.035, -0.31));
+    // Tank on top (pressurized goo container)
+    g.add(cyl(0.035, 0.16, t.tank, 0, 0.1, -0.02));
+    g.add(cyl(0.02, 0.02, t.trim, 0, 0.12, 0.06));
+    // Pressure gauge
+    g.add(cyl(0.012, 0.015, t.glow, 0.04, 0.1, -0.02, 'x'));
+    // Pump handle
+    g.add(box(0.06, 0.04, 0.05, t.grip, 0, -0.04, -0.12));
+    g.add(box(0.065, 0.015, 0.04, t.trim, 0, -0.02, -0.12));
+    // Trigger area
+    g.add(box(0.04, 0.01, 0.05, t.body, 0, -0.02, 0.02));
+    // Grip
+    g.add(grip(t.grip, t.trim, 0, -0.01, 0.04, 0.3));
+    // Drip detail
+    g.add(box(0.01, 0.025, 0.01, t.glow, 0.015, 0.02, -0.3));
+    g.add(box(0.01, 0.015, 0.01, t.glow, -0.012, 0.02, -0.28));
+
+    g.add(triggerHand({ x: 0, y: -0.085, z: 0.02, armPitch: 0.82, armYaw: 0.28, armLength: 0.32 }));
+    g.add(supportHand({ x: 0, y: -0.05, z: -0.12, rise: 0.05, armPitch: 0.88, armYaw: -0.28, armLength: 0.34 }));
+    addMuzzle(g, 0, 0.035, -0.32, 0.4);
+    return g;
+  },
+
+  knife() {
+    const g = new THREE.Group();
+    const t = THEMES.knife();
+    // Blade (held forward)
+    g.add(box(0.035, 0.018, 0.22, t.blade, 0, 0.04, -0.16));
+    // Cutting edge (slightly offset for bevel look)
+    g.add(box(0.032, 0.006, 0.2, t.edge, 0, 0.03, -0.15));
+    // Blade tip (narrowing)
+    g.add(box(0.025, 0.015, 0.04, t.blade, 0, 0.04, -0.29));
+    g.add(box(0.015, 0.012, 0.03, t.edge, 0, 0.038, -0.32));
+    // Fuller / blood groove
+    g.add(box(0.025, 0.005, 0.14, t.guard, 0, 0.045, -0.14));
+    // Cross guard
+    g.add(box(0.07, 0.024, 0.025, t.guard, 0, 0.038, -0.04));
+    // Handle
+    g.add(box(0.04, 0.042, 0.1, t.handle, 0, 0.035, 0.02));
+    g.add(box(0.038, 0.02, 0.09, t.trim, 0, 0.055, 0.02));
+    // Handle wrap ridges
+    g.add(box(0.042, 0.044, 0.012, t.guard, 0, 0.035, -0.01));
+    g.add(box(0.042, 0.044, 0.012, t.guard, 0, 0.035, 0.02));
+    g.add(box(0.042, 0.044, 0.012, t.guard, 0, 0.035, 0.05));
+    // Pommel
+    g.add(box(0.045, 0.035, 0.025, t.guard, 0, 0.035, 0.085));
+    g.add(box(0.02, 0.02, 0.015, t.trim, 0, 0.035, 0.098));
+
+    g.add(triggerHand({ x: 0, y: -0.02, z: 0.02, armPitch: 0.78, armYaw: 0.25, armLength: 0.3 }));
+    g.add(supportHand({ x: 0, y: -0.12, z: 0.04, rise: 0.04, armPitch: 0.92, armYaw: -0.22, armLength: 0.3 }));
+    addMuzzle(g, 0, 0.04, -0.34, 0.15);
+    return g;
+  },
 };
 
 /** Compact third-person guns — same themes, fewer parts. */
@@ -448,6 +1485,335 @@ export const AVATAR_GUN_BUILDERS = {
     g.userData.length = 1.35;
     return g;
   },
+
+  // --- Sidearms ---
+  revolver() {
+    const g = new THREE.Group();
+    const t = THEMES.revolver();
+    g.add(box(0.06, 0.05, 0.14, t.frame, 0, 0.035, -0.02));
+    g.add(cyl(0.035, 0.055, t.cylinder, 0, 0.025, -0.05, 'x'));
+    g.add(cyl(0.014, 0.18, t.barrel, 0, 0.035, -0.2));
+    g.add(box(0.035, 0.03, 0.15, t.frame, 0, 0.05, -0.18));
+    g.add(grip(t.wood, t.brass, 0, -0.01, 0.04, 0.33));
+    g.add(box(0.012, 0.02, 0.012, t.brass, 0, 0.07, -0.25));
+    g.userData.length = 0.55;
+    return g;
+  },
+  machinepistol() {
+    const g = new THREE.Group();
+    const t = THEMES.machinepistol();
+    g.add(box(0.06, 0.04, 0.18, t.slide, 0, 0.045, -0.03));
+    g.add(box(0.058, 0.038, 0.16, t.body, 0, 0.008, -0.02));
+    g.add(cyl(0.01, 0.05, t.barrel, 0, 0.015, -0.15));
+    g.add(box(0.035, 0.14, 0.055, t.mag, 0, -0.1, -0.03));
+    g.add(grip(t.grip, t.trim, 0, -0.01, 0.035, 0.3));
+    g.add(box(0.01, 0.018, 0.01, t.glow, -0.012, 0.07, 0.02));
+    g.add(box(0.01, 0.018, 0.01, t.glow, 0.012, 0.07, 0.02));
+    g.userData.length = 0.45;
+    return g;
+  },
+  deagle() {
+    const g = new THREE.Group();
+    const t = THEMES.deagle();
+    g.add(box(0.08, 0.05, 0.24, t.slide, 0, 0.05, -0.06));
+    g.add(box(0.075, 0.045, 0.2, t.body, 0, 0.005, -0.04));
+    g.add(cyl(0.014, 0.06, t.barrel, 0, 0.02, -0.2));
+    g.add(grip(t.grip, t.gold, 0, -0.01, 0.035, 0.28));
+    g.add(box(0.082, 0.015, 0.04, t.gold, 0, 0.05, 0.0));
+    g.add(box(0.01, 0.02, 0.01, t.glow, 0, 0.08, -0.12));
+    g.userData.length = 0.6;
+    return g;
+  },
+
+  // --- SMGs ---
+  smg() {
+    const g = new THREE.Group();
+    const t = THEMES.smg();
+    g.add(box(0.06, 0.06, 0.22, t.body, 0, 0.025, -0.03));
+    g.add(box(0.064, 0.055, 0.13, t.rail, 0, 0.015, -0.2));
+    g.add(cyl(0.01, 0.14, t.barrel, 0, 0.015, -0.36));
+    g.add(box(0.035, 0.1, 0.055, t.mag, 0, -0.08, -0.04));
+    g.add(grip(t.grip, t.rail, 0, -0.025, 0.08, 0.36));
+    g.add(box(0.04, 0.045, 0.08, t.body, 0, 0.0, 0.22));
+    g.add(box(0.012, 0.024, 0.01, t.glow, 0, 0.08, -0.24));
+    g.userData.length = 0.5;
+    return g;
+  },
+  p90() {
+    const g = new THREE.Group();
+    const t = THEMES.p90();
+    g.add(box(0.068, 0.07, 0.3, t.body, 0, 0.015, -0.01));
+    g.add(box(0.058, 0.025, 0.22, t.mag, 0, 0.06, -0.03));
+    g.add(cyl(0.01, 0.1, t.barrel, 0, 0.01, -0.22));
+    g.add(box(0.045, 0.025, 0.06, t.sight, 0, 0.085, -0.04));
+    g.add(box(0.035, 0.05, 0.05, t.shell, 0, -0.045, -0.08));
+    g.add(box(0.05, 0.065, 0.025, t.body, 0, 0.008, 0.15));
+    g.add(box(0.025, 0.02, 0.008, t.glow, 0, 0.092, -0.06));
+    g.userData.length = 0.5;
+    return g;
+  },
+  vector() {
+    const g = new THREE.Group();
+    const t = THEMES.vector();
+    g.add(box(0.058, 0.058, 0.18, t.body, 0, 0.035, -0.01));
+    g.add(box(0.062, 0.07, 0.16, t.body, 0, -0.015, 0.0));
+    g.add(cyl(0.01, 0.12, t.barrel, 0, 0.03, -0.2));
+    g.add(box(0.035, 0.11, 0.05, t.mag, 0, -0.1, -0.01));
+    g.add(grip(t.grip, t.rail, 0, -0.035, 0.08, 0.36));
+    g.add(box(0.03, 0.055, 0.03, t.grip, 0, -0.05, -0.1));
+    g.add(box(0.035, 0.04, 0.1, t.stock, 0, 0.008, 0.16));
+    g.userData.length = 0.48;
+    return g;
+  },
+
+  // --- Rifles ---
+  battlerifle() {
+    const g = new THREE.Group();
+    const t = THEMES.battlerifle();
+    g.add(box(0.068, 0.065, 0.28, t.body, 0, 0.035, -0.05));
+    g.add(box(0.07, 0.06, 0.16, t.tan, 0, 0.015, -0.26));
+    g.add(cyl(0.013, 0.24, t.barrel, 0, 0.02, -0.48));
+    g.add(box(0.045, 0.13, 0.075, t.mag, 0, -0.1, -0.04));
+    g.add(grip(t.body, t.rail, 0, -0.035, 0.1, 0.38));
+    g.add(box(0.05, 0.055, 0.14, t.tan, 0, 0.0, 0.24));
+    g.add(box(0.012, 0.025, 0.012, t.steel, 0, 0.085, -0.38));
+    g.userData.length = 0.65;
+    return g;
+  },
+  burstrifle() {
+    const g = new THREE.Group();
+    const t = THEMES.burstrifle();
+    g.add(box(0.064, 0.058, 0.24, t.body, 0, 0.035, -0.03));
+    g.add(box(0.07, 0.052, 0.16, t.handguard, 0, 0.008, -0.22));
+    g.add(cyl(0.012, 0.2, t.barrel, 0, 0.015, -0.42));
+    g.add(box(0.04, 0.01, 0.12, t.rail, 0, 0.07, -0.02));
+    g.add(box(0.012, 0.035, 0.012, t.rail, -0.014, 0.088, -0.06));
+    g.add(box(0.012, 0.035, 0.012, t.rail, 0.014, 0.088, -0.06));
+    g.add(box(0.038, 0.1, 0.065, t.mag, 0, -0.09, -0.03));
+    g.add(grip(t.body, t.rail, 0, -0.035, 0.08, 0.38));
+    g.add(box(0.045, 0.05, 0.1, t.handguard, 0, 0.0, 0.2));
+    g.userData.length = 0.6;
+    return g;
+  },
+  dmr() {
+    const g = new THREE.Group();
+    const t = THEMES.dmr();
+    g.add(box(0.062, 0.058, 0.32, t.body, 0, 0.015, -0.06));
+    g.add(cyl(0.012, 0.34, t.barrel, 0, 0.018, -0.42));
+    g.add(cyl(0.02, 0.16, t.optic, 0, 0.085, -0.08));
+    g.add(cyl(0.025, 0.025, t.glass, 0, 0.085, -0.18));
+    g.add(box(0.038, 0.07, 0.055, t.body, 0, -0.06, -0.02));
+    g.add(grip(t.body, t.rail, 0, -0.035, 0.08, 0.36));
+    g.add(box(0.045, 0.045, 0.18, t.tan, 0, 0.0, 0.22));
+    g.userData.length = 0.85;
+    return g;
+  },
+  carbine() {
+    const g = new THREE.Group();
+    const t = THEMES.carbine();
+    const glass = mat(0x0b1220, { emissive: 0xf87171, emissiveIntensity: 1.0, roughness: 0.3 });
+    const reticle = mat(0x0b1220, { emissive: 0xff2a2a, emissiveIntensity: 2.0, roughness: 0.25 });
+    g.add(box(0.058, 0.056, 0.18, t.rail, 0, 0.03, -0.02));
+    g.add(box(0.06, 0.05, 0.12, t.green, 0, 0.008, -0.16));
+    g.add(cyl(0.01, 0.12, t.barrel, 0, 0.015, -0.3));
+    g.add(box(0.035, 0.09, 0.055, t.mag, 0, -0.08, -0.03));
+    g.add(grip(t.body, t.rail, 0, -0.03, 0.06, 0.36));
+    g.add(box(0.035, 0.04, 0.07, t.green, 0, 0.0, 0.18));
+    redDotOptic(g, t.rail, glass, reticle, 0, 0.07, -0.02);
+    g.userData.length = 0.5;
+    return g;
+  },
+
+  // --- Shotguns ---
+  autoshotgun() {
+    const g = new THREE.Group();
+    const t = THEMES.autoshotgun();
+    g.add(box(0.07, 0.08, 0.2, t.body, 0, 0.02, -0.01));
+    g.add(cyl(0.022, 0.26, t.barrel, 0, 0.03, -0.28));
+    g.add(box(0.07, 0.05, 0.1, t.wood, 0, -0.02, -0.16));
+    g.add(box(0.048, 0.1, 0.07, t.mag, 0, -0.08, -0.03));
+    g.add(grip(t.wood, t.body, 0, -0.015, 0.065, 0.33));
+    g.add(box(0.05, 0.055, 0.14, t.wood, 0, 0.0, 0.18));
+    g.add(box(0.012, 0.018, 0.012, t.glow, 0, 0.068, -0.38));
+    g.userData.length = 0.95;
+    return g;
+  },
+  slugshotgun() {
+    const g = new THREE.Group();
+    const t = THEMES.slugshotgun();
+    g.add(box(0.07, 0.08, 0.24, t.body, 0, 0.02, -0.02));
+    g.add(cyl(0.022, 0.36, t.steel, 0, 0.03, -0.38));
+    g.add(cyl(0.013, 0.26, t.body, 0, -0.01, -0.3));
+    g.add(box(0.072, 0.055, 0.1, t.wood, 0, -0.025, -0.22));
+    g.add(grip(t.wood, t.woodDark, 0, -0.01, 0.065, 0.26));
+    g.add(box(0.055, 0.065, 0.18, t.wood, 0, 0.0, 0.2));
+    g.add(box(0.012, 0.02, 0.012, t.brass, 0, 0.065, -0.52));
+    g.userData.length = 1.1;
+    return g;
+  },
+  doublebarrel() {
+    const g = new THREE.Group();
+    const t = THEMES.doublebarrel();
+    g.add(box(0.08, 0.07, 0.14, t.body, 0, 0.02, -0.01));
+    g.add(cyl(0.02, 0.34, t.steel, -0.018, 0.03, -0.3));
+    g.add(cyl(0.02, 0.34, t.steel, 0.018, 0.03, -0.3));
+    g.add(grip(t.wood, t.woodDark, 0, -0.01, 0.05, 0.26));
+    g.add(box(0.058, 0.065, 0.2, t.wood, 0, 0.0, 0.18));
+    g.add(box(0.012, 0.016, 0.012, t.brass, 0, 0.06, -0.46));
+    g.userData.length = 1.0;
+    return g;
+  },
+
+  // --- Snipers ---
+  scout() {
+    const g = new THREE.Group();
+    const t = THEMES.scout();
+    g.add(box(0.055, 0.052, 0.28, t.body, 0, 0.012, -0.04));
+    g.add(cyl(0.009, 0.34, t.black, 0, 0.018, -0.4));
+    g.add(cyl(0.02, 0.17, t.optic, 0, 0.08, -0.08));
+    g.add(cyl(0.025, 0.025, t.glass, 0, 0.08, -0.18));
+    g.add(box(0.033, 0.05, 0.045, t.black, 0, -0.05, -0.02));
+    g.add(grip(t.body, t.black, 0, -0.035, 0.08, 0.34));
+    g.add(box(0.042, 0.042, 0.16, t.tan, 0, 0.0, 0.2));
+    g.userData.length = 1.1;
+    return g;
+  },
+  awp() {
+    const g = new THREE.Group();
+    const t = THEMES.awp();
+    g.add(box(0.068, 0.068, 0.38, t.body, 0, 0.015, -0.08));
+    g.add(cyl(0.012, 0.45, t.black, 0, 0.02, -0.52));
+    g.add(cyl(0.03, 0.26, t.optic, 0, 0.1, -0.12));
+    g.add(cyl(0.036, 0.035, t.glass, 0, 0.1, -0.27));
+    g.add(box(0.045, 0.075, 0.065, t.black, 0, -0.07, -0.02));
+    g.add(grip(t.body, t.black, 0, -0.045, 0.1, 0.38));
+    g.add(box(0.055, 0.055, 0.22, t.stock, 0, 0.0, 0.28));
+    g.add(box(0.065, 0.016, 0.02, t.steel, 0.04, 0.04, 0.08));
+    g.userData.length = 1.5;
+    return g;
+  },
+
+  // --- Heavy ---
+  lmg() {
+    const g = new THREE.Group();
+    const t = THEMES.lmg();
+    g.add(box(0.072, 0.07, 0.28, t.body, 0, 0.03, -0.03));
+    g.add(cyl(0.014, 0.28, t.barrel, 0, 0.02, -0.42));
+    g.add(box(0.055, 0.04, 0.16, t.rail, 0, 0.02, -0.3));
+    g.add(box(0.06, 0.08, 0.08, t.mag, 0, -0.08, -0.04));
+    g.add(box(0.062, 0.015, 0.082, t.brass, 0, -0.13, -0.04));
+    g.add(grip(t.body, t.rail, 0, -0.035, 0.1, 0.38));
+    g.add(box(0.05, 0.055, 0.14, t.body, 0, 0.0, 0.26));
+    g.add(box(0.02, 0.01, 0.12, t.steel, 0, 0.078, -0.1));
+    g.userData.length = 0.8;
+    return g;
+  },
+  minigun() {
+    const g = new THREE.Group();
+    const t = THEMES.minigun();
+    g.add(cyl(0.05, 0.12, t.housing, 0, 0.015, 0.02));
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      g.add(cyl(0.007, 0.3, t.barrels, Math.cos(a) * 0.028, 0.015 + Math.sin(a) * 0.028, -0.22));
+    }
+    g.add(cyl(0.045, 0.02, t.body, 0, 0.015, -0.08));
+    g.add(cyl(0.045, 0.02, t.body, 0, 0.015, -0.28));
+    g.add(cyl(0.04, 0.025, t.brass, 0, 0.015, -0.38));
+    g.add(box(0.035, 0.07, 0.05, t.grip, 0.025, -0.04, 0.06));
+    g.add(box(0.035, 0.07, 0.05, t.grip, -0.025, -0.04, 0.06));
+    g.userData.length = 0.7;
+    return g;
+  },
+
+  // --- Exotic ---
+  crossbow() {
+    const g = new THREE.Group();
+    const t = THEMES.crossbow();
+    g.add(box(0.05, 0.05, 0.28, t.body, 0, 0.015, -0.01));
+    g.add(box(0.2, 0.02, 0.03, t.limb, 0, 0.015, -0.18));
+    g.add(box(0.15, 0.005, 0.005, t.string, 0, 0.015, -0.16));
+    g.add(cyl(0.004, 0.22, t.brass, 0, 0.04, -0.12));
+    g.add(grip(t.body, t.brass, 0, -0.015, 0.06, 0.33));
+    g.add(box(0.04, 0.04, 0.12, t.body, 0, 0.0, 0.18));
+    g.userData.length = 0.6;
+    return g;
+  },
+  sawedoff() {
+    const g = new THREE.Group();
+    const t = THEMES.sawedoff();
+    g.add(box(0.075, 0.065, 0.1, t.steel, 0, 0.02, 0.0));
+    g.add(cyl(0.018, 0.16, t.barrel, -0.015, 0.03, -0.13));
+    g.add(cyl(0.018, 0.16, t.barrel, 0.015, 0.03, -0.13));
+    g.add(grip(t.wood, t.woodDark, 0, -0.01, 0.035, 0.28));
+    g.add(cyl(0.012, 0.06, t.brass, 0, 0.05, -0.05, 'x'));
+    g.userData.length = 0.45;
+    return g;
+  },
+  leveraction() {
+    const g = new THREE.Group();
+    const t = THEMES.leveraction();
+    g.add(box(0.062, 0.065, 0.18, t.brass, 0, 0.025, -0.01));
+    g.add(box(0.035, 0.035, 0.34, t.blue, 0, 0.035, -0.3));
+    g.add(cyl(0.01, 0.28, t.steel, 0, -0.002, -0.28));
+    g.add(box(0.04, 0.01, 0.08, t.brass, 0, -0.03, 0.0));
+    g.add(box(0.012, 0.05, 0.012, t.brass, -0.016, -0.055, -0.03));
+    g.add(box(0.012, 0.05, 0.012, t.brass, 0.016, -0.055, -0.03));
+    g.add(grip(t.wood, t.woodDark, 0, -0.008, 0.05, 0.26));
+    g.add(box(0.055, 0.065, 0.2, t.wood, 0, 0.008, 0.2));
+    g.userData.length = 0.9;
+    return g;
+  },
+
+  // --- Special ---
+  bow() {
+    const g = new THREE.Group();
+    const t = THEMES.bow();
+    g.add(box(0.035, 0.12, 0.05, t.leather, 0, 0.0, 0.0));
+    g.add(box(0.025, 0.16, 0.03, t.wood, 0, 0.16, -0.01));
+    g.add(box(0.022, 0.06, 0.025, t.wood, 0, 0.26, -0.03));
+    g.add(box(0.025, 0.16, 0.03, t.wood, 0, -0.16, -0.01));
+    g.add(box(0.022, 0.06, 0.025, t.wood, 0, -0.26, -0.03));
+    g.add(box(0.004, 0.58, 0.004, t.string, 0, 0.0, -0.045));
+    g.add(cyl(0.003, 0.28, t.tip, 0, 0.045, -0.16));
+    g.userData.length = 0.5;
+    return g;
+  },
+  laser() {
+    const g = new THREE.Group();
+    const t = THEMES.laser();
+    g.add(box(0.058, 0.052, 0.24, t.body, 0, 0.03, -0.03));
+    g.add(box(0.053, 0.04, 0.2, t.dark, 0, -0.008, -0.01));
+    g.add(cyl(0.018, 0.1, t.chrome, 0, 0.025, -0.2));
+    g.add(cyl(0.022, 0.025, t.cyan, 0, 0.025, -0.26));
+    g.add(box(0.06, 0.012, 0.1, t.cyan, 0, 0.06, -0.04));
+    g.add(grip(t.grip, t.dark, 0, -0.015, 0.05, 0.32));
+    g.add(box(0.05, 0.05, 0.08, t.dark, 0, 0.015, 0.14));
+    g.userData.length = 0.5;
+    return g;
+  },
+  poopgun() {
+    const g = new THREE.Group();
+    const t = THEMES.poopgun();
+    g.add(box(0.065, 0.07, 0.18, t.body, 0, 0.025, -0.01));
+    g.add(cyl(0.016, 0.12, t.nozzle, 0, 0.03, -0.16));
+    g.add(cyl(0.028, 0.02, t.body, 0, 0.03, -0.23));
+    g.add(cyl(0.03, 0.12, t.tank, 0, 0.085, -0.01));
+    g.add(box(0.05, 0.035, 0.04, t.grip, 0, -0.035, -0.08));
+    g.add(grip(t.grip, t.trim, 0, -0.01, 0.03, 0.28));
+    g.userData.length = 0.4;
+    return g;
+  },
+  knife() {
+    const g = new THREE.Group();
+    const t = THEMES.knife();
+    g.add(box(0.03, 0.015, 0.18, t.blade, 0, 0.035, -0.12));
+    g.add(box(0.028, 0.005, 0.16, t.edge, 0, 0.027, -0.11));
+    g.add(box(0.06, 0.02, 0.02, t.guard, 0, 0.033, -0.02));
+    g.add(box(0.035, 0.035, 0.08, t.handle, 0, 0.03, 0.03));
+    g.add(box(0.038, 0.028, 0.02, t.guard, 0, 0.03, 0.075));
+    g.userData.length = 0.15;
+    return g;
+  },
 };
 
 /**
@@ -484,6 +1850,182 @@ export const AVATAR_HOLDS = {
     rightArm: [1.05, 0, -0.64],
     leftArm: [1.45, 0, 0.56],
     gunOffset: [0, 0.111, -0.074],
+  },
+  // --- Sidearms ---
+  revolver: {
+    rightShoulder: [0.33, 1.3, 0.02],
+    leftShoulder: [-0.36, 1.28, 0],
+    rightArm: [0.95, 0, -0.55],
+    leftArm: [0.9, 0, 0.5],
+    gunOffset: [0, 0.082, -0.02],
+  },
+  machinepistol: {
+    rightShoulder: [0.33, 1.3, 0.02],
+    leftShoulder: [-0.36, 1.28, 0],
+    rightArm: [0.95, 0, -0.55],
+    leftArm: [0.92, 0, 0.5],
+    gunOffset: [0, 0.082, -0.018],
+  },
+  deagle: {
+    rightShoulder: [0.33, 1.3, 0.02],
+    leftShoulder: [-0.36, 1.28, 0],
+    rightArm: [0.95, 0, -0.55],
+    leftArm: [0.9, 0, 0.5],
+    gunOffset: [0, 0.085, -0.022],
+  },
+  // --- SMGs ---
+  smg: {
+    rightShoulder: [0.33, 1.3, 0.05],
+    leftShoulder: [-0.34, 1.2, -0.12],
+    rightArm: [1.0, 0, -0.6],
+    leftArm: [1.3, 0, 0.54],
+    gunOffset: [0, 0.09, -0.055],
+  },
+  p90: {
+    rightShoulder: [0.33, 1.3, 0.05],
+    leftShoulder: [-0.34, 1.2, -0.12],
+    rightArm: [1.0, 0, -0.6],
+    leftArm: [1.25, 0, 0.54],
+    gunOffset: [0, 0.088, -0.05],
+  },
+  vector: {
+    rightShoulder: [0.33, 1.3, 0.05],
+    leftShoulder: [-0.34, 1.2, -0.12],
+    rightArm: [1.0, 0, -0.6],
+    leftArm: [1.28, 0, 0.54],
+    gunOffset: [0, 0.09, -0.048],
+  },
+  // --- Rifles ---
+  battlerifle: {
+    rightShoulder: [0.33, 1.3, 0.06],
+    leftShoulder: [-0.33, 1.16, -0.16],
+    rightArm: [1.05, 0, -0.64],
+    leftArm: [1.45, 0, 0.56],
+    gunOffset: [0, 0.1, -0.075],
+  },
+  burstrifle: {
+    rightShoulder: [0.33, 1.3, 0.06],
+    leftShoulder: [-0.33, 1.16, -0.16],
+    rightArm: [1.05, 0, -0.64],
+    leftArm: [1.42, 0, 0.56],
+    gunOffset: [0, 0.098, -0.068],
+  },
+  dmr: {
+    rightShoulder: [0.33, 1.3, 0.06],
+    leftShoulder: [-0.33, 1.2, -0.16],
+    rightArm: [1.05, 0, -0.64],
+    leftArm: [1.45, 0, 0.56],
+    gunOffset: [0, 0.105, -0.072],
+  },
+  carbine: {
+    rightShoulder: [0.33, 1.3, 0.06],
+    leftShoulder: [-0.33, 1.18, -0.14],
+    rightArm: [1.02, 0, -0.62],
+    leftArm: [1.35, 0, 0.55],
+    gunOffset: [0, 0.092, -0.06],
+  },
+  // --- Shotguns ---
+  autoshotgun: {
+    rightShoulder: [0.33, 1.3, 0.06],
+    leftShoulder: [-0.33, 1.18, -0.16],
+    rightArm: [1.05, 0, -0.64],
+    leftArm: [1.42, 0, 0.56],
+    gunOffset: [0, 0.085, -0.06],
+  },
+  slugshotgun: {
+    rightShoulder: [0.33, 1.3, 0.06],
+    leftShoulder: [-0.33, 1.18, -0.16],
+    rightArm: [1.05, 0, -0.64],
+    leftArm: [1.44, 0, 0.56],
+    gunOffset: [0, 0.082, -0.062],
+  },
+  doublebarrel: {
+    rightShoulder: [0.33, 1.3, 0.06],
+    leftShoulder: [-0.33, 1.18, -0.16],
+    rightArm: [1.05, 0, -0.64],
+    leftArm: [1.4, 0, 0.56],
+    gunOffset: [0, 0.082, -0.055],
+  },
+  // --- Snipers ---
+  scout: {
+    rightShoulder: [0.33, 1.3, 0.06],
+    leftShoulder: [-0.33, 1.2, -0.16],
+    rightArm: [1.05, 0, -0.64],
+    leftArm: [1.42, 0, 0.56],
+    gunOffset: [0, 0.1, -0.068],
+  },
+  awp: {
+    rightShoulder: [0.33, 1.3, 0.06],
+    leftShoulder: [-0.33, 1.22, -0.16],
+    rightArm: [1.05, 0, -0.64],
+    leftArm: [1.48, 0, 0.56],
+    gunOffset: [0, 0.115, -0.078],
+  },
+  // --- Heavy ---
+  lmg: {
+    rightShoulder: [0.33, 1.3, 0.06],
+    leftShoulder: [-0.33, 1.18, -0.16],
+    rightArm: [1.05, 0, -0.64],
+    leftArm: [1.45, 0, 0.56],
+    gunOffset: [0, 0.1, -0.07],
+  },
+  minigun: {
+    rightShoulder: [0.33, 1.3, 0.04],
+    leftShoulder: [-0.33, 1.18, -0.12],
+    rightArm: [1.0, 0, -0.58],
+    leftArm: [1.0, 0, 0.58],
+    gunOffset: [0, 0.085, -0.04],
+  },
+  // --- Exotic ---
+  crossbow: {
+    rightShoulder: [0.33, 1.3, 0.06],
+    leftShoulder: [-0.33, 1.18, -0.14],
+    rightArm: [1.02, 0, -0.62],
+    leftArm: [1.35, 0, 0.55],
+    gunOffset: [0, 0.09, -0.058],
+  },
+  sawedoff: {
+    rightShoulder: [0.33, 1.3, 0.02],
+    leftShoulder: [-0.36, 1.28, 0],
+    rightArm: [0.95, 0, -0.55],
+    leftArm: [0.92, 0, 0.5],
+    gunOffset: [0, 0.082, -0.022],
+  },
+  leveraction: {
+    rightShoulder: [0.33, 1.3, 0.06],
+    leftShoulder: [-0.33, 1.18, -0.16],
+    rightArm: [1.05, 0, -0.64],
+    leftArm: [1.42, 0, 0.56],
+    gunOffset: [0, 0.088, -0.06],
+  },
+  // --- Special ---
+  bow: {
+    rightShoulder: [0.33, 1.3, 0.04],
+    leftShoulder: [-0.34, 1.22, -0.1],
+    rightArm: [1.0, 0, -0.58],
+    leftArm: [1.2, 0, 0.54],
+    gunOffset: [0, 0.082, -0.02],
+  },
+  laser: {
+    rightShoulder: [0.33, 1.3, 0.05],
+    leftShoulder: [-0.34, 1.2, -0.14],
+    rightArm: [1.02, 0, -0.62],
+    leftArm: [1.35, 0, 0.55],
+    gunOffset: [0, 0.09, -0.055],
+  },
+  poopgun: {
+    rightShoulder: [0.33, 1.3, 0.02],
+    leftShoulder: [-0.36, 1.28, 0],
+    rightArm: [0.95, 0, -0.55],
+    leftArm: [0.92, 0, 0.5],
+    gunOffset: [0, 0.082, -0.02],
+  },
+  knife: {
+    rightShoulder: [0.33, 1.3, 0.02],
+    leftShoulder: [-0.36, 1.28, 0],
+    rightArm: [0.95, 0, -0.55],
+    leftArm: [0.85, 0, 0.48],
+    gunOffset: [0, 0.075, -0.01],
   },
 };
 

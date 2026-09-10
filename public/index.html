@@ -113,6 +113,7 @@
             <div id="mode-select" class="mode-select">
               <button type="button" class="mode-btn active" data-mode="duel" aria-pressed="true">1 vs 1</button>
               <button type="button" class="mode-btn" data-mode="deathmatch" aria-pressed="false">Deathmatch</button>
+              <button type="button" class="mode-btn" data-mode="gungame" aria-pressed="false">Gun Game</button>
             </div>
           </div>
 
@@ -188,11 +189,7 @@
       <div id="weapon-pick-card">
         <strong>Choose primary weapon</strong>
         <small id="respawn-note">Pistol is always equipped as secondary — press <b>2</b> to swap</small>
-        <div class="pick-grid">
-          <button type="button" class="pick-btn" data-pw="assault">Assault Rifle</button>
-          <button type="button" class="pick-btn" data-pw="sniper">Sniper Rifle</button>
-          <button type="button" class="pick-btn" data-pw="shotgun">Shotgun</button>
-        </div>
+        <div class="pick-grid" id="pick-grid"></div>
       </div>
     </div>
 

@@ -31,7 +31,7 @@ export class RoomManager {
       code,
       match: null,
       createdAt: Date.now(),
-      mode: mode === GAME_MODE.DEATHMATCH ? GAME_MODE.DEATHMATCH : GAME_MODE.DUEL,
+      mode: mode === GAME_MODE.DEATHMATCH ? GAME_MODE.DEATHMATCH : mode === GAME_MODE.GUNGAME ? GAME_MODE.GUNGAME : GAME_MODE.DUEL,
       dmMinutes: clampDmMinutes(dmMinutes),
       mapId: normalizeMapId(mapId),
     };
@@ -121,6 +121,7 @@ export class RoomManager {
           const match = room.match;
           const readyToAutoStart =
             !match.isDM &&
+            !match.isGunGame &&
             match.state === MATCH_STATE.WAITING &&
             match.players.length === 2;
           if (match.state !== MATCH_STATE.WAITING || readyToAutoStart) {

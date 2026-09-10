@@ -18,6 +18,7 @@ import {
   shotInterval,
   shotSpread,
   DEFAULT_PRIMARY_WEAPON_ID,
+  PRIMARY_WEAPON_IDS,
 } from '/shared/weapons.js';
 
 import { Net } from './net.js';
@@ -94,6 +95,8 @@ const state = {
   footstepTimer: 0,
   weaponPickDismissed: false,
   lastLeaderboardAt: 0,
+  gunGameOrder: [],
+  gunGameLevel: 0,
 };
 
 let selectedMode = GAME_MODE.DUEL;
@@ -163,6 +166,14 @@ function isDM() {
   return state.mode === GAME_MODE.DEATHMATCH;
 }
 
+function isGunGame() {
+  return state.mode === GAME_MODE.GUNGAME;
+}
+
+function isMultiPlayer() {
+  return isDM() || isGunGame();
+}
+
 function syncActiveWeaponFromSlot() {
   if (!isDM()) return;
   if (state.activeSlot === 'primary') {
@@ -175,7 +186,11 @@ function syncActiveWeaponFromSlot() {
 }
 
 function updateLoadoutUI() {
-  if (!isDM() || state.phase !== 'game') {
+  if ((!isDM() && !isGunGame()) || state.phase !== 'game') {
+    hud.setLoadout({ visible: false });
+    return;
+  }
+  if (isGunGame()) {
     hud.setLoadout({ visible: false });
     return;
   }
@@ -231,6 +246,7 @@ function updateFootsteps(dt) {
 function wantsWeaponPick() {
   return (
     isDM() &&
+    !isGunGame() &&
     state.phase === 'game' &&
     (state.matchState === MATCH_STATE.COUNTDOWN || !state.alive)
   );
@@ -488,6 +504,7 @@ net.on('round', (msg) => {
   state.matchState = MATCH_STATE.COUNTDOWN;
   state.lastCountdownStep = -1;
   state.weaponPickDismissed = false;
+  if (msg.gunGameOrder) state.gunGameOrder = msg.gunGameOrder;
 
   applyMapTheme(scene, state.mapId);
   if (state.arenaMesh) state.arenaMesh.dispose();
@@ -510,11 +527,13 @@ net.on('round', (msg) => {
       deaths: entry.deaths || 0,
       avatar: null,
       render: { x: entry.x, y: entry.y, z: entry.z, yaw: entry.yaw },
+      gunGameLevel: entry.ggLv || 0,
     };
     state.scores.set(entry.i, entry.score);
     state.kills.set(entry.i, entry.kills || 0);
 
     if (entry.i === state.myId) {
+      state.gunGameLevel = entry.ggLv || 0;
       if (isDM()) {
         state.primaryWeaponId = entry.pw || entry.w || DEFAULT_PRIMARY_WEAPON_ID;
         state.activeSlot = entry.as === 2 ? 'secondary' : 'primary';
@@ -523,6 +542,11 @@ net.on('round', (msg) => {
         localGun.secondaryAmmo = WEAPONS.pistol.magazine;
         localGun.ammo =
           state.activeSlot === 'secondary' ? localGun.secondaryAmmo : localGun.primaryAmmo;
+      } else if (isGunGame()) {
+        state.weaponId = entry.w;
+        localGun.ammo = WEAPONS[entry.w].magazine;
+        localGun.primaryAmmo = localGun.ammo;
+        localGun.secondaryAmmo = 0;
       } else {
         state.weaponId = entry.w;
         localGun.ammo = weapon().magazine;
@@ -571,6 +595,11 @@ net.on('round', (msg) => {
     hud.updateDmLeaderboard(buildLeaderboard());
     const primary = WEAPONS[state.primaryWeaponId] || WEAPONS.assault;
     hud.banner(primary.name.toUpperCase(), 'Deathmatch · pistol is [2]', 2.2);
+  } else if (isGunGame()) {
+    hud.setGunGameLabel();
+    hud.updateDmLeaderboard(buildLeaderboard());
+    const w = WEAPONS[state.weaponId] || WEAPONS.pistol;
+    hud.banner(w.name.toUpperCase(), `Gun Game · ${state.gunGameLevel + 1} / ${state.gunGameOrder.length}`, 2.2);
   } else {
     const foe = opponent();
     hud.setNames(state.myName, foe ? foe.name : 'Rival');
@@ -609,13 +638,19 @@ net.on('matchover', (msg) => {
   $('menu-lobby').classList.add('hidden');
   $('menu-result').classList.remove('hidden');
 
-  if (msg.mode === GAME_MODE.DEATHMATCH) {
+  if (msg.mode === GAME_MODE.DEATHMATCH || msg.mode === GAME_MODE.GUNGAME) {
     const ranked = [...msg.scores].sort((a, b) => b.kills - a.kills || a.deaths - b.deaths);
     const won = msg.winner === state.myId;
     $('result-title').textContent = won ? 'YOU WIN' : msg.winner ? 'MATCH OVER' : 'DRAW';
-    $('result-detail').innerHTML = ranked
-      .map((s) => `<span style="color:${s.color || playerColor(s.slot)}">${escapeHtml(s.name)}</span>: ${s.kills} kills`)
-      .join('<br>');
+    if (msg.mode === GAME_MODE.GUNGAME) {
+      $('result-detail').innerHTML = ranked
+        .map((s) => `<span style="color:${s.color || playerColor(s.slot)}">${escapeHtml(s.name)}</span>: level ${(s.score || 0) + 1}`)
+        .join('<br>');
+    } else {
+      $('result-detail').innerHTML = ranked
+        .map((s) => `<span style="color:${s.color || playerColor(s.slot)}">${escapeHtml(s.name)}</span>: ${s.kills} kills`)
+        .join('<br>');
+    }
   } else {
     const won = msg.winner === state.myId;
     const mine = msg.scores.find((s) => s.i === state.myId);
@@ -632,7 +667,7 @@ net.on('matchover', (msg) => {
 });
 
 net.on('opponentleft', (msg) => {
-  if (state.phase === 'lobby' && isDM()) {
+  if (state.phase === 'lobby' && (isDM() || isGunGame())) {
     updateLobby(msg);
     return;
   }
@@ -643,7 +678,7 @@ net.on('opponentleft', (msg) => {
   $('menu-main').classList.add('hidden');
   $('menu-result').classList.add('hidden');
   $('menu-lobby').classList.remove('hidden');
-  $('lobby-status').textContent = isDM()
+  $('lobby-status').textContent = (isDM() || isGunGame())
     ? 'A player left. Waiting in lobby…'
     : 'Your opponent left. Waiting for someone to join…';
   state.phase = 'lobby';
@@ -736,6 +771,12 @@ function onSnapshot(msg) {
         state.weaponId = entry.w;
         viewModel.setWeapon(entry.w);
       }
+    } else if (isGunGame()) {
+      state.gunGameLevel = entry.ggLv || 0;
+      if (entry.w !== state.weaponId) {
+        state.weaponId = entry.w;
+        viewModel.setWeapon(entry.w);
+      }
     } else if (entry.w !== state.weaponId) {
       state.weaponId = entry.w;
       viewModel.setWeapon(entry.w);
@@ -819,13 +860,13 @@ function onSnapshot(msg) {
 
   if (msg.ev && msg.ev.length) handleEvents(msg.ev);
 
-  if (isDM() && state.phase === 'game') {
+  if ((isDM() || isGunGame()) && state.phase === 'game') {
     const now = performance.now();
     if (now - state.lastLeaderboardAt >= 200) {
       state.lastLeaderboardAt = now;
       hud.updateDmLeaderboard(buildLeaderboard());
     }
-  } else if (!isDM() && state.phase === 'game') {
+  } else if (!isDM() && !isGunGame() && state.phase === 'game') {
     const foe = opponent();
     hud.setScores(state.scores.get(state.myId) || 0, foe ? state.scores.get(foe.id) || 0 : 0);
   }
@@ -833,15 +874,19 @@ function onSnapshot(msg) {
 
 function handleEvents(events) {
   for (const ev of events) {
-    if (ev.k === 'shot') {
-      if (ev.p === state.myId) continue; // already shown by local prediction
+    if (ev.k === 'shot' || ev.k === 'beam') {
+      if (ev.p === state.myId) continue;
       const w = WEAPONS[ev.w] || WEAPONS.pistol;
       const [ox, oy, oz] = ev.o;
-      effects.flash(ox, oy, oz, w.id === 'shotgun' ? 1.5 : 1.1);
+      if (ev.k !== 'beam') {
+        effects.flash(ox, oy, oz, w.id === 'shotgun' ? 1.5 : 1.1);
+      }
       tmpOrigin.set(ox, oy, oz);
       for (const hit of ev.hits) {
         tmpEnd.set(hit.x, hit.y, hit.z);
-        effects.tracer(tmpOrigin, tmpEnd, w.id === 'sniper' ? 0.03 : 0.02);
+        if (ev.k !== 'beam') {
+          effects.tracer(tmpOrigin, tmpEnd, w.id === 'sniper' ? 0.03 : 0.02);
+        }
         if (hit.s !== 'air') {
           effects.spark(hit.x, hit.y, hit.z, hit.s, hit.s === 'player' ? 6 : 4);
         }
@@ -852,6 +897,20 @@ function handleEvents(events) {
         oz - state.local.z,
       );
       audio.shot(w.id, Math.max(0.14, 1 - distance / 70));
+    } else if (ev.k === 'melee') {
+      if (ev.p !== state.myId) {
+        audio.shot('knife', 0.6);
+      }
+    } else if (ev.k === 'projSpawn') {
+      effects.spawnProjectile(ev.id, ev.x, ev.y, ev.z, ev.vx, ev.vy, ev.vz);
+      if (ev.p !== state.myId) {
+        audio.shot('poopgun', 0.5);
+      }
+    } else if (ev.k === 'projImpact') {
+      effects.removeProjectile(ev.id);
+      effects.spark(ev.x, ev.y, ev.z, 'wall', 8, 2);
+    } else if (ev.k === 'hazardSpawn') {
+      effects.spawnHazard(ev.x, ev.y, ev.z, ev.r, ev.dur);
     } else if (ev.k === 'hurt') {
       if (ev.p === state.myId) {
         hud.damageFlash(0.28 + (ev.dmg / MAX_HEALTH) * 0.7);
@@ -883,20 +942,55 @@ function handleEvents(events) {
       }
     } else if (ev.k === 'respawn') {
       if (ev.p === state.myId) {
-        if (ev.pw) state.primaryWeaponId = ev.pw;
-        state.activeSlot = 'primary';
-        state.weaponId = state.primaryWeaponId;
-        localGun.primaryAmmo = WEAPONS[state.primaryWeaponId].magazine;
-        localGun.secondaryAmmo = WEAPONS.pistol.magazine;
-        localGun.ammo = localGun.primaryAmmo;
+        if (isGunGame()) {
+          state.weaponId = ev.pw || state.weaponId;
+          localGun.ammo = WEAPONS[state.weaponId].magazine;
+          localGun.primaryAmmo = localGun.ammo;
+          localGun.reloadEndsAt = 0;
+          localGun.nextShotAt = 0;
+          viewModel.setWeapon(state.weaponId);
+          updateLoadoutUI();
+          syncWeaponPickPointer();
+          hud.banner('RESPAWNED', '', 1.2);
+        } else {
+          if (ev.pw) state.primaryWeaponId = ev.pw;
+          state.activeSlot = 'primary';
+          state.weaponId = state.primaryWeaponId;
+          localGun.primaryAmmo = WEAPONS[state.primaryWeaponId].magazine;
+          localGun.secondaryAmmo = WEAPONS.pistol.magazine;
+          localGun.ammo = localGun.primaryAmmo;
+          localGun.reloadEndsAt = 0;
+          localGun.nextShotAt = 0;
+          viewModel.setWeapon(state.weaponId);
+          updateLoadoutUI();
+          updateWeaponPickUI();
+          syncWeaponPickPointer();
+          hud.banner('RESPAWNED', '', 1.2);
+        }
+      }
+    } else if (ev.k === 'ggLevelUp') {
+      if (ev.p === state.myId) {
+        state.gunGameLevel = ev.lv;
+        state.weaponId = ev.w;
+        const w = WEAPONS[ev.w];
+        localGun.ammo = w.magazine;
+        localGun.primaryAmmo = localGun.ammo;
         localGun.reloadEndsAt = 0;
         localGun.nextShotAt = 0;
-        viewModel.setWeapon(state.weaponId);
-        updateLoadoutUI();
-        updateWeaponPickUI();
-        syncWeaponPickPointer();
-        hud.banner('RESPAWNED', '', 1.2);
+        viewModel.setWeapon(ev.w);
+        hud.banner(ev.wName.toUpperCase(), `Level ${ev.lv + 1} / ${state.gunGameOrder.length}`, 1.5);
+        audio.roundWin();
       }
+      const p = state.players.get(ev.p);
+      if (p) p.gunGameLevel = ev.lv;
+    } else if (ev.k === 'ggDemote') {
+      if (ev.p === state.myId) {
+        state.gunGameLevel = ev.lv;
+        hud.banner('DEMOTED', 'Killed by knife!', 1.8);
+        audio.roundLoss();
+      }
+      const p = state.players.get(ev.p);
+      if (p) p.gunGameLevel = ev.lv;
     }
   }
 }
@@ -916,7 +1010,8 @@ function buildLeaderboard() {
 
 function formatTimer(seconds) {
   const s = Math.max(0, Math.ceil(seconds));
-  if (isDM()) {
+  if (isDM() || isGunGame()) {
+    if (!Number.isFinite(s)) return '--';
     const m = Math.floor(s / 60);
     const r = s % 60;
     return `${m}:${String(r).padStart(2, '0')}`;
@@ -946,6 +1041,17 @@ function updateLobby(msg) {
   if (isDM()) {
     $('lobby-mode-label').textContent =
       `Deathmatch · ${state.dmMinutes} min · ${state.mapName} · up to ${state.maxPlayers} players`;
+    if (players.length < 2) {
+      $('lobby-status').textContent = `Need at least 2 players (${players.length}/${state.maxPlayers})`;
+    } else if (state.isHost) {
+      $('lobby-status').textContent = 'Ready — click START when everyone is in';
+    } else {
+      $('lobby-status').textContent = `Waiting for host to start (${players.length}/${state.maxPlayers})`;
+    }
+    $('btn-start').classList.toggle('hidden', !state.isHost || players.length < 2);
+  } else if (isGunGame()) {
+    $('lobby-mode-label').textContent =
+      `Gun Game · ${state.mapName} · up to ${state.maxPlayers} players`;
     if (players.length < 2) {
       $('lobby-status').textContent = `Need at least 2 players (${players.length}/${state.maxPlayers})`;
     } else if (state.isHost) {
@@ -1221,8 +1327,18 @@ function beginPlay() {
 
 // --------------------------------------------------------------------- wiring
 
-for (const btn of document.querySelectorAll('.pick-btn')) {
-  btn.addEventListener('click', () => sendPrimaryPick(btn.dataset.pw));
+// Build weapon-pick buttons dynamically from PRIMARY_WEAPON_IDS
+const pickGrid = $('pick-grid');
+for (const wid of PRIMARY_WEAPON_IDS) {
+  const w = WEAPONS[wid];
+  if (!w) continue;
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'pick-btn';
+  btn.dataset.pw = wid;
+  btn.textContent = w.name;
+  btn.addEventListener('click', () => sendPrimaryPick(wid));
+  pickGrid.appendChild(btn);
 }
 
 for (const btn of document.querySelectorAll('.mode-btn')) {
@@ -1234,7 +1350,7 @@ for (const btn of document.querySelectorAll('.mode-btn')) {
     btn.classList.add('active');
     btn.setAttribute('aria-pressed', 'true');
     selectedMode = btn.dataset.mode;
-    $('dm-options').classList.toggle('hidden', selectedMode !== 'deathmatch');
+    $('dm-options').classList.toggle('hidden', selectedMode !== 'deathmatch' && selectedMode !== 'gungame');
   });
 }
 

@@ -133,7 +133,7 @@ const connections = attachWebSocket(server, (conn) => {
     switch (msg.t) {
       case 'create': {
         if (session.room) return;
-        const mode = msg.mode === 'deathmatch' ? 'deathmatch' : 'duel';
+        const mode = msg.mode === 'deathmatch' ? 'deathmatch' : msg.mode === 'gungame' ? 'gungame' : 'duel';
         const room = rooms.create({ mode, dmMinutes: msg.dmMinutes, mapId: msg.mapId });
         if (!room) {
           conn.sendJSON({ t: 'error', msg: 'Server is at room capacity. Try again shortly.' });

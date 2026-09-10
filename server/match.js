@@ -15,6 +15,9 @@ import {
   MAX_PLAYERS_DM,
   DM_RESPAWN_SECONDS,
   DM_SPAWN_PROTECT_SECONDS,
+  GUNGAME_RESPAWN_SECONDS,
+  GUNGAME_SPAWN_PROTECT_SECONDS,
+  GUNGAME_DEMOTE_ON_KNIFE_DEATH,
   playerColor,
   playerEyeHeight,
   playerHeight,
@@ -26,10 +29,12 @@ import { loadArena, MAP_RANDOM, normalizeMapId, mapName } from '../shared/maps/i
 import { stepPlayer, raycastWorld, rayCylinder } from '../shared/physics.js';
 import {
   WEAPONS,
+  GUNGAME_POOL,
   randomWeaponId,
   shotInterval,
   shotSpread,
   damageAtRange,
+  chargeDamageMult,
   HEADSHOT_MULT,
   SECONDARY_WEAPON_ID,
   DEFAULT_PRIMARY_WEAPON_ID,
@@ -102,14 +107,21 @@ export class Match {
     this.arena = null;
     this.events = [];
     this.lastRoundResult = null;
+    this.projectiles = [];
+    this.hazards = [];
+    this.gunGameOrder = [];
   }
 
   get isDM() {
     return this.mode === GAME_MODE.DEATHMATCH;
   }
 
+  get isGunGame() {
+    return this.mode === GAME_MODE.GUNGAME;
+  }
+
   get maxPlayers() {
-    return this.isDM ? MAX_PLAYERS_DM : MAX_PLAYERS_DUEL;
+    return this.isDM || this.isGunGame ? MAX_PLAYERS_DM : MAX_PLAYERS_DUEL;
   }
 
   addPlayer(id, name, conn) {
@@ -158,6 +170,12 @@ export class Match {
       lastInput: { ...IDLE_INPUT },
       lastSeq: 0,
       lastInputTick: this.tick,
+      chargeStartTick: 0,
+      heat: 0,
+      overheatedUntilTick: 0,
+      burstRemaining: 0,
+      burstNextTick: 0,
+      gunGameLevel: 0,
     };
     this.players.push(player);
     return player;
@@ -171,6 +189,9 @@ export class Match {
     if (this.isDM) {
       player.primaryWeaponId = randomPrimaryWeaponId();
     }
+    if (this.isGunGame) {
+      player.gunGameLevel = 0;
+    }
     return player;
   }
 
@@ -182,12 +203,13 @@ export class Match {
 
     if (this.hostId === id) this.hostId = this.players[0]?.id || null;
 
-    if (this.isDM) {
+    if (this.isDM || this.isGunGame) {
       if (this.players.length === 0) {
         this.state = MATCH_STATE.WAITING;
         this.stateTimer = 0;
       } else if (this.state === MATCH_STATE.LIVE && this.players.length < 2) {
-        this.endDeathmatch('players_left');
+        if (this.isGunGame) this.endGunGame(this.players[0] || null);
+        else this.endDeathmatch('players_left');
       }
       return;
     }
@@ -204,7 +226,7 @@ export class Match {
   }
 
   tryStart(requesterId) {
-    if (!this.isDM || this.state !== MATCH_STATE.WAITING) return false;
+    if (!(this.isDM || this.isGunGame) || this.state !== MATCH_STATE.WAITING) return false;
     if (requesterId !== this.hostId) return false;
     if (this.players.length < 2) return false;
     this.beginMatch();
@@ -255,7 +277,8 @@ export class Match {
       p.respawnAtTick = 0;
       p.spawnProtectUntil = 0;
     }
-    if (this.isDM) this.beginDeathmatch();
+    if (this.isGunGame) this.beginGunGame();
+    else if (this.isDM) this.beginDeathmatch();
     else this.startRound();
   }
 
@@ -305,6 +328,99 @@ export class Match {
     this.broadcastGameStart();
   }
 
+  beginGunGame() {
+    const pool = [...GUNGAME_POOL];
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+    pool.push('knife');
+    this.gunGameOrder = pool;
+
+    this.roundNumber = 1;
+    this.loadArenaForRound();
+    this.lastRoundResult = null;
+    this.projectiles = [];
+    this.hazards = [];
+
+    for (const p of this.players) {
+      p.gunGameLevel = 0;
+      const threats = this.players.filter((o) => o !== p && o.alive);
+      const { x, z } = pickSafeSpawn(this.arena.grid, threats);
+      p.x = x;
+      p.y = 0;
+      p.z = z;
+      p.vx = 0;
+      p.vy = 0;
+      p.vz = 0;
+      p.onGround = true;
+      p.yaw = Math.atan2(x, z);
+      p.pitch = 0;
+      this.initGunGameLoadout(p);
+      p.bloom = 0;
+      p.reloadUntilTick = 0;
+      p.nextShotTick = 0;
+      p.prevShoot = false;
+      p.zooming = false;
+      p.crouching = false;
+      p.sliding = false;
+      p.slideTime = 0;
+      p.prevCrouch = false;
+      p.health = MAX_HEALTH;
+      p.alive = true;
+      p.spawnProtectUntil = 0;
+      p.heat = 0;
+      p.overheatedUntilTick = 0;
+      p.chargeStartTick = 0;
+      p.burstRemaining = 0;
+      p.burstNextTick = 0;
+      p.inputQueue.length = 0;
+      p.lastInput = { ...IDLE_INPUT, yaw: p.yaw, pitch: 0 };
+    }
+
+    this.state = MATCH_STATE.COUNTDOWN;
+    this.stateTimer = COUNTDOWN_SECONDS;
+    this.broadcastGameStart();
+  }
+
+  initGunGameLoadout(player) {
+    const wid = this.gunGameOrder[player.gunGameLevel] || 'pistol';
+    player.weaponId = wid;
+    player.activeSlot = 'primary';
+    const w = WEAPONS[wid];
+    player.ammo = w.melee ? w.magazine : w.magazine;
+    player.primaryAmmo = player.ammo;
+    player.secondaryAmmo = 0;
+    player.heat = 0;
+    player.overheatedUntilTick = 0;
+    player.chargeStartTick = 0;
+    player.burstRemaining = 0;
+    player.burstNextTick = 0;
+  }
+
+  endGunGame(winner) {
+    this.state = MATCH_STATE.MATCH_OVER;
+    this.stateTimer = MATCH_END_SECONDS;
+    const ranked = [...this.players].sort(
+      (a, b) => b.gunGameLevel - a.gunGameLevel || b.kills - a.kills,
+    );
+    this.broadcast({
+      t: 'matchover',
+      mode: this.mode,
+      reason: 'gungame_complete',
+      winner: winner ? winner.id : null,
+      scores: ranked.map((p) => ({
+        i: p.id,
+        slot: p.slot,
+        name: p.name,
+        color: playerColor(p.slot),
+        score: p.gunGameLevel,
+        kills: p.kills,
+        deaths: p.deaths,
+      })),
+    });
+  }
+
   startRound() {
     this.roundNumber += 1;
     this.loadArenaForRound();
@@ -328,6 +444,12 @@ export class Match {
       p.alive = true;
       p.respawnAtTick = 0;
       p.spawnProtectUntil = 0;
+      p.heat = 0;
+      p.overheatedUntilTick = 0;
+      p.chargeStartTick = 0;
+      p.chargeFrac = 0;
+      p.burstRemaining = 0;
+      p.burstNextTick = 0;
       p.inputQueue.length = 0;
       p.lastInput = { ...IDLE_INPUT, yaw: p.yaw, pitch: 0 };
     }
@@ -405,7 +527,7 @@ export class Match {
   }
 
   broadcastGameStart() {
-    this.broadcast({
+    const payload = {
       t: 'round',
       mode: this.mode,
       dmMinutes: this.dmMinutes,
@@ -413,9 +535,11 @@ export class Match {
       mapId: this.mapId,
       mapName: mapName(this.mapId),
       arena: serializeArena(this.arena),
-      target: this.isDM ? 0 : ROUNDS_TO_WIN,
+      target: this.isGunGame ? this.gunGameOrder.length : this.isDM ? 0 : ROUNDS_TO_WIN,
       players: this.players.map((p) => this.playerPayload(p)),
-    });
+    };
+    if (this.isGunGame) payload.gunGameOrder = this.gunGameOrder;
+    this.broadcast(payload);
   }
 
   playerPayload(p) {
@@ -434,6 +558,7 @@ export class Match {
       score: p.score,
       kills: p.kills,
       deaths: p.deaths,
+      ggLv: p.gunGameLevel,
     };
   }
 
@@ -483,24 +608,33 @@ export class Match {
     this.tick += 1;
 
     if (this.state === MATCH_STATE.WAITING) {
-      if (!this.isDM && this.players.length === 2) this.beginMatch();
+      if (!this.isDM && !this.isGunGame && this.players.length === 2) this.beginMatch();
       return;
     }
 
     this.stateTimer -= TICK_DT;
 
-    if (this.isDM && this.state === MATCH_STATE.LIVE) {
+    if ((this.isDM || this.isGunGame) && this.state === MATCH_STATE.LIVE) {
       this.processRespawns();
     }
 
     tickBots(this);
+
+    if (this.state === MATCH_STATE.LIVE || this.state === MATCH_STATE.COUNTDOWN) {
+      this.tickProjectiles();
+      this.tickHazards();
+    }
 
     switch (this.state) {
       case MATCH_STATE.COUNTDOWN:
         this.consumeInputs({ move: false, shoot: false });
         if (this.stateTimer <= 0) {
           this.state = MATCH_STATE.LIVE;
-          this.stateTimer = this.isDM ? this.dmMinutes * 60 : ROUND_TIME_LIMIT;
+          if (this.isGunGame) {
+            this.stateTimer = Infinity;
+          } else {
+            this.stateTimer = this.isDM ? this.dmMinutes * 60 : ROUND_TIME_LIMIT;
+          }
         }
         break;
 
@@ -508,7 +642,7 @@ export class Match {
         this.consumeInputs({ move: true, shoot: true });
         if (this.stateTimer <= 0) {
           if (this.isDM) this.endDeathmatch('timeout');
-          else this.endRound(null, 'timeout');
+          else if (!this.isGunGame) this.endRound(null, 'timeout');
         }
         break;
 
@@ -612,10 +746,17 @@ export class Match {
     player.sliding = false;
     player.slideTime = 0;
     player.prevCrouch = false;
-    this.initDmLoadout(player);
+    if (this.isGunGame) {
+      this.initGunGameLoadout(player);
+    } else {
+      this.initDmLoadout(player);
+    }
     player.respawnAtTick = 0;
-    player.spawnProtectUntil = this.tick + Math.round(DM_SPAWN_PROTECT_SECONDS * TICK_RATE);
-    this.events.push({ k: 'respawn', p: player.id, pw: player.primaryWeaponId });
+    const protectSec = this.isGunGame
+      ? GUNGAME_SPAWN_PROTECT_SECONDS
+      : DM_SPAWN_PROTECT_SECONDS;
+    player.spawnProtectUntil = this.tick + Math.round(protectSec * TICK_RATE);
+    this.events.push({ k: 'respawn', p: player.id, pw: player.primaryWeaponId || player.weaponId });
   }
 
   consumeInputs({ move, shoot }) {
@@ -667,13 +808,36 @@ export class Match {
       player.bloom = Math.max(0, player.bloom - weapon.bloomDecay * TICK_DT);
     }
 
+    // Overheat decay when not shooting
+    if (weapon.overheat && !input.shoot) {
+      player.heat = Math.max(0, player.heat - weapon.heatDecay);
+    }
+
     if (player.reloadUntilTick && this.tick >= player.reloadUntilTick) {
       player.ammo = weapon.magazine;
       if (this.isDM) {
         if (player.activeSlot === 'primary') player.primaryAmmo = player.ammo;
         else player.secondaryAmmo = player.ammo;
       }
+      if (this.isGunGame) player.primaryAmmo = player.ammo;
       player.reloadUntilTick = 0;
+    }
+
+    // Process burst continuation (fires remaining burst shots automatically)
+    if (player.burstRemaining > 0 && shoot && this.tick >= player.burstNextTick) {
+      if (player.ammo > 0) {
+        this.fire(player, weapon);
+        player.burstRemaining -= 1;
+        if (player.burstRemaining > 0) {
+          player.burstNextTick = this.tick + Math.max(1, Math.round(shotInterval(weapon) * TICK_RATE));
+        } else {
+          player.nextShotTick = this.tick + Math.round((weapon.burstCooldown || 0.3) * TICK_RATE);
+        }
+      } else {
+        player.burstRemaining = 0;
+      }
+      player.prevShoot = Boolean(input.shoot);
+      return;
     }
 
     if (!shoot) {
@@ -681,8 +845,14 @@ export class Match {
       return;
     }
 
+    // Overheat lockout
+    if (weapon.overheat && this.tick < player.overheatedUntilTick) {
+      player.prevShoot = Boolean(input.shoot);
+      return;
+    }
+
     const reloading = player.reloadUntilTick > 0;
-    const wantsReload = input.reload && !reloading && player.ammo < weapon.magazine;
+    const wantsReload = input.reload && !reloading && player.ammo < weapon.magazine && !weapon.overheat && !weapon.melee;
     if (wantsReload) {
       player.reloadUntilTick = this.tick + Math.round(weapon.reload * TICK_RATE);
       player.prevShoot = Boolean(input.shoot);
@@ -691,14 +861,55 @@ export class Match {
 
     const pressed = Boolean(input.shoot);
     const freshPress = pressed && !player.prevShoot;
+
+    // Charge weapon (Bow): start charge on press, fire on release
+    if (weapon.charge) {
+      if (freshPress && player.ammo > 0 && !reloading) {
+        player.chargeStartTick = this.tick;
+      } else if (!pressed && player.prevShoot && player.chargeStartTick > 0) {
+        const chargeTicks = this.tick - player.chargeStartTick;
+        const maxTicks = Math.round(weapon.chargeTime * TICK_RATE);
+        player.chargeFrac = Math.min(1, chargeTicks / maxTicks);
+        this.fire(player, weapon);
+        player.chargeStartTick = 0;
+        player.chargeFrac = 0;
+      }
+      if (player.ammo <= 0 && !reloading && weapon.reload > 0) {
+        player.reloadUntilTick = this.tick + Math.round(weapon.reload * TICK_RATE);
+      }
+      player.prevShoot = pressed;
+      return;
+    }
+
     const mayFire = weapon.auto ? pressed : freshPress && !repeat;
     player.prevShoot = pressed;
 
     if (!mayFire || reloading) return;
     if (this.tick < player.nextShotTick) return;
 
-    if (player.ammo <= 0) {
-      player.reloadUntilTick = this.tick + Math.round(weapon.reload * TICK_RATE);
+    if (!weapon.melee && !weapon.overheat && player.ammo <= 0) {
+      if (weapon.reload > 0) {
+        player.reloadUntilTick = this.tick + Math.round(weapon.reload * TICK_RATE);
+      }
+      return;
+    }
+
+    // Beam weapons (laser) fire every tick, governed by overheat
+    if (weapon.beam && weapon.overheat) {
+      player.heat += weapon.heatPerTick;
+      if (player.heat >= 1) {
+        player.heat = 1;
+        player.overheatedUntilTick = this.tick + Math.round(weapon.overheatCooldown * TICK_RATE);
+        this.events.push({ k: 'overheat', p: player.id });
+        return;
+      }
+    }
+
+    // Burst weapon: start burst
+    if (weapon.burst && weapon.burst > 1) {
+      this.fire(player, weapon);
+      player.burstRemaining = weapon.burst - 1;
+      player.burstNextTick = this.tick + Math.max(1, Math.round(shotInterval(weapon) * TICK_RATE));
       return;
     }
 
@@ -706,20 +917,39 @@ export class Match {
   }
 
   fire(player, weapon) {
-    player.ammo -= 1;
-    if (this.isDM) {
-      if (player.activeSlot === 'primary') player.primaryAmmo = player.ammo;
-      else player.secondaryAmmo = player.ammo;
+    // Melee weapons don't consume ammo
+    if (!weapon.melee && !weapon.overheat) {
+      player.ammo -= 1;
+      if (this.isDM) {
+        if (player.activeSlot === 'primary') player.primaryAmmo = player.ammo;
+        else player.secondaryAmmo = player.ammo;
+      }
+      if (this.isGunGame) player.primaryAmmo = player.ammo;
     }
-    player.nextShotTick = this.tick + Math.max(1, Math.round(shotInterval(weapon) * TICK_RATE));
+    if (!weapon.burst) {
+      player.nextShotTick = this.tick + Math.max(1, Math.round(shotInterval(weapon) * TICK_RATE));
+    }
 
     const ox = player.x;
     const oy = player.y + playerEyeHeight(player.crouching);
     const oz = player.z;
 
-    const targets = this.isDM ? this.opponentsOf(player) : [this.opponentOf(player)].filter(Boolean);
+    // Projectile weapons spawn a projectile instead of hitscan
+    if (weapon.projectile) {
+      this.fireProjectile(player, weapon, ox, oy, oz);
+      return;
+    }
 
-    const spread = shotSpread(weapon, player.bloom, player.zooming);
+    // Melee weapons use a short-range check
+    if (weapon.melee) {
+      this.fireMelee(player, weapon, ox, oy, oz);
+      return;
+    }
+
+    const targets = (this.isDM || this.isGunGame) ? this.opponentsOf(player) : [this.opponentOf(player)].filter(Boolean);
+
+    const chargeFrac = weapon.charge ? (player.chargeFrac || 0) : 1;
+    const spread = shotSpread(weapon, player.bloom, player.zooming, chargeFrac);
 
     const impacts = [];
     const damageByTarget = new Map();
@@ -771,9 +1001,8 @@ export class Match {
         };
         const isHead = py > tState.y + playerHeadHeight(tState.cr);
         let dmg = damageAtRange(weapon, hitDist);
-        if (isHead) {
-          dmg *= HEADSHOT_MULT;
-        }
+        if (weapon.charge) dmg *= chargeDamageMult(weapon, chargeFrac);
+        if (isHead) dmg *= HEADSHOT_MULT;
         const damage = damageByTarget.get(hitTarget) || { total: 0, head: 0 };
         damage.total += dmg;
         if (isHead) damage.head += dmg;
@@ -787,7 +1016,7 @@ export class Match {
     player.bloom = Math.min(weapon.maxBloom, player.bloom + weapon.bloom);
 
     this.events.push({
-      k: 'shot',
+      k: weapon.beam ? 'beam' : 'shot',
       p: player.id,
       w: weapon.id,
       o: [ox, oy, oz],
@@ -808,6 +1037,235 @@ export class Match {
     }
   }
 
+  fireProjectile(player, weapon, ox, oy, oz) {
+    const cp = Math.cos(player.pitch);
+    const dx = -Math.sin(player.yaw) * cp;
+    const dy = Math.sin(player.pitch);
+    const dz = -Math.cos(player.yaw) * cp;
+
+    const proj = {
+      id: `proj_${this.tick}_${player.id}`,
+      owner: player.id,
+      weapon,
+      x: ox,
+      y: oy,
+      z: oz,
+      vx: dx * weapon.projSpeed,
+      vy: dy * weapon.projSpeed + 3,
+      vz: dz * weapon.projSpeed,
+      age: 0,
+    };
+    this.projectiles.push(proj);
+    this.events.push({
+      k: 'projSpawn',
+      p: player.id,
+      id: proj.id,
+      x: ox, y: oy, z: oz,
+      vx: proj.vx, vy: proj.vy, vz: proj.vz,
+    });
+  }
+
+  fireMelee(player, weapon, ox, oy, oz) {
+    const cp = Math.cos(player.pitch);
+    const dx = -Math.sin(player.yaw) * cp;
+    const dy = Math.sin(player.pitch);
+    const dz = -Math.cos(player.yaw) * cp;
+    const range = weapon.range || 2.5;
+
+    const targets = (this.isDM || this.isGunGame) ? this.opponentsOf(player) : [this.opponentOf(player)].filter(Boolean);
+    let hitTarget = null;
+    let hitDist = range;
+
+    for (const target of targets) {
+      if (!target.alive) continue;
+      const tState = this.targetStateAtShot(player, target);
+      const tHit = rayCylinder(
+        ox, oy, oz, dx, dy, dz,
+        tState.x, tState.y, tState.z,
+        HIT_RADIUS, playerHeight(tState.cr),
+      );
+      if (tHit !== null && tHit < hitDist) {
+        hitDist = tHit;
+        hitTarget = target;
+      }
+    }
+
+    this.events.push({
+      k: 'melee',
+      p: player.id,
+      w: weapon.id,
+      hit: hitTarget ? hitTarget.id : null,
+    });
+
+    if (hitTarget && hitTarget.alive) {
+      if (this.tick >= hitTarget.spawnProtectUntil) {
+        hitTarget.health -= weapon.damage;
+        const isHead = false;
+        this.events.push({ k: 'hurt', p: hitTarget.id, by: player.id, dmg: weapon.damage, head: isHead });
+        if (hitTarget.health <= 0) {
+          this.handleKill(player, hitTarget, isHead);
+        }
+      }
+    }
+  }
+
+  tickProjectiles() {
+    const toRemove = [];
+    for (let i = 0; i < this.projectiles.length; i++) {
+      const proj = this.projectiles[i];
+      proj.age += 1;
+      const gravity = proj.weapon.projGravity || 15;
+      proj.vy -= gravity * TICK_DT;
+      const nx = proj.x + proj.vx * TICK_DT;
+      const ny = proj.y + proj.vy * TICK_DT;
+      const nz = proj.z + proj.vz * TICK_DT;
+
+      // World collision
+      const world = raycastWorld(
+        this.arena.grid, proj.x, proj.y, proj.z,
+        proj.vx * TICK_DT, proj.vy * TICK_DT, proj.vz * TICK_DT,
+        Math.hypot(proj.vx, proj.vy, proj.vz) * TICK_DT,
+      );
+
+      let hitWorld = false;
+      if (world.hit || ny <= 0) {
+        hitWorld = true;
+        const hx = ny <= 0 ? nx : proj.x + (world.dist / Math.hypot(proj.vx, proj.vy, proj.vz) / TICK_DT) * proj.vx * TICK_DT;
+        const hy = ny <= 0 ? 0 : proj.y + (world.dist / Math.hypot(proj.vx, proj.vy, proj.vz) / TICK_DT) * proj.vy * TICK_DT;
+        const hz = ny <= 0 ? nz : proj.z + (world.dist / Math.hypot(proj.vx, proj.vy, proj.vz) / TICK_DT) * proj.vz * TICK_DT;
+
+        this.events.push({
+          k: 'projImpact',
+          id: proj.id,
+          x: hx, y: Math.max(0, hy), z: hz,
+          direct: false,
+        });
+
+        if (proj.weapon.hazardRadius) {
+          this.hazards.push({
+            x: hx,
+            y: 0,
+            z: hz,
+            radius: proj.weapon.hazardRadius,
+            dps: proj.weapon.hazardDps || 8,
+            owner: proj.owner,
+            remainingTicks: Math.round((proj.weapon.hazardDuration || 5) * TICK_RATE),
+          });
+          this.events.push({
+            k: 'hazardSpawn',
+            x: hx, y: 0, z: hz,
+            r: proj.weapon.hazardRadius,
+            dur: proj.weapon.hazardDuration || 5,
+          });
+        }
+        toRemove.push(i);
+        continue;
+      }
+
+      // Player collision
+      const targets = this.opponentsOf(
+        this.players.find((p) => p.id === proj.owner) || this.players[0],
+      );
+      let hitPlayer = null;
+      for (const target of targets) {
+        if (!target.alive) continue;
+        const tdx = nx - target.x;
+        const tdz = nz - target.z;
+        const dist2d = Math.hypot(tdx, tdz);
+        if (dist2d < HIT_RADIUS + 0.3 && ny >= target.y && ny <= target.y + playerHeight(target.crouching)) {
+          hitPlayer = target;
+          break;
+        }
+      }
+
+      if (hitPlayer) {
+        if (this.tick >= hitPlayer.spawnProtectUntil) {
+          const dmg = Math.round(proj.weapon.damage);
+          hitPlayer.health -= dmg;
+          this.events.push({ k: 'hurt', p: hitPlayer.id, by: proj.owner, dmg, head: false });
+          if (hitPlayer.health <= 0) {
+            const killer = this.players.find((p) => p.id === proj.owner);
+            if (killer) this.handleKill(killer, hitPlayer, false);
+          }
+        }
+        if (proj.weapon.hazardRadius) {
+          this.hazards.push({
+            x: nx, y: 0, z: nz,
+            radius: proj.weapon.hazardRadius,
+            dps: proj.weapon.hazardDps || 8,
+            owner: proj.owner,
+            remainingTicks: Math.round((proj.weapon.hazardDuration || 5) * TICK_RATE),
+          });
+          this.events.push({
+            k: 'hazardSpawn',
+            x: nx, y: 0, z: nz,
+            r: proj.weapon.hazardRadius,
+            dur: proj.weapon.hazardDuration || 5,
+          });
+        }
+        this.events.push({ k: 'projImpact', id: proj.id, x: nx, y: ny, z: nz, direct: true });
+        toRemove.push(i);
+        continue;
+      }
+
+      proj.x = nx;
+      proj.y = ny;
+      proj.z = nz;
+
+      if (proj.age > TICK_RATE * 10) toRemove.push(i);
+    }
+    for (let i = toRemove.length - 1; i >= 0; i--) {
+      this.projectiles.splice(toRemove[i], 1);
+    }
+  }
+
+  tickHazards() {
+    const toRemove = [];
+    for (let i = 0; i < this.hazards.length; i++) {
+      const hz = this.hazards[i];
+      hz.remainingTicks -= 1;
+      if (hz.remainingTicks <= 0) {
+        toRemove.push(i);
+        this.events.push({ k: 'hazardExpire', x: hz.x, y: hz.y, z: hz.z });
+        continue;
+      }
+      const dmgPerTick = (hz.dps || 8) / TICK_RATE;
+      for (const player of this.players) {
+        if (!player.alive) continue;
+        if (this.tick < player.spawnProtectUntil) continue;
+        const dx = player.x - hz.x;
+        const dz = player.z - hz.z;
+        if (Math.hypot(dx, dz) < hz.radius + HIT_RADIUS) {
+          const dmg = Math.round(dmgPerTick * 100) / 100;
+          player.health -= dmg;
+          if (player.health <= 0) {
+            player.health = 0;
+            player.alive = false;
+            player.deaths += 1;
+            const killer = this.players.find((p) => p.id === hz.owner);
+            if (killer && killer.id !== player.id) {
+              killer.kills += 1;
+              this.events.push({ k: 'die', p: player.id, by: killer.id, head: false });
+              if (this.isGunGame) this.gunGameAdvance(killer, player);
+              else if (this.isDM) {
+                player.respawnAtTick = this.tick + Math.round(DM_RESPAWN_SECONDS * TICK_RATE);
+              }
+            } else {
+              this.events.push({ k: 'die', p: player.id, by: player.id, head: false });
+              if (this.isDM || this.isGunGame) {
+                const respawnSec = this.isGunGame ? GUNGAME_RESPAWN_SECONDS : DM_RESPAWN_SECONDS;
+                player.respawnAtTick = this.tick + Math.round(respawnSec * TICK_RATE);
+              }
+            }
+          }
+        }
+      }
+    }
+    for (let i = toRemove.length - 1; i >= 0; i--) {
+      this.hazards.splice(toRemove[i], 1);
+    }
+  }
+
   handleKill(killer, victim, headshot) {
     victim.health = 0;
     victim.alive = false;
@@ -815,12 +1273,66 @@ export class Match {
     killer.kills += 1;
     this.events.push({ k: 'die', p: victim.id, by: killer.id, head: headshot });
 
+    if (this.isGunGame) {
+      this.gunGameAdvance(killer, victim);
+      return;
+    }
+
     if (this.isDM) {
       victim.respawnAtTick = this.tick + Math.round(DM_RESPAWN_SECONDS * TICK_RATE);
       return;
     }
 
     this.endRound(killer, headshot ? 'headshot' : 'kill');
+  }
+
+  gunGameAdvance(killer, victim) {
+    const oldLevel = killer.gunGameLevel;
+    killer.gunGameLevel = Math.min(killer.gunGameLevel + 1, this.gunGameOrder.length - 1);
+    killer.score = killer.gunGameLevel;
+
+    if (oldLevel !== killer.gunGameLevel) {
+      const newWid = this.gunGameOrder[killer.gunGameLevel];
+      killer.weaponId = newWid;
+      const w = WEAPONS[newWid];
+      killer.ammo = w.magazine;
+      killer.primaryAmmo = killer.ammo;
+      killer.reloadUntilTick = 0;
+      killer.nextShotTick = 0;
+      killer.heat = 0;
+      killer.overheatedUntilTick = 0;
+      killer.chargeStartTick = 0;
+      killer.burstRemaining = 0;
+      killer.burstNextTick = 0;
+      killer.bloom = 0;
+      this.events.push({
+        k: 'ggLevelUp',
+        p: killer.id,
+        lv: killer.gunGameLevel,
+        w: newWid,
+        wName: w.name,
+      });
+    }
+
+    // Demote victim on knife death
+    if (GUNGAME_DEMOTE_ON_KNIFE_DEATH && killer.weaponId === 'knife' && victim.gunGameLevel > 0) {
+      victim.gunGameLevel = Math.max(0, victim.gunGameLevel - 1);
+      victim.score = victim.gunGameLevel;
+      this.events.push({
+        k: 'ggDemote',
+        p: victim.id,
+        lv: victim.gunGameLevel,
+      });
+    }
+
+    // Check win condition: killed with the last weapon (knife)
+    if (oldLevel === this.gunGameOrder.length - 1) {
+      this.endGunGame(killer);
+      return;
+    }
+
+    const respawnSec = GUNGAME_RESPAWN_SECONDS;
+    victim.respawnAtTick = this.tick + Math.round(respawnSec * TICK_RATE);
   }
 
   sendSnapshot() {
@@ -864,9 +1376,23 @@ export class Match {
         dt: p.deaths,
         rs: p.respawnAtTick ? Math.max(0, p.respawnAtTick - this.tick) : 0,
         sp: p.spawnProtectUntil > this.tick ? p.spawnProtectUntil - this.tick : 0,
+        ht: round(p.heat, 3),
+        oh: p.overheatedUntilTick > this.tick ? p.overheatedUntilTick - this.tick : 0,
+        cs: p.chargeStartTick > 0 ? this.tick - p.chargeStartTick : 0,
+        ggLv: p.gunGameLevel,
       })),
       ev: this.events,
     };
+
+    if (this.isGunGame) {
+      payload.projs = this.projectiles.map((pr) => ({
+        id: pr.id, x: round(pr.x), y: round(pr.y), z: round(pr.z),
+      }));
+      payload.hazards = this.hazards.map((hz) => ({
+        x: round(hz.x), y: round(hz.y), z: round(hz.z),
+        r: hz.radius, rem: round(hz.remainingTicks / TICK_RATE, 1),
+      }));
+    }
 
     this.broadcast(payload);
     this.events = [];
