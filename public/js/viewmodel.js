@@ -1,10 +1,37 @@
 import * as THREE from '/vendor/three.module.js';
 import {
+  mountArrow,
   mountAssaultRifle,
+  mountAutoshotgun,
+  mountAwp,
   mountBayonet,
+  mountBattlerifle,
+  mountBow,
+  mountBurstrifle,
+  mountCarbine,
+  mountCrossbow,
+  mountDeagle,
+  mountDmr,
+  mountDoublebarrel,
   mountFahhGun,
   mountKnifeViewModel,
+  mountLaser,
+  mountLeveraction,
+  mountLmg,
+  mountMachinePistol,
+  mountMinigun,
+  mountP90,
+  mountPistol,
   mountPoopModel,
+  mountRevolver,
+  mountSawedoff,
+  mountScout,
+  mountShotgun,
+  mountSlugshotgun,
+  mountSmg,
+  mountSniper,
+  mountVector,
+  mountWaterBottle,
 } from './model-assets.js';
 
 // The viewmodel lives in its own scene rendered after the world with the depth
@@ -306,6 +333,12 @@ const THEMES = {
     handle: mat(0x1a1e22, { roughness: 0.8, metalness: 0.08 }),
     trim: mat(0xc0282a, { roughness: 0.45, metalness: 0.3 }),
   }),
+  pee: () => ({
+    bottle: mat(0xbfe2f7, { roughness: 0.12, metalness: 0.05 }),
+    water: mat(0x2f8fd6, { roughness: 0.1, metalness: 0 }),
+    cap: mat(0x2f6fb8, { roughness: 0.35, metalness: 0.1 }),
+    label: mat(0xf2f7fb, { roughness: 0.6, metalness: 0.02 }),
+  }),
 };
 
 /** Classic pistol iron sights: rear notch + front post. */
@@ -353,6 +386,21 @@ const GLOVE = () => mat(0x141a21, { roughness: 0.8, metalness: 0.08 });
 const FINGER = () => mat(0xd0a07b, { roughness: 0.82, metalness: 0.01 });
 const SLEEVE = () => mat(0x2b3a52, { roughness: 0.85, metalness: 0.04 });
 const CUFF = () => mat(0x0d1117, { roughness: 0.85, metalness: 0.05 });
+
+// Bow-string helper: stretch a unit-height cylinder between two points so the
+// string can follow the nock as it is drawn back.
+const STRING_UP = new THREE.Vector3(0, 1, 0);
+const stringDir = new THREE.Vector3();
+
+function setStringSegment(mesh, ax, ay, az, bx, by, bz) {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const dz = bz - az;
+  const len = Math.hypot(dx, dy, dz) || 1e-4;
+  mesh.position.set((ax + bx) / 2, (ay + by) / 2, (az + bz) / 2);
+  mesh.scale.set(1, len, 1);
+  mesh.quaternion.setFromUnitVectors(STRING_UP, stringDir.set(dx / len, dy / len, dz / len));
+}
 
 /**
  * Sleeved forearm receding toward the camera. `pitch` drops the far end,
@@ -488,33 +536,39 @@ const BUILDERS = {
   pistol() {
     const g = new THREE.Group();
     const t = THEMES.pistol();
+    const fallback = new THREE.Group();
+    const modelHost = new THREE.Group();
+    g.add(fallback, modelHost);
 
     // Slide on top
-    g.add(box(0.078, 0.048, 0.22, t.slide, 0, 0.055, -0.06));
+    fallback.add(box(0.078, 0.048, 0.22, t.slide, 0, 0.055, -0.06));
     // Frame under slide
-    g.add(box(0.072, 0.05, 0.2, t.body, 0, 0.01, -0.05));
+    fallback.add(box(0.072, 0.05, 0.2, t.body, 0, 0.01, -0.05));
     // Dust cover / barrel housing
-    g.add(box(0.05, 0.035, 0.1, t.barrel, 0, 0.02, -0.2));
-    g.add(cyl(0.012, 0.07, t.barrel, 0, 0.02, -0.255));
+    fallback.add(box(0.05, 0.035, 0.1, t.barrel, 0, 0.02, -0.2));
+    fallback.add(cyl(0.012, 0.07, t.barrel, 0, 0.02, -0.255));
     // Grip
-    g.add(grip(t.grip, t.trim, 0, -0.01, 0.04, 0.32));
+    fallback.add(grip(t.grip, t.trim, 0, -0.01, 0.04, 0.32));
     // Trigger guard ring (open look via U shape of boxes)
-    g.add(box(0.045, 0.012, 0.06, t.body, 0, -0.035, -0.02));
-    g.add(box(0.012, 0.05, 0.012, t.body, -0.016, -0.055, -0.02));
-    g.add(box(0.012, 0.05, 0.012, t.body, 0.016, -0.055, -0.02));
-    g.add(box(0.014, 0.035, 0.012, t.trim, 0, -0.04, -0.015));
+    fallback.add(box(0.045, 0.012, 0.06, t.body, 0, -0.035, -0.02));
+    fallback.add(box(0.012, 0.05, 0.012, t.body, -0.016, -0.055, -0.02));
+    fallback.add(box(0.012, 0.05, 0.012, t.body, 0.016, -0.055, -0.02));
+    fallback.add(box(0.014, 0.035, 0.012, t.trim, 0, -0.04, -0.015));
     // Mag floorplate
-    g.add(box(0.05, 0.02, 0.065, t.trim, 0, -0.175, 0.055));
+    fallback.add(box(0.05, 0.02, 0.065, t.trim, 0, -0.175, 0.055));
     // Side serrations strip
-    g.add(box(0.082, 0.02, 0.05, t.body, 0, 0.055, 0.02));
+    fallback.add(box(0.082, 0.02, 0.05, t.body, 0, 0.055, 0.02));
     // Real iron sights
-    pistolIronSights(g, t.slide, t.glow);
+    pistolIronSights(fallback, t.slide, t.glow);
 
     // Right hand on the grip; left hand cups it from below-left.
     g.add(triggerHand({ x: 0, y: -0.085, z: 0.015, armPitch: 0.82, armYaw: 0.28, armLength: 0.32 }));
     g.add(supportHand({ x: 0, y: -0.15, z: 0.045, rise: 0.05, armPitch: 0.9, armYaw: -0.24, armLength: 0.34 }));
 
     addMuzzle(g, 0, 0.02, -0.3, 0.5);
+    mountPistol(modelHost, { targetLength: 0.5 }).then((loaded) => {
+      if (loaded) fallback.visible = false;
+    });
     return g;
   },
 
@@ -568,76 +622,88 @@ const BUILDERS = {
   shotgun() {
     const g = new THREE.Group();
     const t = THEMES.shotgun();
+    const fallback = new THREE.Group();
+    const modelHost = new THREE.Group();
+    g.add(fallback, modelHost);
 
     // Receiver
-    g.add(box(0.08, 0.09, 0.26, t.blue, 0, 0.025, -0.04));
+    fallback.add(box(0.08, 0.09, 0.26, t.blue, 0, 0.025, -0.04));
     // Single thick barrel (cleaner than dual tubes)
-    g.add(cyl(0.026, 0.42, t.steel, 0, 0.035, -0.4));
-    g.add(cyl(0.03, 0.04, t.brass, 0, 0.035, -0.62));
+    fallback.add(cyl(0.026, 0.42, t.steel, 0, 0.035, -0.4));
+    fallback.add(cyl(0.03, 0.04, t.brass, 0, 0.035, -0.62));
     // Magazine tube under barrel
-    g.add(cyl(0.016, 0.28, t.blue, 0, -0.01, -0.32));
+    fallback.add(cyl(0.016, 0.28, t.blue, 0, -0.01, -0.32));
     // Pump (wood)
-    g.add(box(0.085, 0.07, 0.15, t.wood, 0, -0.035, -0.28));
-    g.add(box(0.09, 0.015, 0.13, t.woodDark, 0, 0.005, -0.28));
+    fallback.add(box(0.085, 0.07, 0.15, t.wood, 0, -0.035, -0.28));
+    fallback.add(box(0.09, 0.015, 0.13, t.woodDark, 0, 0.005, -0.28));
     // Ejection port accent
-    g.add(box(0.02, 0.04, 0.08, t.glow, 0.035, 0.04, -0.08));
+    fallback.add(box(0.02, 0.04, 0.08, t.glow, 0.035, 0.04, -0.08));
     // Trigger guard
-    g.add(box(0.04, 0.01, 0.055, t.blue, 0, -0.03, 0.02));
-    g.add(box(0.012, 0.04, 0.012, t.blue, -0.014, -0.05, 0.02));
-    g.add(box(0.012, 0.04, 0.012, t.blue, 0.014, -0.05, 0.02));
+    fallback.add(box(0.04, 0.01, 0.055, t.blue, 0, -0.03, 0.02));
+    fallback.add(box(0.012, 0.04, 0.012, t.blue, -0.014, -0.05, 0.02));
+    fallback.add(box(0.012, 0.04, 0.012, t.blue, 0.014, -0.05, 0.02));
     // Grip / stock continuous wood
-    g.add(grip(t.wood, t.woodDark, 0, -0.01, 0.08, 0.28));
-    g.add(box(0.065, 0.08, 0.22, t.wood, 0, 0.0, 0.24));
-    g.add(box(0.075, 0.14, 0.04, t.woodDark, 0, -0.02, 0.36));
+    fallback.add(grip(t.wood, t.woodDark, 0, -0.01, 0.08, 0.28));
+    fallback.add(box(0.065, 0.08, 0.22, t.wood, 0, 0.0, 0.24));
+    fallback.add(box(0.075, 0.14, 0.04, t.woodDark, 0, -0.02, 0.36));
     // Front bead
-    g.add(box(0.014, 0.018, 0.014, t.brass, 0, 0.07, -0.58));
+    fallback.add(box(0.014, 0.018, 0.014, t.brass, 0, 0.07, -0.58));
 
     g.add(triggerHand({ x: 0, y: -0.085, z: 0.06 }));
     g.add(supportHand({ x: 0, y: -0.07, z: -0.28, rise: 0.05, spread: 0.008 }));
 
     addMuzzle(g, 0, 0.035, -0.66, 1.05);
+    mountShotgun(modelHost, { targetLength: 1.05 }).then((loaded) => {
+      if (loaded) fallback.visible = false;
+    });
     return g;
   },
 
   sniper() {
     const g = new THREE.Group();
     const t = THEMES.sniper();
+    const fallback = new THREE.Group();
+    const modelHost = new THREE.Group();
+    g.add(fallback, modelHost);
 
     // Long chassis
-    g.add(box(0.07, 0.07, 0.42, t.olive, 0, 0.015, -0.08));
-    g.add(box(0.068, 0.05, 0.36, t.tan, 0, -0.035, -0.05));
+    fallback.add(box(0.07, 0.07, 0.42, t.olive, 0, 0.015, -0.08));
+    fallback.add(box(0.068, 0.05, 0.36, t.tan, 0, -0.035, -0.05));
     // Barrel
-    g.add(cyl(0.012, 0.55, t.black, 0, 0.02, -0.58));
-    g.add(cyl(0.02, 0.06, t.steel, 0, 0.02, -0.9));
+    fallback.add(cyl(0.012, 0.55, t.black, 0, 0.02, -0.58));
+    fallback.add(cyl(0.02, 0.06, t.steel, 0, 0.02, -0.9));
     // Scope
-    g.add(cyl(0.03, 0.28, t.optic, 0, 0.11, -0.14));
-    g.add(cyl(0.036, 0.035, t.glass, 0, 0.11, -0.3));
-    g.add(cyl(0.034, 0.03, t.steel, 0, 0.11, 0.02));
+    fallback.add(cyl(0.03, 0.28, t.optic, 0, 0.11, -0.14));
+    fallback.add(cyl(0.036, 0.035, t.glass, 0, 0.11, -0.3));
+    fallback.add(cyl(0.034, 0.03, t.steel, 0, 0.11, 0.02));
     // Mounts
-    g.add(box(0.028, 0.035, 0.035, t.steel, 0, 0.07, -0.22));
-    g.add(box(0.028, 0.035, 0.035, t.steel, 0, 0.07, -0.06));
+    fallback.add(box(0.028, 0.035, 0.035, t.steel, 0, 0.07, -0.22));
+    fallback.add(box(0.028, 0.035, 0.035, t.steel, 0, 0.07, -0.06));
     // Bolt
-    g.add(box(0.07, 0.018, 0.018, t.steel, 0.04, 0.04, 0.08));
-    g.add(cyl(0.012, 0.025, t.steel, 0.08, 0.04, 0.08, 'x'));
+    fallback.add(box(0.07, 0.018, 0.018, t.steel, 0.04, 0.04, 0.08));
+    fallback.add(cyl(0.012, 0.025, t.steel, 0.08, 0.04, 0.08, 'x'));
     // Mag
-    g.add(box(0.045, 0.08, 0.07, t.black, 0, -0.08, -0.02));
+    fallback.add(box(0.045, 0.08, 0.07, t.black, 0, -0.08, -0.02));
     // Grip
-    g.add(grip(t.olive, t.black, 0, -0.05, 0.12, 0.38));
+    fallback.add(grip(t.olive, t.black, 0, -0.05, 0.12, 0.38));
     // Stock + cheek riser
-    g.add(box(0.055, 0.06, 0.26, t.tan, 0, 0.0, 0.3));
-    g.add(box(0.06, 0.04, 0.12, t.olive, 0, 0.05, 0.24));
-    g.add(box(0.07, 0.13, 0.035, t.olive, 0, -0.015, 0.44));
+    fallback.add(box(0.055, 0.06, 0.26, t.tan, 0, 0.0, 0.3));
+    fallback.add(box(0.06, 0.04, 0.12, t.olive, 0, 0.05, 0.24));
+    fallback.add(box(0.07, 0.13, 0.035, t.olive, 0, -0.015, 0.44));
     // Bipod folded under the barrel — clamp hugs the barrel, legs hang from it
     const bipodZ = -0.45;
-    g.add(box(0.034, 0.022, 0.024, t.steel, 0, 0.009, bipodZ));
-    g.add(box(0.056, 0.01, 0.014, t.steel, 0, -0.003, bipodZ));
-    g.add(box(0.012, 0.072, 0.012, t.black, -0.024, -0.039, bipodZ));
-    g.add(box(0.012, 0.072, 0.012, t.black, 0.024, -0.039, bipodZ));
+    fallback.add(box(0.034, 0.022, 0.024, t.steel, 0, 0.009, bipodZ));
+    fallback.add(box(0.056, 0.01, 0.014, t.steel, 0, -0.003, bipodZ));
+    fallback.add(box(0.012, 0.072, 0.012, t.black, -0.024, -0.039, bipodZ));
+    fallback.add(box(0.012, 0.072, 0.012, t.black, 0.024, -0.039, bipodZ));
 
     g.add(triggerHand({ x: 0, y: -0.115, z: 0.095 }));
     g.add(supportHand({ x: 0, y: -0.06, z: -0.17, rise: 0.046 }));
 
     addMuzzle(g, 0, 0.02, -0.95, 1.4);
+    mountSniper(modelHost, { targetLength: 1.35 }).then((loaded) => {
+      if (loaded) fallback.visible = false;
+    });
     return g;
   },
 
@@ -646,93 +712,111 @@ const BUILDERS = {
   revolver() {
     const g = new THREE.Group();
     const t = THEMES.revolver();
+    const fallback = new THREE.Group();
+    const modelHost = new THREE.Group();
+    g.add(fallback, modelHost);
     // Frame
-    g.add(box(0.07, 0.055, 0.16, t.frame, 0, 0.04, -0.02));
+    fallback.add(box(0.07, 0.055, 0.16, t.frame, 0, 0.04, -0.02));
     // Cylinder
-    g.add(cyl(0.04, 0.065, t.cylinder, 0, 0.03, -0.06, 'x'));
+    fallback.add(cyl(0.04, 0.065, t.cylinder, 0, 0.03, -0.06, 'x'));
     for (let i = 0; i < 6; i++) {
       const a = (i / 6) * Math.PI * 2;
-      g.add(cyl(0.008, 0.068, t.brass, Math.cos(a) * 0.025, 0.03 + Math.sin(a) * 0.025, -0.06, 'x'));
+      fallback.add(cyl(0.008, 0.068, t.brass, Math.cos(a) * 0.025, 0.03 + Math.sin(a) * 0.025, -0.06, 'x'));
     }
     // Barrel shroud
-    g.add(box(0.042, 0.038, 0.18, t.frame, 0, 0.055, -0.2));
-    g.add(cyl(0.015, 0.22, t.barrel, 0, 0.04, -0.24));
+    fallback.add(box(0.042, 0.038, 0.18, t.frame, 0, 0.055, -0.2));
+    fallback.add(cyl(0.015, 0.22, t.barrel, 0, 0.04, -0.24));
     // Front sight
-    g.add(box(0.012, 0.026, 0.014, t.brass, 0, 0.082, -0.28));
+    fallback.add(box(0.012, 0.026, 0.014, t.brass, 0, 0.082, -0.28));
     // Hammer
-    g.add(box(0.018, 0.04, 0.025, t.frame, 0, 0.085, 0.04));
+    fallback.add(box(0.018, 0.04, 0.025, t.frame, 0, 0.085, 0.04));
     // Grip
-    g.add(grip(t.wood, t.brass, 0, -0.01, 0.04, 0.35));
+    fallback.add(grip(t.wood, t.brass, 0, -0.01, 0.04, 0.35));
     // Trigger guard
-    g.add(box(0.042, 0.012, 0.055, t.frame, 0, -0.02, -0.01));
-    g.add(box(0.012, 0.042, 0.012, t.frame, -0.014, -0.042, -0.01));
-    g.add(box(0.012, 0.042, 0.012, t.frame, 0.014, -0.042, -0.01));
+    fallback.add(box(0.042, 0.012, 0.055, t.frame, 0, -0.02, -0.01));
+    fallback.add(box(0.012, 0.042, 0.012, t.frame, -0.014, -0.042, -0.01));
+    fallback.add(box(0.012, 0.042, 0.012, t.frame, 0.014, -0.042, -0.01));
 
     g.add(triggerHand({ x: 0, y: -0.085, z: 0.02, armPitch: 0.82, armYaw: 0.28, armLength: 0.32 }));
     g.add(supportHand({ x: 0, y: -0.14, z: 0.04, rise: 0.05, armPitch: 0.9, armYaw: -0.24, armLength: 0.34 }));
     addMuzzle(g, 0, 0.04, -0.35, 0.55);
+    mountRevolver(modelHost, { targetLength: 0.55 }).then((loaded) => {
+      if (loaded) fallback.visible = false;
+    });
     return g;
   },
 
   machinepistol() {
     const g = new THREE.Group();
     const t = THEMES.machinepistol();
+    const fallback = new THREE.Group();
+    const modelHost = new THREE.Group();
+    g.add(fallback, modelHost);
     // Slide
-    g.add(box(0.068, 0.045, 0.2, t.slide, 0, 0.055, -0.04));
+    fallback.add(box(0.068, 0.045, 0.2, t.slide, 0, 0.055, -0.04));
     // Frame
-    g.add(box(0.065, 0.045, 0.18, t.body, 0, 0.012, -0.03));
+    fallback.add(box(0.065, 0.045, 0.18, t.body, 0, 0.012, -0.03));
     // Barrel housing
-    g.add(box(0.045, 0.032, 0.08, t.barrel, 0, 0.02, -0.18));
-    g.add(cyl(0.011, 0.06, t.barrel, 0, 0.02, -0.23));
+    fallback.add(box(0.045, 0.032, 0.08, t.barrel, 0, 0.02, -0.18));
+    fallback.add(cyl(0.011, 0.06, t.barrel, 0, 0.02, -0.23));
     // Extended mag
-    g.add(box(0.04, 0.18, 0.065, t.mag, 0, -0.14, -0.04));
-    g.add(box(0.042, 0.02, 0.067, t.trim, 0, -0.24, -0.04));
+    fallback.add(box(0.04, 0.18, 0.065, t.mag, 0, -0.14, -0.04));
+    fallback.add(box(0.042, 0.02, 0.067, t.trim, 0, -0.24, -0.04));
     // Wire stock (folded along side)
-    g.add(box(0.01, 0.01, 0.22, t.body, 0.04, 0.065, 0.04));
-    g.add(box(0.01, 0.06, 0.01, t.body, 0.04, 0.035, 0.15));
+    fallback.add(box(0.01, 0.01, 0.22, t.body, 0.04, 0.065, 0.04));
+    fallback.add(box(0.01, 0.06, 0.01, t.body, 0.04, 0.035, 0.15));
     // Grip
-    g.add(grip(t.grip, t.trim, 0, -0.01, 0.04, 0.32));
+    fallback.add(grip(t.grip, t.trim, 0, -0.01, 0.04, 0.32));
     // Trigger guard
-    g.add(box(0.04, 0.01, 0.05, t.body, 0, -0.03, -0.01));
+    fallback.add(box(0.04, 0.01, 0.05, t.body, 0, -0.03, -0.01));
     // Sights
-    pistolIronSights(g, t.slide, t.glow);
+    pistolIronSights(fallback, t.slide, t.glow);
     // Cocking handle
-    g.add(box(0.09, 0.016, 0.02, t.body, 0, 0.06, 0.02));
+    fallback.add(box(0.09, 0.016, 0.02, t.body, 0, 0.06, 0.02));
 
     g.add(triggerHand({ x: 0, y: -0.085, z: 0.015, armPitch: 0.82, armYaw: 0.28, armLength: 0.32 }));
     g.add(supportHand({ x: 0, y: -0.12, z: -0.06, rise: 0.05, armPitch: 0.88, armYaw: -0.26, armLength: 0.34 }));
     addMuzzle(g, 0, 0.02, -0.27, 0.45);
+    mountMachinePistol(modelHost, { targetLength: 0.45 }).then((loaded) => {
+      if (loaded) fallback.visible = false;
+    });
     return g;
   },
 
   deagle() {
     const g = new THREE.Group();
     const t = THEMES.deagle();
+    const fallback = new THREE.Group();
+    const modelHost = new THREE.Group();
+    g.add(fallback, modelHost);
     // Massive slide
-    g.add(box(0.088, 0.058, 0.28, t.slide, 0, 0.06, -0.08));
+    fallback.add(box(0.088, 0.058, 0.28, t.slide, 0, 0.06, -0.08));
     // Frame
-    g.add(box(0.082, 0.055, 0.24, t.body, 0, 0.01, -0.06));
+    fallback.add(box(0.082, 0.055, 0.24, t.body, 0, 0.01, -0.06));
     // Heavy barrel
-    g.add(box(0.065, 0.04, 0.12, t.barrel, 0, 0.025, -0.24));
-    g.add(cyl(0.016, 0.08, t.barrel, 0, 0.025, -0.32));
+    fallback.add(box(0.065, 0.04, 0.12, t.barrel, 0, 0.025, -0.24));
+    fallback.add(cyl(0.016, 0.08, t.barrel, 0, 0.025, -0.32));
     // Compensator slots
-    g.add(box(0.09, 0.015, 0.04, t.gold, 0, 0.065, -0.2));
-    g.add(box(0.09, 0.015, 0.04, t.gold, 0, 0.065, -0.16));
+    fallback.add(box(0.09, 0.015, 0.04, t.gold, 0, 0.065, -0.2));
+    fallback.add(box(0.09, 0.015, 0.04, t.gold, 0, 0.065, -0.16));
     // Grip
-    g.add(grip(t.grip, t.gold, 0, -0.01, 0.04, 0.3));
+    fallback.add(grip(t.grip, t.gold, 0, -0.01, 0.04, 0.3));
     // Trigger guard
-    g.add(box(0.05, 0.012, 0.065, t.body, 0, -0.035, -0.02));
-    g.add(box(0.014, 0.05, 0.012, t.body, -0.018, -0.058, -0.02));
-    g.add(box(0.014, 0.05, 0.012, t.body, 0.018, -0.058, -0.02));
+    fallback.add(box(0.05, 0.012, 0.065, t.body, 0, -0.035, -0.02));
+    fallback.add(box(0.014, 0.05, 0.012, t.body, -0.018, -0.058, -0.02));
+    fallback.add(box(0.014, 0.05, 0.012, t.body, 0.018, -0.058, -0.02));
     // Gold accents
-    g.add(box(0.084, 0.02, 0.06, t.gold, 0, 0.06, 0.02));
-    g.add(box(0.055, 0.02, 0.07, t.gold, 0, -0.18, 0.055));
+    fallback.add(box(0.084, 0.02, 0.06, t.gold, 0, 0.06, 0.02));
+    fallback.add(box(0.055, 0.02, 0.07, t.gold, 0, -0.18, 0.055));
     // Iron sights
-    pistolIronSights(g, t.slide, t.glow, 0.094);
+    pistolIronSights(fallback, t.slide, t.glow, 0.094);
 
     g.add(triggerHand({ x: 0, y: -0.09, z: 0.02, armPitch: 0.82, armYaw: 0.28, armLength: 0.34 }));
     g.add(supportHand({ x: 0, y: -0.16, z: 0.04, rise: 0.055, armPitch: 0.9, armYaw: -0.24, armLength: 0.34 }));
     addMuzzle(g, 0, 0.025, -0.36, 0.6);
+    mountDeagle(modelHost, { targetLength: 0.6 }).then((loaded) => {
+      if (loaded) fallback.visible = false;
+    });
     return g;
   },
 
@@ -741,99 +825,120 @@ const BUILDERS = {
   smg() {
     const g = new THREE.Group();
     const t = THEMES.smg();
+    const fallback = new THREE.Group();
+    const modelHost = new THREE.Group();
+    g.add(fallback, modelHost);
     // Upper receiver (tube shape via box)
-    g.add(box(0.068, 0.068, 0.26, t.body, 0, 0.03, -0.04));
+    fallback.add(box(0.068, 0.068, 0.26, t.body, 0, 0.03, -0.04));
     // Handguard
-    g.add(box(0.072, 0.065, 0.16, t.rail, 0, 0.02, -0.24));
+    fallback.add(box(0.072, 0.065, 0.16, t.rail, 0, 0.02, -0.24));
     // Top rail
-    g.add(box(0.04, 0.015, 0.3, t.rail, 0, 0.07, -0.1));
+    fallback.add(box(0.04, 0.015, 0.3, t.rail, 0, 0.07, -0.1));
     // Barrel
-    g.add(cyl(0.012, 0.18, t.barrel, 0, 0.02, -0.42));
-    g.add(cyl(0.018, 0.04, t.steel, 0, 0.02, -0.52));
+    fallback.add(cyl(0.012, 0.18, t.barrel, 0, 0.02, -0.42));
+    fallback.add(cyl(0.018, 0.04, t.steel, 0, 0.02, -0.52));
     // Mag (curved)
-    g.add(box(0.04, 0.12, 0.065, t.mag, 0, -0.1, -0.05));
-    g.add(box(0.04, 0.08, 0.06, t.mag, 0, -0.18, -0.025));
-    g.add(box(0.042, 0.018, 0.065, t.glow, 0, -0.22, -0.02));
+    fallback.add(box(0.04, 0.12, 0.065, t.mag, 0, -0.1, -0.05));
+    fallback.add(box(0.04, 0.08, 0.06, t.mag, 0, -0.18, -0.025));
+    fallback.add(box(0.042, 0.018, 0.065, t.glow, 0, -0.22, -0.02));
     // Grip
-    g.add(grip(t.grip, t.rail, 0, -0.03, 0.1, 0.38));
+    fallback.add(grip(t.grip, t.rail, 0, -0.03, 0.1, 0.38));
     // Folding stock
-    g.add(cyl(0.014, 0.12, t.steel, 0, 0.01, 0.18));
-    g.add(box(0.045, 0.055, 0.1, t.body, 0, 0.0, 0.28));
-    g.add(box(0.055, 0.09, 0.03, t.grip, 0, -0.01, 0.34));
+    fallback.add(cyl(0.014, 0.12, t.steel, 0, 0.01, 0.18));
+    fallback.add(box(0.045, 0.055, 0.1, t.body, 0, 0.0, 0.28));
+    fallback.add(box(0.055, 0.09, 0.03, t.grip, 0, -0.01, 0.34));
     // Iron sights
-    g.add(box(0.012, 0.028, 0.012, t.steel, -0.016, 0.088, 0.03));
-    g.add(box(0.012, 0.028, 0.012, t.steel, 0.016, 0.088, 0.03));
-    g.add(box(0.012, 0.03, 0.012, t.glow, 0, 0.09, -0.3));
+    fallback.add(box(0.012, 0.028, 0.012, t.steel, -0.016, 0.088, 0.03));
+    fallback.add(box(0.012, 0.028, 0.012, t.steel, 0.016, 0.088, 0.03));
+    fallback.add(box(0.012, 0.03, 0.012, t.glow, 0, 0.09, -0.3));
 
     g.add(triggerHand({ x: 0, y: -0.085, z: 0.05 }));
     g.add(supportHand({ x: 0, y: -0.02, z: -0.18, rise: 0.045 }));
     addMuzzle(g, 0, 0.02, -0.54, 0.5);
+    mountSmg(modelHost, { targetLength: 0.5 }).then((loaded) => {
+      if (loaded) fallback.visible = false;
+    });
+
     return g;
   },
 
   p90() {
     const g = new THREE.Group();
     const t = THEMES.p90();
+    const fallback = new THREE.Group();
+    const modelHost = new THREE.Group();
+    g.add(fallback, modelHost);
     // Bullpup body (rounded via overlapping boxes)
-    g.add(box(0.075, 0.08, 0.36, t.body, 0, 0.02, -0.02));
-    g.add(box(0.07, 0.06, 0.32, t.shell, 0, -0.01, 0.0));
+    fallback.add(box(0.075, 0.08, 0.36, t.body, 0, 0.02, -0.02));
+    fallback.add(box(0.07, 0.06, 0.32, t.shell, 0, -0.01, 0.0));
     // Top-mounted horizontal mag
-    g.add(box(0.065, 0.03, 0.26, t.mag, 0, 0.07, -0.04));
-    g.add(box(0.06, 0.025, 0.2, t.body, 0, 0.09, -0.04));
+    fallback.add(box(0.065, 0.03, 0.26, t.mag, 0, 0.07, -0.04));
+    fallback.add(box(0.06, 0.025, 0.2, t.body, 0, 0.09, -0.04));
     // Integrated sight housing
-    g.add(box(0.05, 0.03, 0.08, t.sight, 0, 0.1, -0.06));
-    g.add(box(0.03, 0.025, 0.01, t.glow, 0, 0.108, -0.09));
+    fallback.add(box(0.05, 0.03, 0.08, t.sight, 0, 0.1, -0.06));
+    fallback.add(box(0.03, 0.025, 0.01, t.glow, 0, 0.108, -0.09));
     // Barrel (short, protruding)
-    g.add(cyl(0.012, 0.12, t.barrel, 0, 0.015, -0.26));
-    g.add(cyl(0.018, 0.03, t.body, 0, 0.015, -0.33));
+    fallback.add(cyl(0.012, 0.12, t.barrel, 0, 0.015, -0.26));
+    fallback.add(cyl(0.018, 0.03, t.body, 0, 0.015, -0.33));
     // Integrated foregrip
-    g.add(box(0.04, 0.06, 0.06, t.shell, 0, -0.055, -0.1));
+    fallback.add(box(0.04, 0.06, 0.06, t.shell, 0, -0.055, -0.1));
     // Trigger area
-    g.add(box(0.04, 0.01, 0.05, t.shell, 0, -0.03, -0.02));
+    fallback.add(box(0.04, 0.01, 0.05, t.shell, 0, -0.03, -0.02));
     // Ejection port
-    g.add(box(0.02, 0.035, 0.06, t.glow, 0.042, 0.01, -0.12));
+    fallback.add(box(0.02, 0.035, 0.06, t.glow, 0.042, 0.01, -0.12));
     // Back plate
-    g.add(box(0.06, 0.08, 0.03, t.body, 0, 0.01, 0.18));
+    fallback.add(box(0.06, 0.08, 0.03, t.body, 0, 0.01, 0.18));
 
     g.add(triggerHand({ x: 0, y: -0.085, z: 0.04, armPitch: 0.8, armYaw: 0.3, armLength: 0.34 }));
     g.add(supportHand({ x: 0, y: -0.06, z: -0.12, rise: 0.05, armPitch: 0.88, armYaw: -0.32, armLength: 0.38 }));
     addMuzzle(g, 0, 0.015, -0.36, 0.5);
+    mountP90(modelHost, { targetLength: 0.5 }).then((loaded) => {
+      if (loaded) fallback.visible = false;
+    });
+
     return g;
   },
 
   vector() {
     const g = new THREE.Group();
     const t = THEMES.vector();
+    const fallback = new THREE.Group();
+    const modelHost = new THREE.Group();
+    g.add(fallback, modelHost);
     // Angular upper body
-    g.add(box(0.065, 0.065, 0.22, t.body, 0, 0.04, -0.02));
+    fallback.add(box(0.065, 0.065, 0.22, t.body, 0, 0.04, -0.02));
     // Lower body (wider, angular)
-    g.add(box(0.07, 0.08, 0.2, t.body, 0, -0.02, 0.0));
+    fallback.add(box(0.07, 0.08, 0.2, t.body, 0, -0.02, 0.0));
     // Top rail
-    g.add(box(0.04, 0.015, 0.26, t.rail, 0, 0.08, -0.02));
+    fallback.add(box(0.04, 0.015, 0.26, t.rail, 0, 0.08, -0.02));
     // Barrel
-    g.add(cyl(0.011, 0.16, t.barrel, 0, 0.035, -0.24));
-    g.add(cyl(0.018, 0.04, t.body, 0, 0.035, -0.34));
+    fallback.add(cyl(0.011, 0.16, t.barrel, 0, 0.035, -0.24));
+    fallback.add(cyl(0.018, 0.04, t.body, 0, 0.035, -0.34));
     // Side-feeding mag
-    g.add(box(0.04, 0.14, 0.06, t.mag, 0, -0.12, -0.02));
-    g.add(box(0.042, 0.018, 0.062, t.glow, 0, -0.2, -0.02));
+    fallback.add(box(0.04, 0.14, 0.06, t.mag, 0, -0.12, -0.02));
+    fallback.add(box(0.042, 0.018, 0.062, t.glow, 0, -0.2, -0.02));
     // Grip
-    g.add(grip(t.grip, t.rail, 0, -0.04, 0.1, 0.38));
+    fallback.add(grip(t.grip, t.rail, 0, -0.04, 0.1, 0.38));
     // Vertical foregrip
-    g.add(box(0.035, 0.07, 0.035, t.grip, 0, -0.06, -0.14));
-    g.add(box(0.038, 0.02, 0.04, t.body, 0, -0.01, -0.14));
+    fallback.add(box(0.035, 0.07, 0.035, t.grip, 0, -0.06, -0.14));
+    fallback.add(box(0.038, 0.02, 0.04, t.body, 0, -0.01, -0.14));
     // Folding stock
-    g.add(box(0.04, 0.05, 0.14, t.stock, 0, 0.01, 0.18));
-    g.add(box(0.05, 0.08, 0.03, t.body, 0, 0.0, 0.26));
+    fallback.add(box(0.04, 0.05, 0.14, t.stock, 0, 0.01, 0.18));
+    fallback.add(box(0.05, 0.08, 0.03, t.body, 0, 0.0, 0.26));
     // Charging handle
-    g.add(box(0.08, 0.018, 0.02, t.body, 0, 0.06, 0.04));
+    fallback.add(box(0.08, 0.018, 0.02, t.body, 0, 0.06, 0.04));
     // Iron sights
-    g.add(box(0.012, 0.024, 0.012, t.rail, -0.015, 0.1, 0.05));
-    g.add(box(0.012, 0.024, 0.012, t.rail, 0.015, 0.1, 0.05));
-    g.add(box(0.01, 0.026, 0.01, t.glow, 0, 0.1, -0.14));
+    fallback.add(box(0.012, 0.024, 0.012, t.rail, -0.015, 0.1, 0.05));
+    fallback.add(box(0.012, 0.024, 0.012, t.rail, 0.015, 0.1, 0.05));
+    fallback.add(box(0.01, 0.026, 0.01, t.glow, 0, 0.1, -0.14));
 
     g.add(triggerHand({ x: 0, y: -0.09, z: 0.05, armPitch: 0.8, armYaw: 0.3, armLength: 0.34 }));
     g.add(supportHand({ x: 0, y: -0.06, z: -0.14, rise: 0.046, armPitch: 0.88, armYaw: -0.3, armLength: 0.38 }));
     addMuzzle(g, 0, 0.035, -0.36, 0.48);
+    mountVector(modelHost, { targetLength: 0.48 }).then((loaded) => {
+      if (loaded) fallback.visible = false;
+    });
+
     return g;
   },
 
@@ -842,141 +947,169 @@ const BUILDERS = {
   battlerifle() {
     const g = new THREE.Group();
     const t = THEMES.battlerifle();
+    const fallback = new THREE.Group();
+    const modelHost = new THREE.Group();
+    g.add(fallback, modelHost);
     // Heavy upper receiver
-    g.add(box(0.075, 0.075, 0.32, t.body, 0, 0.04, -0.06));
+    fallback.add(box(0.075, 0.075, 0.32, t.body, 0, 0.04, -0.06));
     // Lower receiver
-    g.add(box(0.07, 0.06, 0.28, t.rail, 0, -0.02, -0.04));
+    fallback.add(box(0.07, 0.06, 0.28, t.rail, 0, -0.02, -0.04));
     // Handguard
-    g.add(box(0.078, 0.075, 0.2, t.tan, 0, 0.02, -0.32));
-    g.add(box(0.05, 0.018, 0.18, t.rail, 0, 0.065, -0.32));
+    fallback.add(box(0.078, 0.075, 0.2, t.tan, 0, 0.02, -0.32));
+    fallback.add(box(0.05, 0.018, 0.18, t.rail, 0, 0.065, -0.32));
     // Heavy barrel
-    g.add(cyl(0.015, 0.32, t.barrel, 0, 0.025, -0.58));
-    g.add(cyl(0.022, 0.05, t.steel, 0, 0.025, -0.76));
+    fallback.add(cyl(0.015, 0.32, t.barrel, 0, 0.025, -0.58));
+    fallback.add(cyl(0.022, 0.05, t.steel, 0, 0.025, -0.76));
     // Large mag
-    g.add(box(0.05, 0.16, 0.085, t.mag, 0, -0.13, -0.06));
-    g.add(box(0.052, 0.02, 0.087, t.glow, 0, -0.22, -0.05));
+    fallback.add(box(0.05, 0.16, 0.085, t.mag, 0, -0.13, -0.06));
+    fallback.add(box(0.052, 0.02, 0.087, t.glow, 0, -0.22, -0.05));
     // Grip
-    g.add(grip(t.body, t.rail, 0, -0.04, 0.12, 0.4));
+    fallback.add(grip(t.body, t.rail, 0, -0.04, 0.12, 0.4));
     // Heavy stock
-    g.add(cyl(0.02, 0.16, t.steel, 0, 0.015, 0.2));
-    g.add(box(0.055, 0.07, 0.16, t.tan, 0, 0.01, 0.32));
-    g.add(box(0.07, 0.13, 0.04, t.body, 0, -0.01, 0.42));
+    fallback.add(cyl(0.02, 0.16, t.steel, 0, 0.015, 0.2));
+    fallback.add(box(0.055, 0.07, 0.16, t.tan, 0, 0.01, 0.32));
+    fallback.add(box(0.07, 0.13, 0.04, t.body, 0, -0.01, 0.42));
     // Carry handle / iron sights
-    g.add(box(0.04, 0.01, 0.12, t.rail, 0, 0.085, -0.06));
-    g.add(box(0.012, 0.03, 0.012, t.steel, 0, 0.1, -0.12));
-    g.add(box(0.012, 0.03, 0.012, t.steel, 0, 0.1, 0.0));
+    fallback.add(box(0.04, 0.01, 0.12, t.rail, 0, 0.085, -0.06));
+    fallback.add(box(0.012, 0.03, 0.012, t.steel, 0, 0.1, -0.12));
+    fallback.add(box(0.012, 0.03, 0.012, t.steel, 0, 0.1, 0.0));
     // Front sight
-    g.add(box(0.014, 0.028, 0.012, t.steel, 0, 0.088, -0.44));
+    fallback.add(box(0.014, 0.028, 0.012, t.steel, 0, 0.088, -0.44));
 
     g.add(triggerHand({ x: 0, y: -0.09, z: 0.06 }));
     g.add(supportHand({ x: 0, y: -0.02, z: -0.22, rise: 0.046 }));
     addMuzzle(g, 0, 0.025, -0.8, 0.65);
+    mountBattlerifle(modelHost, { targetLength: 0.65 }).then((loaded) => {
+      if (loaded) fallback.visible = false;
+    });
+
     return g;
   },
 
   burstrifle() {
     const g = new THREE.Group();
     const t = THEMES.burstrifle();
+    const fallback = new THREE.Group();
+    const modelHost = new THREE.Group();
+    g.add(fallback, modelHost);
     // Upper receiver
-    g.add(box(0.07, 0.065, 0.28, t.body, 0, 0.04, -0.04));
+    fallback.add(box(0.07, 0.065, 0.28, t.body, 0, 0.04, -0.04));
     // Lower receiver
-    g.add(box(0.066, 0.055, 0.24, t.rail, 0, -0.015, -0.02));
+    fallback.add(box(0.066, 0.055, 0.24, t.rail, 0, -0.015, -0.02));
     // Triangular handguard (approximated with boxes)
-    g.add(box(0.08, 0.06, 0.2, t.handguard, 0, 0.01, -0.28));
-    g.add(box(0.06, 0.04, 0.2, t.handguard, 0, -0.03, -0.28));
+    fallback.add(box(0.08, 0.06, 0.2, t.handguard, 0, 0.01, -0.28));
+    fallback.add(box(0.06, 0.04, 0.2, t.handguard, 0, -0.03, -0.28));
     // Barrel
-    g.add(cyl(0.013, 0.26, t.barrel, 0, 0.02, -0.52));
-    g.add(cyl(0.02, 0.04, t.steel, 0, 0.02, -0.67));
+    fallback.add(cyl(0.013, 0.26, t.barrel, 0, 0.02, -0.52));
+    fallback.add(cyl(0.02, 0.04, t.steel, 0, 0.02, -0.67));
     // Carry handle with integral sight
-    g.add(box(0.044, 0.01, 0.14, t.rail, 0, 0.08, -0.02));
-    g.add(box(0.012, 0.04, 0.012, t.rail, -0.016, 0.1, -0.08));
-    g.add(box(0.012, 0.04, 0.012, t.rail, 0.016, 0.1, -0.08));
-    g.add(box(0.012, 0.04, 0.012, t.rail, 0, 0.1, 0.04));
-    g.add(box(0.03, 0.02, 0.04, t.rail, 0, 0.12, -0.08));
-    g.add(box(0.008, 0.01, 0.008, t.glow, 0, 0.12, 0.04));
+    fallback.add(box(0.044, 0.01, 0.14, t.rail, 0, 0.08, -0.02));
+    fallback.add(box(0.012, 0.04, 0.012, t.rail, -0.016, 0.1, -0.08));
+    fallback.add(box(0.012, 0.04, 0.012, t.rail, 0.016, 0.1, -0.08));
+    fallback.add(box(0.012, 0.04, 0.012, t.rail, 0, 0.1, 0.04));
+    fallback.add(box(0.03, 0.02, 0.04, t.rail, 0, 0.12, -0.08));
+    fallback.add(box(0.008, 0.01, 0.008, t.glow, 0, 0.12, 0.04));
     // Mag
-    g.add(box(0.042, 0.13, 0.075, t.mag, 0, -0.12, -0.04));
-    g.add(box(0.044, 0.018, 0.077, t.glow, 0, -0.2, -0.03));
+    fallback.add(box(0.042, 0.13, 0.075, t.mag, 0, -0.12, -0.04));
+    fallback.add(box(0.044, 0.018, 0.077, t.glow, 0, -0.2, -0.03));
     // Grip
-    g.add(grip(t.body, t.rail, 0, -0.04, 0.1, 0.4));
+    fallback.add(grip(t.body, t.rail, 0, -0.04, 0.1, 0.4));
     // Stock
-    g.add(cyl(0.016, 0.14, t.steel, 0, 0.01, 0.18));
-    g.add(box(0.05, 0.06, 0.12, t.handguard, 0, 0.0, 0.28));
-    g.add(box(0.06, 0.11, 0.03, t.body, 0, -0.01, 0.35));
+    fallback.add(cyl(0.016, 0.14, t.steel, 0, 0.01, 0.18));
+    fallback.add(box(0.05, 0.06, 0.12, t.handguard, 0, 0.0, 0.28));
+    fallback.add(box(0.06, 0.11, 0.03, t.body, 0, -0.01, 0.35));
     // Front sight
-    g.add(box(0.014, 0.03, 0.012, t.steel, 0, 0.085, -0.42));
+    fallback.add(box(0.014, 0.03, 0.012, t.steel, 0, 0.085, -0.42));
 
     g.add(triggerHand({ x: 0, y: -0.09, z: 0.05 }));
     g.add(supportHand({ x: 0, y: -0.02, z: -0.2, rise: 0.044 }));
     addMuzzle(g, 0, 0.02, -0.7, 0.6);
+    mountBurstrifle(modelHost, { targetLength: 0.6 }).then((loaded) => {
+      if (loaded) fallback.visible = false;
+    });
+
     return g;
   },
 
   dmr() {
     const g = new THREE.Group();
     const t = THEMES.dmr();
+    const fallback = new THREE.Group();
+    const modelHost = new THREE.Group();
+    g.add(fallback, modelHost);
     // Long chassis
-    g.add(box(0.07, 0.068, 0.38, t.body, 0, 0.02, -0.08));
-    g.add(box(0.066, 0.05, 0.34, t.tan, 0, -0.03, -0.06));
+    fallback.add(box(0.07, 0.068, 0.38, t.body, 0, 0.02, -0.08));
+    fallback.add(box(0.066, 0.05, 0.34, t.tan, 0, -0.03, -0.06));
     // Heavy barrel
-    g.add(cyl(0.014, 0.44, t.barrel, 0, 0.02, -0.5));
-    g.add(cyl(0.022, 0.05, t.steel, 0, 0.02, -0.74));
+    fallback.add(cyl(0.014, 0.44, t.barrel, 0, 0.02, -0.5));
+    fallback.add(cyl(0.022, 0.05, t.steel, 0, 0.02, -0.74));
     // Small scope (zoom: 1.5)
-    g.add(cyl(0.022, 0.2, t.optic, 0, 0.1, -0.1));
-    g.add(cyl(0.028, 0.03, t.glass, 0, 0.1, -0.22));
-    g.add(cyl(0.026, 0.025, t.steel, 0, 0.1, 0.02));
+    fallback.add(cyl(0.022, 0.2, t.optic, 0, 0.1, -0.1));
+    fallback.add(cyl(0.028, 0.03, t.glass, 0, 0.1, -0.22));
+    fallback.add(cyl(0.026, 0.025, t.steel, 0, 0.1, 0.02));
     // Scope mounts
-    g.add(box(0.024, 0.03, 0.03, t.steel, 0, 0.07, -0.16));
-    g.add(box(0.024, 0.03, 0.03, t.steel, 0, 0.07, -0.04));
+    fallback.add(box(0.024, 0.03, 0.03, t.steel, 0, 0.07, -0.16));
+    fallback.add(box(0.024, 0.03, 0.03, t.steel, 0, 0.07, -0.04));
     // Mag
-    g.add(box(0.042, 0.1, 0.065, t.body, 0, -0.08, -0.02));
+    fallback.add(box(0.042, 0.1, 0.065, t.body, 0, -0.08, -0.02));
     // Grip
-    g.add(grip(t.body, t.rail, 0, -0.04, 0.1, 0.38));
+    fallback.add(grip(t.body, t.rail, 0, -0.04, 0.1, 0.38));
     // Stock + cheek riser
-    g.add(box(0.05, 0.055, 0.22, t.tan, 0, 0.0, 0.26));
-    g.add(box(0.055, 0.035, 0.1, t.body, 0, 0.045, 0.2));
-    g.add(box(0.065, 0.12, 0.03, t.body, 0, -0.01, 0.38));
+    fallback.add(box(0.05, 0.055, 0.22, t.tan, 0, 0.0, 0.26));
+    fallback.add(box(0.055, 0.035, 0.1, t.body, 0, 0.045, 0.2));
+    fallback.add(box(0.065, 0.12, 0.03, t.body, 0, -0.01, 0.38));
     // Bipod folded
-    g.add(box(0.032, 0.02, 0.02, t.steel, 0, 0.01, -0.38));
-    g.add(box(0.012, 0.065, 0.012, t.barrel, -0.022, -0.035, -0.38));
-    g.add(box(0.012, 0.065, 0.012, t.barrel, 0.022, -0.035, -0.38));
+    fallback.add(box(0.032, 0.02, 0.02, t.steel, 0, 0.01, -0.38));
+    fallback.add(box(0.012, 0.065, 0.012, t.barrel, -0.022, -0.035, -0.38));
+    fallback.add(box(0.012, 0.065, 0.012, t.barrel, 0.022, -0.035, -0.38));
 
     g.add(triggerHand({ x: 0, y: -0.11, z: 0.08 }));
     g.add(supportHand({ x: 0, y: -0.05, z: -0.16, rise: 0.045 }));
     addMuzzle(g, 0, 0.02, -0.78, 0.85);
+    mountDmr(modelHost, { targetLength: 0.85 }).then((loaded) => {
+      if (loaded) fallback.visible = false;
+    });
+
     return g;
   },
 
   carbine() {
     const g = new THREE.Group();
     const t = THEMES.carbine();
+    const fallback = new THREE.Group();
+    const modelHost = new THREE.Group();
+    g.add(fallback, modelHost);
     const glass = mat(0x0b1220, { emissive: 0xf87171, emissiveIntensity: 1.1, roughness: 0.3 });
     const reticle = mat(0x0b1220, { emissive: 0xff2a2a, emissiveIntensity: 2.2, roughness: 0.25 });
     // Compact receiver
-    g.add(box(0.065, 0.065, 0.22, t.rail, 0, 0.035, -0.03));
-    g.add(box(0.062, 0.055, 0.2, t.body, 0, -0.015, -0.02));
+    fallback.add(box(0.065, 0.065, 0.22, t.rail, 0, 0.035, -0.03));
+    fallback.add(box(0.062, 0.055, 0.2, t.body, 0, -0.015, -0.02));
     // Short handguard
-    g.add(box(0.068, 0.06, 0.15, t.green, 0, 0.01, -0.22));
+    fallback.add(box(0.068, 0.06, 0.15, t.green, 0, 0.01, -0.22));
     // Short barrel
-    g.add(cyl(0.012, 0.16, t.barrel, 0, 0.02, -0.38));
-    g.add(cyl(0.018, 0.035, t.steel, 0, 0.02, -0.48));
+    fallback.add(cyl(0.012, 0.16, t.barrel, 0, 0.02, -0.38));
+    fallback.add(cyl(0.018, 0.035, t.steel, 0, 0.02, -0.48));
     // Mag
-    g.add(box(0.04, 0.11, 0.065, t.mag, 0, -0.1, -0.04));
-    g.add(box(0.042, 0.016, 0.067, t.glow, 0, -0.17, -0.03));
+    fallback.add(box(0.04, 0.11, 0.065, t.mag, 0, -0.1, -0.04));
+    fallback.add(box(0.042, 0.016, 0.067, t.glow, 0, -0.17, -0.03));
     // Grip
-    g.add(grip(t.body, t.rail, 0, -0.035, 0.08, 0.38));
+    fallback.add(grip(t.body, t.rail, 0, -0.035, 0.08, 0.38));
     // Collapsible stock
-    g.add(cyl(0.014, 0.1, t.steel, 0, 0.01, 0.16));
-    g.add(box(0.04, 0.045, 0.08, t.green, 0, 0.0, 0.24));
-    g.add(box(0.05, 0.08, 0.025, t.body, 0, -0.005, 0.29));
+    fallback.add(cyl(0.014, 0.1, t.steel, 0, 0.01, 0.16));
+    fallback.add(box(0.04, 0.045, 0.08, t.green, 0, 0.0, 0.24));
+    fallback.add(box(0.05, 0.08, 0.025, t.body, 0, -0.005, 0.29));
     // Red dot
-    redDotOptic(g, t.rail, glass, reticle, 0, 0.085, -0.02);
+    redDotOptic(fallback, t.rail, glass, reticle, 0, 0.085, -0.02);
     // Front sight
-    g.add(box(0.014, 0.026, 0.012, t.steel, 0, 0.08, -0.32));
+    fallback.add(box(0.014, 0.026, 0.012, t.steel, 0, 0.08, -0.32));
 
     g.add(triggerHand({ x: 0, y: -0.085, z: 0.04 }));
     g.add(supportHand({ x: 0, y: -0.015, z: -0.16, rise: 0.044 }));
     addMuzzle(g, 0, 0.02, -0.5, 0.5);
+    mountCarbine(modelHost, { targetLength: 0.5 }).then((loaded) => {
+      if (loaded) fallback.visible = false;
+    });
+
     return g;
   },
 
@@ -985,101 +1118,122 @@ const BUILDERS = {
   autoshotgun() {
     const g = new THREE.Group();
     const t = THEMES.autoshotgun();
+    const fallback = new THREE.Group();
+    const modelHost = new THREE.Group();
+    g.add(fallback, modelHost);
     // Receiver
-    g.add(box(0.08, 0.09, 0.24, t.body, 0, 0.025, -0.02));
+    fallback.add(box(0.08, 0.09, 0.24, t.body, 0, 0.025, -0.02));
     // Thick barrel
-    g.add(cyl(0.024, 0.34, t.barrel, 0, 0.035, -0.36));
-    g.add(cyl(0.028, 0.04, t.steel, 0, 0.035, -0.54));
+    fallback.add(cyl(0.024, 0.34, t.barrel, 0, 0.035, -0.36));
+    fallback.add(cyl(0.028, 0.04, t.steel, 0, 0.035, -0.54));
     // Gas tube above barrel
-    g.add(cyl(0.012, 0.2, t.steel, 0, 0.07, -0.28));
+    fallback.add(cyl(0.012, 0.2, t.steel, 0, 0.07, -0.28));
     // Box mag
-    g.add(box(0.055, 0.12, 0.08, t.mag, 0, -0.1, -0.04));
-    g.add(box(0.057, 0.02, 0.082, t.glow, 0, -0.17, -0.04));
+    fallback.add(box(0.055, 0.12, 0.08, t.mag, 0, -0.1, -0.04));
+    fallback.add(box(0.057, 0.02, 0.082, t.glow, 0, -0.17, -0.04));
     // Handguard
-    g.add(box(0.08, 0.06, 0.14, t.wood, 0, -0.02, -0.22));
+    fallback.add(box(0.08, 0.06, 0.14, t.wood, 0, -0.02, -0.22));
     // Pistol grip
-    g.add(grip(t.wood, t.body, 0, -0.02, 0.08, 0.35));
+    fallback.add(grip(t.wood, t.body, 0, -0.02, 0.08, 0.35));
     // Stock
-    g.add(box(0.055, 0.065, 0.18, t.wood, 0, 0.0, 0.24));
-    g.add(box(0.065, 0.12, 0.035, t.body, 0, -0.01, 0.34));
+    fallback.add(box(0.055, 0.065, 0.18, t.wood, 0, 0.0, 0.24));
+    fallback.add(box(0.065, 0.12, 0.035, t.body, 0, -0.01, 0.34));
     // Front bead
-    g.add(box(0.014, 0.02, 0.014, t.glow, 0, 0.075, -0.5));
+    fallback.add(box(0.014, 0.02, 0.014, t.glow, 0, 0.075, -0.5));
     // Ejection port
-    g.add(box(0.02, 0.04, 0.07, t.glow, 0.045, 0.04, -0.06));
+    fallback.add(box(0.02, 0.04, 0.07, t.glow, 0.045, 0.04, -0.06));
 
     g.add(triggerHand({ x: 0, y: -0.09, z: 0.06 }));
     g.add(supportHand({ x: 0, y: -0.05, z: -0.22, rise: 0.048, spread: 0.006 }));
     addMuzzle(g, 0, 0.035, -0.56, 0.95);
+    mountAutoshotgun(modelHost, { targetLength: 0.95 }).then((loaded) => {
+      if (loaded) fallback.visible = false;
+    });
+
     return g;
   },
 
   slugshotgun() {
     const g = new THREE.Group();
     const t = THEMES.slugshotgun();
+    const fallback = new THREE.Group();
+    const modelHost = new THREE.Group();
+    g.add(fallback, modelHost);
     // Long receiver
-    g.add(box(0.078, 0.088, 0.28, t.body, 0, 0.025, -0.04));
+    fallback.add(box(0.078, 0.088, 0.28, t.body, 0, 0.025, -0.04));
     // Long barrel
-    g.add(cyl(0.024, 0.46, t.steel, 0, 0.035, -0.46));
-    g.add(cyl(0.028, 0.04, t.brass, 0, 0.035, -0.7));
+    fallback.add(cyl(0.024, 0.46, t.steel, 0, 0.035, -0.46));
+    fallback.add(cyl(0.028, 0.04, t.brass, 0, 0.035, -0.7));
     // Tube mag
-    g.add(cyl(0.015, 0.32, t.body, 0, -0.01, -0.36));
+    fallback.add(cyl(0.015, 0.32, t.body, 0, -0.01, -0.36));
     // Pump
-    g.add(box(0.082, 0.065, 0.14, t.wood, 0, -0.03, -0.3));
-    g.add(box(0.086, 0.014, 0.12, t.woodDark, 0, 0.006, -0.3));
+    fallback.add(box(0.082, 0.065, 0.14, t.wood, 0, -0.03, -0.3));
+    fallback.add(box(0.086, 0.014, 0.12, t.woodDark, 0, 0.006, -0.3));
     // Rifle-style rear sight
-    g.add(box(0.04, 0.01, 0.03, t.steel, 0, 0.08, 0.02));
-    g.add(box(0.012, 0.025, 0.012, t.steel, -0.014, 0.095, 0.02));
-    g.add(box(0.012, 0.025, 0.012, t.steel, 0.014, 0.095, 0.02));
+    fallback.add(box(0.04, 0.01, 0.03, t.steel, 0, 0.08, 0.02));
+    fallback.add(box(0.012, 0.025, 0.012, t.steel, -0.014, 0.095, 0.02));
+    fallback.add(box(0.012, 0.025, 0.012, t.steel, 0.014, 0.095, 0.02));
     // Front sight
-    g.add(box(0.014, 0.024, 0.014, t.brass, 0, 0.075, -0.64));
+    fallback.add(box(0.014, 0.024, 0.014, t.brass, 0, 0.075, -0.64));
     // Trigger guard
-    g.add(box(0.04, 0.01, 0.055, t.body, 0, -0.03, 0.02));
-    g.add(box(0.012, 0.04, 0.012, t.body, -0.014, -0.05, 0.02));
-    g.add(box(0.012, 0.04, 0.012, t.body, 0.014, -0.05, 0.02));
+    fallback.add(box(0.04, 0.01, 0.055, t.body, 0, -0.03, 0.02));
+    fallback.add(box(0.012, 0.04, 0.012, t.body, -0.014, -0.05, 0.02));
+    fallback.add(box(0.012, 0.04, 0.012, t.body, 0.014, -0.05, 0.02));
     // Stock
-    g.add(grip(t.wood, t.woodDark, 0, -0.01, 0.08, 0.28));
-    g.add(box(0.06, 0.075, 0.22, t.wood, 0, 0.0, 0.24));
-    g.add(box(0.07, 0.13, 0.035, t.woodDark, 0, -0.02, 0.36));
+    fallback.add(grip(t.wood, t.woodDark, 0, -0.01, 0.08, 0.28));
+    fallback.add(box(0.06, 0.075, 0.22, t.wood, 0, 0.0, 0.24));
+    fallback.add(box(0.07, 0.13, 0.035, t.woodDark, 0, -0.02, 0.36));
     // Ejection port
-    g.add(box(0.018, 0.035, 0.065, t.glow, 0.044, 0.04, -0.06));
+    fallback.add(box(0.018, 0.035, 0.065, t.glow, 0.044, 0.04, -0.06));
 
     g.add(triggerHand({ x: 0, y: -0.085, z: 0.06 }));
     g.add(supportHand({ x: 0, y: -0.065, z: -0.3, rise: 0.05, spread: 0.008 }));
     addMuzzle(g, 0, 0.035, -0.72, 1.1);
+    mountSlugshotgun(modelHost, { targetLength: 1.1 }).then((loaded) => {
+      if (loaded) fallback.visible = false;
+    });
+
     return g;
   },
 
   doublebarrel() {
     const g = new THREE.Group();
     const t = THEMES.doublebarrel();
+    const fallback = new THREE.Group();
+    const modelHost = new THREE.Group();
+    g.add(fallback, modelHost);
     // Receiver / break action
-    g.add(box(0.09, 0.08, 0.16, t.body, 0, 0.025, -0.02));
+    fallback.add(box(0.09, 0.08, 0.16, t.body, 0, 0.025, -0.02));
     // Twin barrels side by side
-    g.add(cyl(0.022, 0.44, t.steel, -0.022, 0.035, -0.38));
-    g.add(cyl(0.022, 0.44, t.steel, 0.022, 0.035, -0.38));
+    fallback.add(cyl(0.022, 0.44, t.steel, -0.022, 0.035, -0.38));
+    fallback.add(cyl(0.022, 0.44, t.steel, 0.022, 0.035, -0.38));
     // Barrel rib on top
-    g.add(box(0.015, 0.008, 0.4, t.body, 0, 0.062, -0.36));
+    fallback.add(box(0.015, 0.008, 0.4, t.body, 0, 0.062, -0.36));
     // Muzzle rings
-    g.add(cyl(0.026, 0.02, t.brass, -0.022, 0.035, -0.6));
-    g.add(cyl(0.026, 0.02, t.brass, 0.022, 0.035, -0.6));
+    fallback.add(cyl(0.026, 0.02, t.brass, -0.022, 0.035, -0.6));
+    fallback.add(cyl(0.026, 0.02, t.brass, 0.022, 0.035, -0.6));
     // Break hinge
-    g.add(cyl(0.016, 0.08, t.brass, 0, 0.06, -0.1, 'x'));
+    fallback.add(cyl(0.016, 0.08, t.brass, 0, 0.06, -0.1, 'x'));
     // Front bead
-    g.add(box(0.012, 0.018, 0.012, t.brass, 0, 0.075, -0.58));
+    fallback.add(box(0.012, 0.018, 0.012, t.brass, 0, 0.075, -0.58));
     // Trigger guard
-    g.add(box(0.04, 0.01, 0.055, t.body, 0, -0.025, 0.02));
-    g.add(box(0.012, 0.04, 0.012, t.body, -0.014, -0.045, 0.02));
-    g.add(box(0.012, 0.04, 0.012, t.body, 0.014, -0.045, 0.02));
+    fallback.add(box(0.04, 0.01, 0.055, t.body, 0, -0.025, 0.02));
+    fallback.add(box(0.012, 0.04, 0.012, t.body, -0.014, -0.045, 0.02));
+    fallback.add(box(0.012, 0.04, 0.012, t.body, 0.014, -0.045, 0.02));
     // Wood grip + stock
-    g.add(grip(t.wood, t.woodDark, 0, -0.01, 0.06, 0.28));
-    g.add(box(0.065, 0.08, 0.24, t.wood, 0, 0.0, 0.24));
-    g.add(box(0.075, 0.14, 0.035, t.woodDark, 0, -0.02, 0.37));
+    fallback.add(grip(t.wood, t.woodDark, 0, -0.01, 0.06, 0.28));
+    fallback.add(box(0.065, 0.08, 0.24, t.wood, 0, 0.0, 0.24));
+    fallback.add(box(0.075, 0.14, 0.035, t.woodDark, 0, -0.02, 0.37));
     // Ejection accent
-    g.add(box(0.06, 0.02, 0.04, t.glow, 0, 0.072, -0.06));
+    fallback.add(box(0.06, 0.02, 0.04, t.glow, 0, 0.072, -0.06));
 
     g.add(triggerHand({ x: 0, y: -0.085, z: 0.04 }));
     g.add(supportHand({ x: 0, y: -0.03, z: -0.3, rise: 0.046, spread: 0.01 }));
     addMuzzle(g, 0, 0.035, -0.62, 1.0);
+    mountDoublebarrel(modelHost, { targetLength: 1.0 }).then((loaded) => {
+      if (loaded) fallback.visible = false;
+    });
+
     return g;
   },
 
@@ -1088,72 +1242,86 @@ const BUILDERS = {
   scout() {
     const g = new THREE.Group();
     const t = THEMES.scout();
+    const fallback = new THREE.Group();
+    const modelHost = new THREE.Group();
+    g.add(fallback, modelHost);
     // Light chassis
-    g.add(box(0.062, 0.06, 0.34, t.body, 0, 0.015, -0.06));
-    g.add(box(0.06, 0.045, 0.3, t.tan, 0, -0.03, -0.04));
+    fallback.add(box(0.062, 0.06, 0.34, t.body, 0, 0.015, -0.06));
+    fallback.add(box(0.06, 0.045, 0.3, t.tan, 0, -0.03, -0.04));
     // Thin barrel
-    g.add(cyl(0.01, 0.42, t.black, 0, 0.02, -0.48));
-    g.add(cyl(0.016, 0.04, t.steel, 0, 0.02, -0.72));
+    fallback.add(cyl(0.01, 0.42, t.black, 0, 0.02, -0.48));
+    fallback.add(cyl(0.016, 0.04, t.steel, 0, 0.02, -0.72));
     // Medium scope
-    g.add(cyl(0.024, 0.22, t.optic, 0, 0.1, -0.1));
-    g.add(cyl(0.03, 0.03, t.glass, 0, 0.1, -0.23));
-    g.add(cyl(0.028, 0.025, t.steel, 0, 0.1, 0.02));
+    fallback.add(cyl(0.024, 0.22, t.optic, 0, 0.1, -0.1));
+    fallback.add(cyl(0.03, 0.03, t.glass, 0, 0.1, -0.23));
+    fallback.add(cyl(0.028, 0.025, t.steel, 0, 0.1, 0.02));
     // Scope mounts
-    g.add(box(0.024, 0.03, 0.03, t.steel, 0, 0.065, -0.18));
-    g.add(box(0.024, 0.03, 0.03, t.steel, 0, 0.065, -0.02));
+    fallback.add(box(0.024, 0.03, 0.03, t.steel, 0, 0.065, -0.18));
+    fallback.add(box(0.024, 0.03, 0.03, t.steel, 0, 0.065, -0.02));
     // Bolt
-    g.add(box(0.06, 0.016, 0.016, t.steel, 0.038, 0.035, 0.06));
-    g.add(cyl(0.01, 0.022, t.steel, 0.068, 0.035, 0.06, 'x'));
+    fallback.add(box(0.06, 0.016, 0.016, t.steel, 0.038, 0.035, 0.06));
+    fallback.add(cyl(0.01, 0.022, t.steel, 0.068, 0.035, 0.06, 'x'));
     // Small mag
-    g.add(box(0.038, 0.06, 0.055, t.black, 0, -0.06, -0.02));
+    fallback.add(box(0.038, 0.06, 0.055, t.black, 0, -0.06, -0.02));
     // Grip
-    g.add(grip(t.body, t.black, 0, -0.04, 0.1, 0.36));
+    fallback.add(grip(t.body, t.black, 0, -0.04, 0.1, 0.36));
     // Light stock
-    g.add(box(0.048, 0.05, 0.2, t.tan, 0, 0.0, 0.26));
-    g.add(box(0.055, 0.1, 0.03, t.body, 0, -0.01, 0.37));
+    fallback.add(box(0.048, 0.05, 0.2, t.tan, 0, 0.0, 0.26));
+    fallback.add(box(0.055, 0.1, 0.03, t.body, 0, -0.01, 0.37));
 
     g.add(triggerHand({ x: 0, y: -0.11, z: 0.08 }));
     g.add(supportHand({ x: 0, y: -0.05, z: -0.14, rise: 0.044 }));
     addMuzzle(g, 0, 0.02, -0.74, 1.1);
+    mountScout(modelHost, { targetLength: 1.1 }).then((loaded) => {
+      if (loaded) fallback.visible = false;
+    });
+
     return g;
   },
 
   awp() {
     const g = new THREE.Group();
     const t = THEMES.awp();
+    const fallback = new THREE.Group();
+    const modelHost = new THREE.Group();
+    g.add(fallback, modelHost);
     // Heavy chassis
-    g.add(box(0.075, 0.075, 0.46, t.body, 0, 0.018, -0.1));
-    g.add(box(0.072, 0.055, 0.4, t.stock, 0, -0.038, -0.08));
+    fallback.add(box(0.075, 0.075, 0.46, t.body, 0, 0.018, -0.1));
+    fallback.add(box(0.072, 0.055, 0.4, t.stock, 0, -0.038, -0.08));
     // Long heavy barrel
-    g.add(cyl(0.014, 0.58, t.black, 0, 0.022, -0.64));
-    g.add(cyl(0.024, 0.07, t.steel, 0, 0.022, -0.98));
+    fallback.add(cyl(0.014, 0.58, t.black, 0, 0.022, -0.64));
+    fallback.add(cyl(0.024, 0.07, t.steel, 0, 0.022, -0.98));
     // Large scope
-    g.add(cyl(0.035, 0.32, t.optic, 0, 0.115, -0.16));
-    g.add(cyl(0.042, 0.04, t.glass, 0, 0.115, -0.34));
-    g.add(cyl(0.04, 0.035, t.steel, 0, 0.115, 0.02));
+    fallback.add(cyl(0.035, 0.32, t.optic, 0, 0.115, -0.16));
+    fallback.add(cyl(0.042, 0.04, t.glass, 0, 0.115, -0.34));
+    fallback.add(cyl(0.04, 0.035, t.steel, 0, 0.115, 0.02));
     // Scope mounts
-    g.add(box(0.03, 0.04, 0.04, t.steel, 0, 0.075, -0.26));
-    g.add(box(0.03, 0.04, 0.04, t.steel, 0, 0.075, -0.06));
+    fallback.add(box(0.03, 0.04, 0.04, t.steel, 0, 0.075, -0.26));
+    fallback.add(box(0.03, 0.04, 0.04, t.steel, 0, 0.075, -0.06));
     // Bolt handle
-    g.add(box(0.075, 0.02, 0.02, t.steel, 0.045, 0.045, 0.1));
-    g.add(cyl(0.014, 0.028, t.steel, 0.088, 0.045, 0.1, 'x'));
+    fallback.add(box(0.075, 0.02, 0.02, t.steel, 0.045, 0.045, 0.1));
+    fallback.add(cyl(0.014, 0.028, t.steel, 0.088, 0.045, 0.1, 'x'));
     // Heavy mag
-    g.add(box(0.05, 0.09, 0.075, t.black, 0, -0.09, -0.02));
+    fallback.add(box(0.05, 0.09, 0.075, t.black, 0, -0.09, -0.02));
     // Grip
-    g.add(grip(t.body, t.black, 0, -0.055, 0.13, 0.4));
+    fallback.add(grip(t.body, t.black, 0, -0.055, 0.13, 0.4));
     // Heavy stock + cheek riser
-    g.add(box(0.06, 0.065, 0.28, t.stock, 0, 0.0, 0.32));
-    g.add(box(0.065, 0.045, 0.14, t.body, 0, 0.055, 0.26));
-    g.add(box(0.075, 0.14, 0.04, t.body, 0, -0.015, 0.48));
+    fallback.add(box(0.06, 0.065, 0.28, t.stock, 0, 0.0, 0.32));
+    fallback.add(box(0.065, 0.045, 0.14, t.body, 0, 0.055, 0.26));
+    fallback.add(box(0.075, 0.14, 0.04, t.body, 0, -0.015, 0.48));
     // Bipod folded
-    g.add(box(0.036, 0.024, 0.026, t.steel, 0, 0.01, -0.5));
-    g.add(box(0.06, 0.012, 0.016, t.steel, 0, -0.002, -0.5));
-    g.add(box(0.012, 0.08, 0.012, t.black, -0.026, -0.044, -0.5));
-    g.add(box(0.012, 0.08, 0.012, t.black, 0.026, -0.044, -0.5));
+    fallback.add(box(0.036, 0.024, 0.026, t.steel, 0, 0.01, -0.5));
+    fallback.add(box(0.06, 0.012, 0.016, t.steel, 0, -0.002, -0.5));
+    fallback.add(box(0.012, 0.08, 0.012, t.black, -0.026, -0.044, -0.5));
+    fallback.add(box(0.012, 0.08, 0.012, t.black, 0.026, -0.044, -0.5));
 
     g.add(triggerHand({ x: 0, y: -0.12, z: 0.1 }));
     g.add(supportHand({ x: 0, y: -0.06, z: -0.2, rise: 0.048 }));
     addMuzzle(g, 0, 0.022, -1.04, 1.5);
+    mountAwp(modelHost, { targetLength: 1.5 }).then((loaded) => {
+      if (loaded) fallback.visible = false;
+    });
+
     return g;
   },
 
@@ -1162,74 +1330,88 @@ const BUILDERS = {
   lmg() {
     const g = new THREE.Group();
     const t = THEMES.lmg();
+    const fallback = new THREE.Group();
+    const modelHost = new THREE.Group();
+    g.add(fallback, modelHost);
     // Heavy receiver
-    g.add(box(0.08, 0.08, 0.32, t.body, 0, 0.035, -0.04));
-    g.add(box(0.076, 0.065, 0.28, t.rail, 0, -0.02, -0.02));
+    fallback.add(box(0.08, 0.08, 0.32, t.body, 0, 0.035, -0.04));
+    fallback.add(box(0.076, 0.065, 0.28, t.rail, 0, -0.02, -0.02));
     // Long heavy barrel with heat shield
-    g.add(cyl(0.016, 0.36, t.barrel, 0, 0.025, -0.52));
-    g.add(box(0.06, 0.05, 0.2, t.rail, 0, 0.025, -0.38));
-    g.add(cyl(0.024, 0.06, t.steel, 0, 0.025, -0.74));
+    fallback.add(cyl(0.016, 0.36, t.barrel, 0, 0.025, -0.52));
+    fallback.add(box(0.06, 0.05, 0.2, t.rail, 0, 0.025, -0.38));
+    fallback.add(cyl(0.024, 0.06, t.steel, 0, 0.025, -0.74));
     // Carry handle
-    g.add(box(0.025, 0.012, 0.14, t.steel, 0, 0.09, -0.14));
-    g.add(box(0.012, 0.04, 0.012, t.steel, 0, 0.07, -0.21));
-    g.add(box(0.012, 0.04, 0.012, t.steel, 0, 0.07, -0.07));
+    fallback.add(box(0.025, 0.012, 0.14, t.steel, 0, 0.09, -0.14));
+    fallback.add(box(0.012, 0.04, 0.012, t.steel, 0, 0.07, -0.21));
+    fallback.add(box(0.012, 0.04, 0.012, t.steel, 0, 0.07, -0.07));
     // Box mag / ammo box
-    g.add(box(0.07, 0.1, 0.1, t.mag, 0, -0.12, -0.06));
-    g.add(box(0.072, 0.02, 0.102, t.brass, 0, -0.18, -0.06));
+    fallback.add(box(0.07, 0.1, 0.1, t.mag, 0, -0.12, -0.06));
+    fallback.add(box(0.072, 0.02, 0.102, t.brass, 0, -0.18, -0.06));
     // Feed cover / top
-    g.add(box(0.082, 0.02, 0.14, t.body, 0, 0.08, -0.04));
+    fallback.add(box(0.082, 0.02, 0.14, t.body, 0, 0.08, -0.04));
     // Grip
-    g.add(grip(t.body, t.rail, 0, -0.04, 0.12, 0.4));
+    fallback.add(grip(t.body, t.rail, 0, -0.04, 0.12, 0.4));
     // Stock
-    g.add(cyl(0.018, 0.14, t.steel, 0, 0.015, 0.2));
-    g.add(box(0.055, 0.065, 0.16, t.body, 0, 0.0, 0.32));
-    g.add(box(0.065, 0.12, 0.035, t.rail, 0, -0.01, 0.42));
+    fallback.add(cyl(0.018, 0.14, t.steel, 0, 0.015, 0.2));
+    fallback.add(box(0.055, 0.065, 0.16, t.body, 0, 0.0, 0.32));
+    fallback.add(box(0.065, 0.12, 0.035, t.rail, 0, -0.01, 0.42));
     // Bipod
-    g.add(box(0.04, 0.02, 0.02, t.steel, 0, 0.0, -0.5));
-    g.add(box(0.012, 0.08, 0.012, t.body, -0.028, -0.045, -0.5));
-    g.add(box(0.012, 0.08, 0.012, t.body, 0.028, -0.045, -0.5));
+    fallback.add(box(0.04, 0.02, 0.02, t.steel, 0, 0.0, -0.5));
+    fallback.add(box(0.012, 0.08, 0.012, t.body, -0.028, -0.045, -0.5));
+    fallback.add(box(0.012, 0.08, 0.012, t.body, 0.028, -0.045, -0.5));
     // Front sight
-    g.add(box(0.014, 0.026, 0.014, t.brass, 0, 0.085, -0.48));
+    fallback.add(box(0.014, 0.026, 0.014, t.brass, 0, 0.085, -0.48));
     // Ejection port
-    g.add(box(0.02, 0.04, 0.06, t.glow, 0.046, 0.04, -0.08));
+    fallback.add(box(0.02, 0.04, 0.06, t.glow, 0.046, 0.04, -0.08));
 
     g.add(triggerHand({ x: 0, y: -0.1, z: 0.06 }));
     g.add(supportHand({ x: 0, y: -0.01, z: -0.24, rise: 0.046, spread: 0.008 }));
     addMuzzle(g, 0, 0.025, -0.76, 0.8);
+    mountLmg(modelHost, { targetLength: 0.8 }).then((loaded) => {
+      if (loaded) fallback.visible = false;
+    });
+
     return g;
   },
 
   minigun() {
     const g = new THREE.Group();
     const t = THEMES.minigun();
+    const fallback = new THREE.Group();
+    const modelHost = new THREE.Group();
+    g.add(fallback, modelHost);
     // Motor housing (rear cylinder)
-    g.add(cyl(0.06, 0.14, t.housing, 0, 0.02, 0.04));
-    g.add(box(0.05, 0.08, 0.08, t.body, 0, 0.02, 0.12));
+    fallback.add(cyl(0.06, 0.14, t.housing, 0, 0.02, 0.04));
+    fallback.add(box(0.05, 0.08, 0.08, t.body, 0, 0.02, 0.12));
     // Barrel cluster (6 barrels in a ring)
     for (let i = 0; i < 6; i++) {
       const a = (i / 6) * Math.PI * 2;
       const bx = Math.cos(a) * 0.032;
       const by = 0.02 + Math.sin(a) * 0.032;
-      g.add(cyl(0.008, 0.4, t.barrels, bx, by, -0.28));
+      fallback.add(cyl(0.008, 0.4, t.barrels, bx, by, -0.28));
     }
     // Front barrel clamp
-    g.add(cyl(0.055, 0.025, t.body, 0, 0.02, -0.1));
-    g.add(cyl(0.055, 0.025, t.body, 0, 0.02, -0.35));
+    fallback.add(cyl(0.055, 0.025, t.body, 0, 0.02, -0.1));
+    fallback.add(cyl(0.055, 0.025, t.body, 0, 0.02, -0.35));
     // Flash hider ring
-    g.add(cyl(0.05, 0.03, t.brass, 0, 0.02, -0.49));
+    fallback.add(cyl(0.05, 0.03, t.brass, 0, 0.02, -0.49));
     // Rear grip (spade style)
-    g.add(box(0.04, 0.1, 0.06, t.grip, 0.03, -0.06, 0.1));
-    g.add(box(0.04, 0.1, 0.06, t.grip, -0.03, -0.06, 0.1));
-    g.add(box(0.1, 0.02, 0.06, t.body, 0, -0.12, 0.1));
+    fallback.add(box(0.04, 0.1, 0.06, t.grip, 0.03, -0.06, 0.1));
+    fallback.add(box(0.04, 0.1, 0.06, t.grip, -0.03, -0.06, 0.1));
+    fallback.add(box(0.1, 0.02, 0.06, t.body, 0, -0.12, 0.1));
     // Ammo feed / box
-    g.add(box(0.08, 0.08, 0.08, t.body, 0.06, -0.04, -0.04));
-    g.add(box(0.05, 0.04, 0.06, t.brass, 0.06, 0.02, -0.04));
+    fallback.add(box(0.08, 0.08, 0.08, t.body, 0.06, -0.04, -0.04));
+    fallback.add(box(0.05, 0.04, 0.06, t.brass, 0.06, 0.02, -0.04));
     // Trigger button
-    g.add(cyl(0.01, 0.02, t.glow, 0, -0.02, 0.08, 'x'));
+    fallback.add(cyl(0.01, 0.02, t.glow, 0, -0.02, 0.08, 'x'));
 
     g.add(triggerHand({ x: 0.03, y: -0.14, z: 0.08, armPitch: 0.85, armYaw: 0.35, armLength: 0.36 }));
     g.add(supportHand({ x: -0.03, y: -0.14, z: 0.08, rise: 0.04, armPitch: 0.85, armYaw: -0.35, armLength: 0.36 }));
     addMuzzle(g, 0, 0.02, -0.52, 0.7);
+    mountMinigun(modelHost, { targetLength: 0.7 }).then((loaded) => {
+      if (loaded) fallback.visible = false;
+    });
+
     return g;
   },
 
@@ -1238,103 +1420,124 @@ const BUILDERS = {
   crossbow() {
     const g = new THREE.Group();
     const t = THEMES.crossbow();
+    const fallback = new THREE.Group();
+    const modelHost = new THREE.Group();
+    g.add(fallback, modelHost);
     // Rail / stock body
-    g.add(box(0.055, 0.06, 0.36, t.body, 0, 0.02, -0.02));
-    g.add(box(0.05, 0.045, 0.24, t.rail, 0, -0.015, 0.02));
+    fallback.add(box(0.055, 0.06, 0.36, t.body, 0, 0.02, -0.02));
+    fallback.add(box(0.05, 0.045, 0.24, t.rail, 0, -0.015, 0.02));
     // Limbs (angled outward)
     const limbG = new THREE.Group();
     limbG.position.set(0, 0.02, -0.22);
     limbG.add(box(0.24, 0.025, 0.04, t.limb, 0, 0, 0));
     limbG.add(box(0.06, 0.02, 0.03, t.limb, -0.14, 0, 0.02));
     limbG.add(box(0.06, 0.02, 0.03, t.limb, 0.14, 0, 0.02));
-    g.add(limbG);
+    fallback.add(limbG);
     // String
-    g.add(box(0.18, 0.006, 0.006, t.string, 0, 0.02, -0.18));
+    fallback.add(box(0.18, 0.006, 0.006, t.string, 0, 0.02, -0.18));
     // Bolt / arrow on rail
-    g.add(cyl(0.005, 0.28, t.brass, 0, 0.055, -0.16));
+    fallback.add(cyl(0.005, 0.28, t.brass, 0, 0.055, -0.16));
     // Bolt tip
-    g.add(box(0.015, 0.015, 0.025, t.steel, 0, 0.055, -0.31));
+    fallback.add(box(0.015, 0.015, 0.025, t.steel, 0, 0.055, -0.31));
     // Trigger mechanism
-    g.add(box(0.035, 0.025, 0.06, t.brass, 0, -0.01, -0.06));
+    fallback.add(box(0.035, 0.025, 0.06, t.brass, 0, -0.01, -0.06));
     // Grip
-    g.add(grip(t.body, t.brass, 0, -0.02, 0.08, 0.35));
+    fallback.add(grip(t.body, t.brass, 0, -0.02, 0.08, 0.35));
     // Stock
-    g.add(box(0.05, 0.055, 0.16, t.body, 0, 0.0, 0.22));
-    g.add(box(0.055, 0.09, 0.03, t.rail, 0, -0.01, 0.31));
+    fallback.add(box(0.05, 0.055, 0.16, t.body, 0, 0.0, 0.22));
+    fallback.add(box(0.055, 0.09, 0.03, t.rail, 0, -0.01, 0.31));
     // Simple top sight
-    g.add(box(0.012, 0.024, 0.012, t.steel, -0.014, 0.075, 0.02));
-    g.add(box(0.012, 0.024, 0.012, t.steel, 0.014, 0.075, 0.02));
-    g.add(box(0.01, 0.026, 0.01, t.brass, 0, 0.078, -0.18));
+    fallback.add(box(0.012, 0.024, 0.012, t.steel, -0.014, 0.075, 0.02));
+    fallback.add(box(0.012, 0.024, 0.012, t.steel, 0.014, 0.075, 0.02));
+    fallback.add(box(0.01, 0.026, 0.01, t.brass, 0, 0.078, -0.18));
 
     g.add(triggerHand({ x: 0, y: -0.09, z: 0.05 }));
     g.add(supportHand({ x: 0, y: -0.02, z: -0.1, rise: 0.044 }));
     addMuzzle(g, 0, 0.055, -0.36, 0.6);
+    mountCrossbow(modelHost, { targetLength: 0.6 }).then((loaded) => {
+      if (loaded) fallback.visible = false;
+    });
+
     return g;
   },
 
   sawedoff() {
     const g = new THREE.Group();
     const t = THEMES.sawedoff();
+    const fallback = new THREE.Group();
+    const modelHost = new THREE.Group();
+    g.add(fallback, modelHost);
     // Receiver
-    g.add(box(0.085, 0.075, 0.12, t.steel, 0, 0.025, 0.0));
+    fallback.add(box(0.085, 0.075, 0.12, t.steel, 0, 0.025, 0.0));
     // Twin short barrels
-    g.add(cyl(0.02, 0.2, t.barrel, -0.018, 0.035, -0.16));
-    g.add(cyl(0.02, 0.2, t.barrel, 0.018, 0.035, -0.16));
+    fallback.add(cyl(0.02, 0.2, t.barrel, -0.018, 0.035, -0.16));
+    fallback.add(cyl(0.02, 0.2, t.barrel, 0.018, 0.035, -0.16));
     // Muzzle rings
-    g.add(cyl(0.024, 0.015, t.brass, -0.018, 0.035, -0.27));
-    g.add(cyl(0.024, 0.015, t.brass, 0.018, 0.035, -0.27));
+    fallback.add(cyl(0.024, 0.015, t.brass, -0.018, 0.035, -0.27));
+    fallback.add(cyl(0.024, 0.015, t.brass, 0.018, 0.035, -0.27));
     // Break hinge
-    g.add(cyl(0.014, 0.07, t.brass, 0, 0.06, -0.06, 'x'));
+    fallback.add(cyl(0.014, 0.07, t.brass, 0, 0.06, -0.06, 'x'));
     // Grip only (no stock)
-    g.add(grip(t.wood, t.woodDark, 0, -0.01, 0.04, 0.3));
+    fallback.add(grip(t.wood, t.woodDark, 0, -0.01, 0.04, 0.3));
     // Trigger guard
-    g.add(box(0.04, 0.01, 0.05, t.steel, 0, -0.025, 0.0));
-    g.add(box(0.012, 0.038, 0.012, t.steel, -0.014, -0.044, 0.0));
-    g.add(box(0.012, 0.038, 0.012, t.steel, 0.014, -0.044, 0.0));
+    fallback.add(box(0.04, 0.01, 0.05, t.steel, 0, -0.025, 0.0));
+    fallback.add(box(0.012, 0.038, 0.012, t.steel, -0.014, -0.044, 0.0));
+    fallback.add(box(0.012, 0.038, 0.012, t.steel, 0.014, -0.044, 0.0));
     // Side accent
-    g.add(box(0.02, 0.03, 0.06, t.glow, 0.048, 0.03, -0.02));
+    fallback.add(box(0.02, 0.03, 0.06, t.glow, 0.048, 0.03, -0.02));
 
     g.add(triggerHand({ x: 0, y: -0.085, z: 0.02, armPitch: 0.82, armYaw: 0.28, armLength: 0.32 }));
     g.add(supportHand({ x: 0, y: -0.04, z: -0.08, rise: 0.05, armPitch: 0.88, armYaw: -0.26, armLength: 0.34 }));
     addMuzzle(g, 0, 0.035, -0.28, 0.45);
+    mountSawedoff(modelHost, { targetLength: 0.45 }).then((loaded) => {
+      if (loaded) fallback.visible = false;
+    });
+
     return g;
   },
 
   leveraction() {
     const g = new THREE.Group();
     const t = THEMES.leveraction();
+    const fallback = new THREE.Group();
+    const modelHost = new THREE.Group();
+    g.add(fallback, modelHost);
     // Receiver
-    g.add(box(0.07, 0.075, 0.22, t.brass, 0, 0.03, -0.02));
+    fallback.add(box(0.07, 0.075, 0.22, t.brass, 0, 0.03, -0.02));
     // Octagonal barrel (approximated with box)
-    g.add(box(0.04, 0.04, 0.42, t.blue, 0, 0.04, -0.38));
-    g.add(box(0.044, 0.036, 0.42, t.blue, 0, 0.04, -0.38));
+    fallback.add(box(0.04, 0.04, 0.42, t.blue, 0, 0.04, -0.38));
+    fallback.add(box(0.044, 0.036, 0.42, t.blue, 0, 0.04, -0.38));
     // Tube mag under barrel
-    g.add(cyl(0.012, 0.34, t.steel, 0, 0.0, -0.34));
+    fallback.add(cyl(0.012, 0.34, t.steel, 0, 0.0, -0.34));
     // Muzzle
-    g.add(cyl(0.025, 0.03, t.brass, 0, 0.04, -0.6));
+    fallback.add(cyl(0.025, 0.03, t.brass, 0, 0.04, -0.6));
     // Lever loop
-    g.add(box(0.05, 0.012, 0.1, t.brass, 0, -0.035, 0.01));
-    g.add(box(0.012, 0.06, 0.012, t.brass, -0.02, -0.06, -0.04));
-    g.add(box(0.012, 0.06, 0.012, t.brass, 0.02, -0.06, -0.04));
-    g.add(box(0.05, 0.012, 0.012, t.brass, 0, -0.09, -0.04));
+    fallback.add(box(0.05, 0.012, 0.1, t.brass, 0, -0.035, 0.01));
+    fallback.add(box(0.012, 0.06, 0.012, t.brass, -0.02, -0.06, -0.04));
+    fallback.add(box(0.012, 0.06, 0.012, t.brass, 0.02, -0.06, -0.04));
+    fallback.add(box(0.05, 0.012, 0.012, t.brass, 0, -0.09, -0.04));
     // Trigger guard integrated with lever
-    g.add(box(0.012, 0.04, 0.012, t.brass, -0.02, -0.06, 0.06));
-    g.add(box(0.012, 0.04, 0.012, t.brass, 0.02, -0.06, 0.06));
+    fallback.add(box(0.012, 0.04, 0.012, t.brass, -0.02, -0.06, 0.06));
+    fallback.add(box(0.012, 0.04, 0.012, t.brass, 0.02, -0.06, 0.06));
     // Grip
-    g.add(grip(t.wood, t.woodDark, 0, -0.01, 0.06, 0.28));
+    fallback.add(grip(t.wood, t.woodDark, 0, -0.01, 0.06, 0.28));
     // Wood stock
-    g.add(box(0.06, 0.075, 0.24, t.wood, 0, 0.01, 0.24));
-    g.add(box(0.07, 0.13, 0.035, t.woodDark, 0, -0.01, 0.37));
+    fallback.add(box(0.06, 0.075, 0.24, t.wood, 0, 0.01, 0.24));
+    fallback.add(box(0.07, 0.13, 0.035, t.woodDark, 0, -0.01, 0.37));
     // Front sight
-    g.add(box(0.012, 0.022, 0.012, t.brass, 0, 0.068, -0.56));
+    fallback.add(box(0.012, 0.022, 0.012, t.brass, 0, 0.068, -0.56));
     // Rear sight
-    g.add(box(0.03, 0.014, 0.02, t.steel, 0, 0.076, -0.04));
+    fallback.add(box(0.03, 0.014, 0.02, t.steel, 0, 0.076, -0.04));
     // Loading gate
-    g.add(box(0.02, 0.03, 0.05, t.glow, 0.04, 0.01, -0.02));
+    fallback.add(box(0.02, 0.03, 0.05, t.glow, 0.04, 0.01, -0.02));
 
     g.add(triggerHand({ x: 0, y: -0.085, z: 0.04 }));
     g.add(supportHand({ x: 0, y: -0.04, z: -0.26, rise: 0.046, spread: 0.006 }));
     addMuzzle(g, 0, 0.04, -0.62, 0.9);
+    mountLeveraction(modelHost, { targetLength: 0.9 }).then((loaded) => {
+      if (loaded) fallback.visible = false;
+    });
+
     return g;
   },
 
@@ -1343,67 +1546,137 @@ const BUILDERS = {
   bow() {
     const g = new THREE.Group();
     const t = THEMES.bow();
-    // Riser (grip section)
-    g.add(box(0.04, 0.16, 0.06, t.leather, 0, 0.0, 0.0));
-    g.add(box(0.035, 0.08, 0.055, t.dark, 0, 0.0, 0.01));
-    // Upper limb (curving forward)
-    g.add(box(0.03, 0.2, 0.035, t.wood, 0, 0.18, -0.01));
-    g.add(box(0.028, 0.08, 0.03, t.wood, 0, 0.3, -0.03));
-    g.add(box(0.025, 0.04, 0.025, t.wood, 0, 0.34, -0.05));
-    // Lower limb (curving forward)
-    g.add(box(0.03, 0.2, 0.035, t.wood, 0, -0.18, -0.01));
-    g.add(box(0.028, 0.08, 0.03, t.wood, 0, -0.3, -0.03));
-    g.add(box(0.025, 0.04, 0.025, t.wood, 0, -0.34, -0.05));
-    // Limb tips
-    g.add(box(0.01, 0.015, 0.015, t.tip, 0, 0.365, -0.06));
-    g.add(box(0.01, 0.015, 0.015, t.tip, 0, -0.365, -0.06));
-    // String
-    g.add(box(0.004, 0.73, 0.004, t.string, 0, 0.0, -0.06));
-    // Arrow rest
-    g.add(box(0.02, 0.012, 0.04, t.dark, 0, 0.055, -0.02));
-    // Arrow nocked
-    g.add(cyl(0.004, 0.35, t.tip, 0, 0.055, -0.2));
-    g.add(box(0.015, 0.015, 0.02, t.tip, 0, 0.055, -0.38));
-    // Leather wrap detail
-    g.add(box(0.044, 0.025, 0.065, t.leather, 0, 0.04, 0.0));
-    g.add(box(0.044, 0.025, 0.065, t.leather, 0, -0.04, 0.0));
 
-    g.add(triggerHand({ x: 0, y: -0.12, z: 0.05, armPitch: 0.82, armYaw: 0.3, armLength: 0.34 }));
-    g.add(supportHand({ x: 0, y: -0.04, z: -0.02, rise: 0.06, armPitch: 0.85, armYaw: -0.3, armLength: 0.36 }));
-    addMuzzle(g, 0, 0.055, -0.38, 0.5);
+    // Bow body: Blender GLB with a primitive stand-in while it loads. The
+    // string and arrow are separate three.js pieces so they can animate.
+    const bowHost = new THREE.Group();
+    const fallback = new THREE.Group();
+    fallback.add(box(0.04, 0.16, 0.06, t.leather, 0, 0.0, 0.0));
+    fallback.add(box(0.03, 0.2, 0.035, t.wood, 0, 0.18, -0.01));
+    fallback.add(box(0.028, 0.08, 0.03, t.wood, 0, 0.3, -0.03));
+    fallback.add(box(0.03, 0.2, 0.035, t.wood, 0, -0.18, -0.01));
+    fallback.add(box(0.028, 0.08, 0.03, t.wood, 0, -0.3, -0.03));
+    bowHost.add(fallback);
+    g.add(bowHost);
+    mountBow(bowHost, { targetLength: 0.6 }).then((mounted) => {
+      if (mounted) fallback.visible = false;
+    });
+
+    // String: two live segments meeting at the nock point.
+    const stringTop = cyl(0.005, 1, t.string, 0, 0, 0, 'y');
+    const stringBottom = cyl(0.005, 1, t.string, 0, 0, 0, 'y');
+    g.add(stringTop, stringBottom);
+
+    // Nock group: the drawing hand and the nocked arrow travel together —
+    // back with the draw, and off over the shoulder during the rearm.
+    const nockGroup = new THREE.Group();
+    const nockRest = { x: 0, y: 0.028, z: 0.025 };
+    nockGroup.position.set(nockRest.x, nockRest.y, nockRest.z);
+
+    const arrowHost = new THREE.Group();
+    const arrowFallback = new THREE.Group();
+    arrowFallback.add(cyl(0.005, 0.56, t.tip, 0, 0, -0.28));
+    arrowFallback.add(box(0.016, 0.016, 0.04, t.tip, 0, 0, -0.56));
+    arrowHost.add(arrowFallback);
+    nockGroup.add(arrowHost);
+    mountArrow(arrowHost, { targetLength: 0.6, offset: { x: 0, y: 0, z: -0.26 } }).then(
+      (mounted) => {
+        if (mounted) arrowFallback.visible = false;
+      },
+    );
+
+    // Right hand: a chunky fist behind the string — proportioned like the
+    // other weapons' hands so the standard cuff/sleeve reads as its arm —
+    // with hooked fingers straddling the string at the nock. The fist sits
+    // slightly right so the fletching stays visible.
+    const gloveMat = GLOVE();
+    const fingerMat = FINGER();
+    const drawHand = new THREE.Group();
+    drawHand.position.set(0.014, -0.002, 0.01);
+    drawHand.rotation.set(0.08, 0.2, 0);
+    drawHand.add(box(0.07, 0.088, 0.07, gloveMat, 0.006, 0, 0.04));
+    drawHand.add(box(0.022, 0.024, 0.062, fingerMat, -0.022, 0.026, 0));
+    drawHand.add(box(0.022, 0.024, 0.062, fingerMat, -0.022, -0.002, -0.002));
+    drawHand.add(box(0.022, 0.022, 0.056, fingerMat, -0.022, -0.028, 0.002));
+    drawHand.add(box(0.024, 0.036, 0.036, fingerMat, 0.034, -0.02, 0.022));
+    const drawWrist = new THREE.Group();
+    drawWrist.position.set(0.014, -0.02, 0.07);
+    drawWrist.add(forearm(0.7, 0.35, 0.34));
+    drawHand.add(drawWrist);
+    nockGroup.add(drawHand);
+    g.add(nockGroup);
+
+    // Left hand: a big fist wrapped around the leather grip — the palm sunk
+    // into the archer side of the riser so it visibly holds the wood, fingers
+    // crossing the front, thumb up the near edge, forearm dropping steeply
+    // toward the bottom of the frame.
+    const gripHand = new THREE.Group();
+    gripHand.position.set(0.002, -0.045, 0.008);
+    gripHand.add(box(0.066, 0.11, 0.062, gloveMat, -0.002, 0, 0.03));
+    for (let i = 0; i < 4; i++) {
+      gripHand.add(box(0.058, 0.022, 0.034, fingerMat, 0.002, 0.04 - i * 0.027, -0.026));
+    }
+    gripHand.add(box(0.024, 0.06, 0.034, fingerMat, -0.038, 0.02, 0.024));
+    const gripWrist = new THREE.Group();
+    gripWrist.position.set(0, -0.06, 0.05);
+    gripWrist.add(forearm(0.95, -0.32, 0.4));
+    gripHand.add(gripWrist);
+    g.add(gripHand);
+
+    g.userData.bow = {
+      nockGroup,
+      arrowHost,
+      stringTop,
+      stringBottom,
+      tipTop: { x: 0, y: 0.29, z: 0.025 },
+      tipBottom: { x: 0, y: -0.29, z: 0.025 },
+      nockRest,
+    };
+    // Rest pose for the string.
+    setStringSegment(stringTop, 0, 0.29, 0.025, nockRest.x, nockRest.y, nockRest.z);
+    setStringSegment(stringBottom, 0, -0.29, 0.025, nockRest.x, nockRest.y, nockRest.z);
+
+    addMuzzle(g, 0, 0.028, -0.38, 0.6);
     return g;
   },
 
   laser() {
     const g = new THREE.Group();
     const t = THEMES.laser();
+    const fallback = new THREE.Group();
+    const modelHost = new THREE.Group();
+    g.add(fallback, modelHost);
     // Sleek body
-    g.add(box(0.065, 0.06, 0.28, t.body, 0, 0.035, -0.04));
-    g.add(box(0.06, 0.05, 0.24, t.dark, 0, -0.01, -0.02));
+    fallback.add(box(0.065, 0.06, 0.28, t.body, 0, 0.035, -0.04));
+    fallback.add(box(0.06, 0.05, 0.24, t.dark, 0, -0.01, -0.02));
     // Emitter barrel
-    g.add(cyl(0.02, 0.14, t.chrome, 0, 0.03, -0.24));
-    g.add(cyl(0.025, 0.03, t.cyan, 0, 0.03, -0.32));
+    fallback.add(cyl(0.02, 0.14, t.chrome, 0, 0.03, -0.24));
+    fallback.add(cyl(0.025, 0.03, t.cyan, 0, 0.03, -0.32));
     // Glowing side panels
-    g.add(box(0.068, 0.015, 0.12, t.cyan, 0, 0.07, -0.06));
-    g.add(box(0.015, 0.04, 0.16, t.glass, -0.038, 0.03, -0.08));
-    g.add(box(0.015, 0.04, 0.16, t.glass, 0.038, 0.03, -0.08));
+    fallback.add(box(0.068, 0.015, 0.12, t.cyan, 0, 0.07, -0.06));
+    fallback.add(box(0.015, 0.04, 0.16, t.glass, -0.038, 0.03, -0.08));
+    fallback.add(box(0.015, 0.04, 0.16, t.glass, 0.038, 0.03, -0.08));
     // Top rail / sight
-    g.add(box(0.03, 0.012, 0.18, t.chrome, 0, 0.07, -0.06));
-    g.add(box(0.02, 0.02, 0.03, t.cyan, 0, 0.08, -0.04));
+    fallback.add(box(0.03, 0.012, 0.18, t.chrome, 0, 0.07, -0.06));
+    fallback.add(box(0.02, 0.02, 0.03, t.cyan, 0, 0.08, -0.04));
     // Power pack (rear)
-    g.add(box(0.06, 0.065, 0.1, t.dark, 0, 0.02, 0.16));
-    g.add(box(0.04, 0.04, 0.08, t.glass, 0, 0.04, 0.16));
+    fallback.add(box(0.06, 0.065, 0.1, t.dark, 0, 0.02, 0.16));
+    fallback.add(box(0.04, 0.04, 0.08, t.glass, 0, 0.04, 0.16));
     // Grip
-    g.add(grip(t.grip, t.dark, 0, -0.02, 0.06, 0.34));
+    fallback.add(grip(t.grip, t.dark, 0, -0.02, 0.06, 0.34));
     // Trigger guard
-    g.add(box(0.04, 0.01, 0.05, t.dark, 0, -0.03, 0.0));
+    fallback.add(box(0.04, 0.01, 0.05, t.dark, 0, -0.03, 0.0));
     // Vent details
-    g.add(box(0.07, 0.008, 0.02, t.cyan, 0, 0.065, -0.14));
-    g.add(box(0.07, 0.008, 0.02, t.cyan, 0, 0.065, -0.18));
+    fallback.add(box(0.07, 0.008, 0.02, t.cyan, 0, 0.065, -0.14));
+    fallback.add(box(0.07, 0.008, 0.02, t.cyan, 0, 0.065, -0.18));
 
     g.add(triggerHand({ x: 0, y: -0.085, z: 0.03, armPitch: 0.8, armYaw: 0.3, armLength: 0.34 }));
     g.add(supportHand({ x: 0, y: -0.02, z: -0.12, rise: 0.045, armPitch: 0.88, armYaw: -0.3, armLength: 0.36 }));
     addMuzzle(g, 0, 0.03, -0.34, 0.5);
+    mountLaser(modelHost, { targetLength: 0.5 }).then((loaded) => {
+      if (loaded) fallback.visible = false;
+    });
+
     return g;
   },
 
@@ -1487,6 +1760,82 @@ const BUILDERS = {
     return g;
   },
 
+  pee() {
+    const g = new THREE.Group();
+    const t = THEMES.pee();
+    const gloveMat = GLOVE();
+    const fingerMat = FINGER();
+
+    // Idle stance: both gloved hands low at the waist, angled inward — the
+    // player is, well, holding it. The stream itself is world-space droplets.
+    const streamHands = new THREE.Group();
+    for (const side of [-1, 1]) {
+      const hand = new THREE.Group();
+      hand.position.set(side * 0.075, -0.02, 0);
+      hand.rotation.set(0.5, -side * 0.5, side * 0.25);
+      hand.add(box(0.06, 0.095, 0.045, gloveMat, 0, 0, 0));
+      for (let i = 0; i < 3; i++) {
+        hand.add(box(0.018, 0.05, 0.03, fingerMat, -0.018 + i * 0.019, -0.062, -0.004));
+      }
+      const wrist = new THREE.Group();
+      wrist.position.set(side * 0.02, 0.045, 0.03);
+      wrist.add(forearm(1.05, side * 0.45, 0.32));
+      hand.add(wrist);
+      streamHands.add(hand);
+    }
+    streamHands.position.set(0, -0.1, -0.18);
+    g.add(streamHands);
+    g.userData.streamHands = streamHands;
+
+    // Water bottle rig, parked below the frame; the reload animation raises
+    // it to the mouth, tips it back for the gulps, and lowers it again.
+    const bottlePivot = new THREE.Group();
+    const bottleHost = new THREE.Group();
+    const fallback = new THREE.Group();
+
+    const bottleMat = t.bottle;
+    bottleMat.transparent = true;
+    bottleMat.opacity = 0.55;
+    const waterMat = t.water;
+    waterMat.transparent = true;
+    waterMat.opacity = 0.8;
+
+    fallback.add(cyl(0.042, 0.19, bottleMat, 0, 0.01, 0, 'y'));
+    fallback.add(cyl(0.036, 0.13, waterMat, 0, -0.015, 0, 'y'));
+    fallback.add(cyl(0.043, 0.055, t.label, 0, 0.015, 0, 'y'));
+    fallback.add(cyl(0.019, 0.028, bottleMat, 0, 0.117, 0, 'y'));
+    fallback.add(cyl(0.023, 0.024, t.cap, 0, 0.14, 0, 'y'));
+    bottleHost.add(fallback);
+    bottlePivot.add(bottleHost);
+
+    // Right hand wrapped around the bottle so the grab reads on the way up.
+    const grabHand = new THREE.Group();
+    grabHand.position.set(0.01, -0.03, 0.035);
+    grabHand.rotation.set(0.15, 0.25, 0);
+    grabHand.add(box(0.055, 0.09, 0.045, gloveMat, 0, 0, 0.012));
+    for (let i = 0; i < 4; i++) {
+      grabHand.add(box(0.016, 0.02, 0.05, fingerMat, -0.026 + i * 0.017, 0.028 - i * 0.001, -0.035));
+    }
+    grabHand.add(box(0.02, 0.045, 0.024, fingerMat, 0.035, -0.012, -0.015));
+    const grabWrist = new THREE.Group();
+    grabWrist.position.set(0.012, -0.055, 0.05);
+    grabWrist.add(forearm(0.9, 0.4, 0.36));
+    grabHand.add(grabWrist);
+    bottlePivot.add(grabHand);
+
+    bottlePivot.position.set(0.2, -0.55, -0.3);
+    bottlePivot.visible = false;
+    g.add(bottlePivot);
+    g.userData.bottlePivot = bottlePivot;
+
+    mountWaterBottle(bottleHost, { targetLength: 0.24 }).then((mounted) => {
+      if (mounted) fallback.visible = false;
+    });
+
+    addMuzzle(g, 0, -0.12, -0.3, 0.25);
+    return g;
+  },
+
   knife() {
     const g = new THREE.Group();
     const t = THEMES.knife();
@@ -1553,14 +1902,20 @@ export const AVATAR_GUN_BUILDERS = {
   pistol() {
     const g = new THREE.Group();
     const t = THEMES.pistol();
-    g.add(box(0.07, 0.05, 0.18, t.slide, 0, 0.04, -0.04));
-    g.add(box(0.065, 0.04, 0.16, t.body, 0, 0.0, -0.03));
-    g.add(grip(t.grip, t.trim, 0, -0.01, 0.04, 0.3));
-    g.add(cyl(0.01, 0.06, t.barrel, 0, 0.015, -0.16));
+    const fallback = new THREE.Group();
+    const modelHost = new THREE.Group();
+    g.add(fallback, modelHost);
+    fallback.add(box(0.07, 0.05, 0.18, t.slide, 0, 0.04, -0.04));
+    fallback.add(box(0.065, 0.04, 0.16, t.body, 0, 0.0, -0.03));
+    fallback.add(grip(t.grip, t.trim, 0, -0.01, 0.04, 0.3));
+    fallback.add(cyl(0.01, 0.06, t.barrel, 0, 0.015, -0.16));
     // Tiny iron sights
-    g.add(box(0.01, 0.02, 0.01, t.slide, -0.012, 0.075, 0.03));
-    g.add(box(0.01, 0.02, 0.01, t.slide, 0.012, 0.075, 0.03));
-    g.add(box(0.01, 0.022, 0.01, t.glow, 0, 0.078, -0.1));
+    fallback.add(box(0.01, 0.02, 0.01, t.slide, -0.012, 0.075, 0.03));
+    fallback.add(box(0.01, 0.02, 0.01, t.slide, 0.012, 0.075, 0.03));
+    fallback.add(box(0.01, 0.022, 0.01, t.glow, 0, 0.078, -0.1));
+    mountPistol(modelHost, { targetLength: 0.5, castShadow: true }).then((loaded) => {
+      if (loaded) fallback.visible = false;
+    });
     g.userData.length = 0.5;
     return g;
   },
@@ -1592,22 +1947,34 @@ export const AVATAR_GUN_BUILDERS = {
   shotgun() {
     const g = new THREE.Group();
     const t = THEMES.shotgun();
-    g.add(box(0.07, 0.08, 0.22, t.blue, 0, 0.02, -0.02));
-    g.add(cyl(0.024, 0.3, t.steel, 0, 0.03, -0.32));
-    g.add(box(0.075, 0.06, 0.12, t.wood, 0, -0.03, -0.2));
-    g.add(box(0.06, 0.07, 0.18, t.wood, 0, 0.0, 0.2));
-    g.add(grip(t.wood, t.woodDark, 0, -0.01, 0.08, 0.28));
+    const fallback = new THREE.Group();
+    const modelHost = new THREE.Group();
+    g.add(fallback, modelHost);
+    fallback.add(box(0.07, 0.08, 0.22, t.blue, 0, 0.02, -0.02));
+    fallback.add(cyl(0.024, 0.3, t.steel, 0, 0.03, -0.32));
+    fallback.add(box(0.075, 0.06, 0.12, t.wood, 0, -0.03, -0.2));
+    fallback.add(box(0.06, 0.07, 0.18, t.wood, 0, 0.0, 0.2));
+    fallback.add(grip(t.wood, t.woodDark, 0, -0.01, 0.08, 0.28));
+    mountShotgun(modelHost, { targetLength: 1.05, castShadow: true }).then((loaded) => {
+      if (loaded) fallback.visible = false;
+    });
     g.userData.length = 1.05;
     return g;
   },
   sniper() {
     const g = new THREE.Group();
     const t = THEMES.sniper();
-    g.add(box(0.06, 0.06, 0.34, t.olive, 0, 0.015, -0.06));
-    g.add(cyl(0.011, 0.4, t.black, 0, 0.02, -0.45));
-    g.add(cyl(0.025, 0.2, t.optic, 0, 0.09, -0.1));
-    g.add(box(0.05, 0.05, 0.18, t.tan, 0, 0.0, 0.24));
-    g.add(grip(t.olive, t.black, 0, -0.04, 0.1, 0.35));
+    const fallback = new THREE.Group();
+    const modelHost = new THREE.Group();
+    g.add(fallback, modelHost);
+    fallback.add(box(0.06, 0.06, 0.34, t.olive, 0, 0.015, -0.06));
+    fallback.add(cyl(0.011, 0.4, t.black, 0, 0.02, -0.45));
+    fallback.add(cyl(0.025, 0.2, t.optic, 0, 0.09, -0.1));
+    fallback.add(box(0.05, 0.05, 0.18, t.tan, 0, 0.0, 0.24));
+    fallback.add(grip(t.olive, t.black, 0, -0.04, 0.1, 0.35));
+    mountSniper(modelHost, { targetLength: 1.35, castShadow: true }).then((loaded) => {
+      if (loaded) fallback.visible = false;
+    });
     g.userData.length = 1.35;
     return g;
   },
@@ -1616,37 +1983,55 @@ export const AVATAR_GUN_BUILDERS = {
   revolver() {
     const g = new THREE.Group();
     const t = THEMES.revolver();
-    g.add(box(0.06, 0.05, 0.14, t.frame, 0, 0.035, -0.02));
-    g.add(cyl(0.035, 0.055, t.cylinder, 0, 0.025, -0.05, 'x'));
-    g.add(cyl(0.014, 0.18, t.barrel, 0, 0.035, -0.2));
-    g.add(box(0.035, 0.03, 0.15, t.frame, 0, 0.05, -0.18));
-    g.add(grip(t.wood, t.brass, 0, -0.01, 0.04, 0.33));
-    g.add(box(0.012, 0.02, 0.012, t.brass, 0, 0.07, -0.25));
+    const fallback = new THREE.Group();
+    const modelHost = new THREE.Group();
+    g.add(fallback, modelHost);
+    fallback.add(box(0.06, 0.05, 0.14, t.frame, 0, 0.035, -0.02));
+    fallback.add(cyl(0.035, 0.055, t.cylinder, 0, 0.025, -0.05, 'x'));
+    fallback.add(cyl(0.014, 0.18, t.barrel, 0, 0.035, -0.2));
+    fallback.add(box(0.035, 0.03, 0.15, t.frame, 0, 0.05, -0.18));
+    fallback.add(grip(t.wood, t.brass, 0, -0.01, 0.04, 0.33));
+    fallback.add(box(0.012, 0.02, 0.012, t.brass, 0, 0.07, -0.25));
+    mountRevolver(modelHost, { targetLength: 0.55, castShadow: true }).then((loaded) => {
+      if (loaded) fallback.visible = false;
+    });
     g.userData.length = 0.55;
     return g;
   },
   machinepistol() {
     const g = new THREE.Group();
     const t = THEMES.machinepistol();
-    g.add(box(0.06, 0.04, 0.18, t.slide, 0, 0.045, -0.03));
-    g.add(box(0.058, 0.038, 0.16, t.body, 0, 0.008, -0.02));
-    g.add(cyl(0.01, 0.05, t.barrel, 0, 0.015, -0.15));
-    g.add(box(0.035, 0.14, 0.055, t.mag, 0, -0.1, -0.03));
-    g.add(grip(t.grip, t.trim, 0, -0.01, 0.035, 0.3));
-    g.add(box(0.01, 0.018, 0.01, t.glow, -0.012, 0.07, 0.02));
-    g.add(box(0.01, 0.018, 0.01, t.glow, 0.012, 0.07, 0.02));
+    const fallback = new THREE.Group();
+    const modelHost = new THREE.Group();
+    g.add(fallback, modelHost);
+    fallback.add(box(0.06, 0.04, 0.18, t.slide, 0, 0.045, -0.03));
+    fallback.add(box(0.058, 0.038, 0.16, t.body, 0, 0.008, -0.02));
+    fallback.add(cyl(0.01, 0.05, t.barrel, 0, 0.015, -0.15));
+    fallback.add(box(0.035, 0.14, 0.055, t.mag, 0, -0.1, -0.03));
+    fallback.add(grip(t.grip, t.trim, 0, -0.01, 0.035, 0.3));
+    fallback.add(box(0.01, 0.018, 0.01, t.glow, -0.012, 0.07, 0.02));
+    fallback.add(box(0.01, 0.018, 0.01, t.glow, 0.012, 0.07, 0.02));
+    mountMachinePistol(modelHost, { targetLength: 0.45, castShadow: true }).then((loaded) => {
+      if (loaded) fallback.visible = false;
+    });
     g.userData.length = 0.45;
     return g;
   },
   deagle() {
     const g = new THREE.Group();
     const t = THEMES.deagle();
-    g.add(box(0.08, 0.05, 0.24, t.slide, 0, 0.05, -0.06));
-    g.add(box(0.075, 0.045, 0.2, t.body, 0, 0.005, -0.04));
-    g.add(cyl(0.014, 0.06, t.barrel, 0, 0.02, -0.2));
-    g.add(grip(t.grip, t.gold, 0, -0.01, 0.035, 0.28));
-    g.add(box(0.082, 0.015, 0.04, t.gold, 0, 0.05, 0.0));
-    g.add(box(0.01, 0.02, 0.01, t.glow, 0, 0.08, -0.12));
+    const fallback = new THREE.Group();
+    const modelHost = new THREE.Group();
+    g.add(fallback, modelHost);
+    fallback.add(box(0.08, 0.05, 0.24, t.slide, 0, 0.05, -0.06));
+    fallback.add(box(0.075, 0.045, 0.2, t.body, 0, 0.005, -0.04));
+    fallback.add(cyl(0.014, 0.06, t.barrel, 0, 0.02, -0.2));
+    fallback.add(grip(t.grip, t.gold, 0, -0.01, 0.035, 0.28));
+    fallback.add(box(0.082, 0.015, 0.04, t.gold, 0, 0.05, 0.0));
+    fallback.add(box(0.01, 0.02, 0.01, t.glow, 0, 0.08, -0.12));
+    mountDeagle(modelHost, { targetLength: 0.6, castShadow: true }).then((loaded) => {
+      if (loaded) fallback.visible = false;
+    });
     g.userData.length = 0.6;
     return g;
   },
@@ -1655,40 +2040,61 @@ export const AVATAR_GUN_BUILDERS = {
   smg() {
     const g = new THREE.Group();
     const t = THEMES.smg();
-    g.add(box(0.06, 0.06, 0.22, t.body, 0, 0.025, -0.03));
-    g.add(box(0.064, 0.055, 0.13, t.rail, 0, 0.015, -0.2));
-    g.add(cyl(0.01, 0.14, t.barrel, 0, 0.015, -0.36));
-    g.add(box(0.035, 0.1, 0.055, t.mag, 0, -0.08, -0.04));
-    g.add(grip(t.grip, t.rail, 0, -0.025, 0.08, 0.36));
-    g.add(box(0.04, 0.045, 0.08, t.body, 0, 0.0, 0.22));
-    g.add(box(0.012, 0.024, 0.01, t.glow, 0, 0.08, -0.24));
+    const fallback = new THREE.Group();
+    const modelHost = new THREE.Group();
+    g.add(fallback, modelHost);
+    fallback.add(box(0.06, 0.06, 0.22, t.body, 0, 0.025, -0.03));
+    fallback.add(box(0.064, 0.055, 0.13, t.rail, 0, 0.015, -0.2));
+    fallback.add(cyl(0.01, 0.14, t.barrel, 0, 0.015, -0.36));
+    fallback.add(box(0.035, 0.1, 0.055, t.mag, 0, -0.08, -0.04));
+    fallback.add(grip(t.grip, t.rail, 0, -0.025, 0.08, 0.36));
+    fallback.add(box(0.04, 0.045, 0.08, t.body, 0, 0.0, 0.22));
+    fallback.add(box(0.012, 0.024, 0.01, t.glow, 0, 0.08, -0.24));
     g.userData.length = 0.5;
+    mountSmg(modelHost, { targetLength: 0.5, castShadow: true }).then((loaded) => {
+      if (loaded) fallback.visible = false;
+    });
+
     return g;
   },
   p90() {
     const g = new THREE.Group();
     const t = THEMES.p90();
-    g.add(box(0.068, 0.07, 0.3, t.body, 0, 0.015, -0.01));
-    g.add(box(0.058, 0.025, 0.22, t.mag, 0, 0.06, -0.03));
-    g.add(cyl(0.01, 0.1, t.barrel, 0, 0.01, -0.22));
-    g.add(box(0.045, 0.025, 0.06, t.sight, 0, 0.085, -0.04));
-    g.add(box(0.035, 0.05, 0.05, t.shell, 0, -0.045, -0.08));
-    g.add(box(0.05, 0.065, 0.025, t.body, 0, 0.008, 0.15));
-    g.add(box(0.025, 0.02, 0.008, t.glow, 0, 0.092, -0.06));
+    const fallback = new THREE.Group();
+    const modelHost = new THREE.Group();
+    g.add(fallback, modelHost);
+    fallback.add(box(0.068, 0.07, 0.3, t.body, 0, 0.015, -0.01));
+    fallback.add(box(0.058, 0.025, 0.22, t.mag, 0, 0.06, -0.03));
+    fallback.add(cyl(0.01, 0.1, t.barrel, 0, 0.01, -0.22));
+    fallback.add(box(0.045, 0.025, 0.06, t.sight, 0, 0.085, -0.04));
+    fallback.add(box(0.035, 0.05, 0.05, t.shell, 0, -0.045, -0.08));
+    fallback.add(box(0.05, 0.065, 0.025, t.body, 0, 0.008, 0.15));
+    fallback.add(box(0.025, 0.02, 0.008, t.glow, 0, 0.092, -0.06));
     g.userData.length = 0.5;
+    mountP90(modelHost, { targetLength: 0.5, castShadow: true }).then((loaded) => {
+      if (loaded) fallback.visible = false;
+    });
+
     return g;
   },
   vector() {
     const g = new THREE.Group();
     const t = THEMES.vector();
-    g.add(box(0.058, 0.058, 0.18, t.body, 0, 0.035, -0.01));
-    g.add(box(0.062, 0.07, 0.16, t.body, 0, -0.015, 0.0));
-    g.add(cyl(0.01, 0.12, t.barrel, 0, 0.03, -0.2));
-    g.add(box(0.035, 0.11, 0.05, t.mag, 0, -0.1, -0.01));
-    g.add(grip(t.grip, t.rail, 0, -0.035, 0.08, 0.36));
-    g.add(box(0.03, 0.055, 0.03, t.grip, 0, -0.05, -0.1));
-    g.add(box(0.035, 0.04, 0.1, t.stock, 0, 0.008, 0.16));
+    const fallback = new THREE.Group();
+    const modelHost = new THREE.Group();
+    g.add(fallback, modelHost);
+    fallback.add(box(0.058, 0.058, 0.18, t.body, 0, 0.035, -0.01));
+    fallback.add(box(0.062, 0.07, 0.16, t.body, 0, -0.015, 0.0));
+    fallback.add(cyl(0.01, 0.12, t.barrel, 0, 0.03, -0.2));
+    fallback.add(box(0.035, 0.11, 0.05, t.mag, 0, -0.1, -0.01));
+    fallback.add(grip(t.grip, t.rail, 0, -0.035, 0.08, 0.36));
+    fallback.add(box(0.03, 0.055, 0.03, t.grip, 0, -0.05, -0.1));
+    fallback.add(box(0.035, 0.04, 0.1, t.stock, 0, 0.008, 0.16));
     g.userData.length = 0.48;
+    mountVector(modelHost, { targetLength: 0.48, castShadow: true }).then((loaded) => {
+      if (loaded) fallback.visible = false;
+    });
+
     return g;
   },
 
@@ -1696,57 +2102,85 @@ export const AVATAR_GUN_BUILDERS = {
   battlerifle() {
     const g = new THREE.Group();
     const t = THEMES.battlerifle();
-    g.add(box(0.068, 0.065, 0.28, t.body, 0, 0.035, -0.05));
-    g.add(box(0.07, 0.06, 0.16, t.tan, 0, 0.015, -0.26));
-    g.add(cyl(0.013, 0.24, t.barrel, 0, 0.02, -0.48));
-    g.add(box(0.045, 0.13, 0.075, t.mag, 0, -0.1, -0.04));
-    g.add(grip(t.body, t.rail, 0, -0.035, 0.1, 0.38));
-    g.add(box(0.05, 0.055, 0.14, t.tan, 0, 0.0, 0.24));
-    g.add(box(0.012, 0.025, 0.012, t.steel, 0, 0.085, -0.38));
+    const fallback = new THREE.Group();
+    const modelHost = new THREE.Group();
+    g.add(fallback, modelHost);
+    fallback.add(box(0.068, 0.065, 0.28, t.body, 0, 0.035, -0.05));
+    fallback.add(box(0.07, 0.06, 0.16, t.tan, 0, 0.015, -0.26));
+    fallback.add(cyl(0.013, 0.24, t.barrel, 0, 0.02, -0.48));
+    fallback.add(box(0.045, 0.13, 0.075, t.mag, 0, -0.1, -0.04));
+    fallback.add(grip(t.body, t.rail, 0, -0.035, 0.1, 0.38));
+    fallback.add(box(0.05, 0.055, 0.14, t.tan, 0, 0.0, 0.24));
+    fallback.add(box(0.012, 0.025, 0.012, t.steel, 0, 0.085, -0.38));
     g.userData.length = 0.65;
+    mountBattlerifle(modelHost, { targetLength: 0.65, castShadow: true }).then((loaded) => {
+      if (loaded) fallback.visible = false;
+    });
+
     return g;
   },
   burstrifle() {
     const g = new THREE.Group();
     const t = THEMES.burstrifle();
-    g.add(box(0.064, 0.058, 0.24, t.body, 0, 0.035, -0.03));
-    g.add(box(0.07, 0.052, 0.16, t.handguard, 0, 0.008, -0.22));
-    g.add(cyl(0.012, 0.2, t.barrel, 0, 0.015, -0.42));
-    g.add(box(0.04, 0.01, 0.12, t.rail, 0, 0.07, -0.02));
-    g.add(box(0.012, 0.035, 0.012, t.rail, -0.014, 0.088, -0.06));
-    g.add(box(0.012, 0.035, 0.012, t.rail, 0.014, 0.088, -0.06));
-    g.add(box(0.038, 0.1, 0.065, t.mag, 0, -0.09, -0.03));
-    g.add(grip(t.body, t.rail, 0, -0.035, 0.08, 0.38));
-    g.add(box(0.045, 0.05, 0.1, t.handguard, 0, 0.0, 0.2));
+    const fallback = new THREE.Group();
+    const modelHost = new THREE.Group();
+    g.add(fallback, modelHost);
+    fallback.add(box(0.064, 0.058, 0.24, t.body, 0, 0.035, -0.03));
+    fallback.add(box(0.07, 0.052, 0.16, t.handguard, 0, 0.008, -0.22));
+    fallback.add(cyl(0.012, 0.2, t.barrel, 0, 0.015, -0.42));
+    fallback.add(box(0.04, 0.01, 0.12, t.rail, 0, 0.07, -0.02));
+    fallback.add(box(0.012, 0.035, 0.012, t.rail, -0.014, 0.088, -0.06));
+    fallback.add(box(0.012, 0.035, 0.012, t.rail, 0.014, 0.088, -0.06));
+    fallback.add(box(0.038, 0.1, 0.065, t.mag, 0, -0.09, -0.03));
+    fallback.add(grip(t.body, t.rail, 0, -0.035, 0.08, 0.38));
+    fallback.add(box(0.045, 0.05, 0.1, t.handguard, 0, 0.0, 0.2));
     g.userData.length = 0.6;
+    mountBurstrifle(modelHost, { targetLength: 0.6, castShadow: true }).then((loaded) => {
+      if (loaded) fallback.visible = false;
+    });
+
     return g;
   },
   dmr() {
     const g = new THREE.Group();
     const t = THEMES.dmr();
-    g.add(box(0.062, 0.058, 0.32, t.body, 0, 0.015, -0.06));
-    g.add(cyl(0.012, 0.34, t.barrel, 0, 0.018, -0.42));
-    g.add(cyl(0.02, 0.16, t.optic, 0, 0.085, -0.08));
-    g.add(cyl(0.025, 0.025, t.glass, 0, 0.085, -0.18));
-    g.add(box(0.038, 0.07, 0.055, t.body, 0, -0.06, -0.02));
-    g.add(grip(t.body, t.rail, 0, -0.035, 0.08, 0.36));
-    g.add(box(0.045, 0.045, 0.18, t.tan, 0, 0.0, 0.22));
+    const fallback = new THREE.Group();
+    const modelHost = new THREE.Group();
+    g.add(fallback, modelHost);
+    fallback.add(box(0.062, 0.058, 0.32, t.body, 0, 0.015, -0.06));
+    fallback.add(cyl(0.012, 0.34, t.barrel, 0, 0.018, -0.42));
+    fallback.add(cyl(0.02, 0.16, t.optic, 0, 0.085, -0.08));
+    fallback.add(cyl(0.025, 0.025, t.glass, 0, 0.085, -0.18));
+    fallback.add(box(0.038, 0.07, 0.055, t.body, 0, -0.06, -0.02));
+    fallback.add(grip(t.body, t.rail, 0, -0.035, 0.08, 0.36));
+    fallback.add(box(0.045, 0.045, 0.18, t.tan, 0, 0.0, 0.22));
     g.userData.length = 0.85;
+    mountDmr(modelHost, { targetLength: 0.85, castShadow: true }).then((loaded) => {
+      if (loaded) fallback.visible = false;
+    });
+
     return g;
   },
   carbine() {
     const g = new THREE.Group();
     const t = THEMES.carbine();
+    const fallback = new THREE.Group();
+    const modelHost = new THREE.Group();
+    g.add(fallback, modelHost);
     const glass = mat(0x0b1220, { emissive: 0xf87171, emissiveIntensity: 1.0, roughness: 0.3 });
     const reticle = mat(0x0b1220, { emissive: 0xff2a2a, emissiveIntensity: 2.0, roughness: 0.25 });
-    g.add(box(0.058, 0.056, 0.18, t.rail, 0, 0.03, -0.02));
-    g.add(box(0.06, 0.05, 0.12, t.green, 0, 0.008, -0.16));
-    g.add(cyl(0.01, 0.12, t.barrel, 0, 0.015, -0.3));
-    g.add(box(0.035, 0.09, 0.055, t.mag, 0, -0.08, -0.03));
-    g.add(grip(t.body, t.rail, 0, -0.03, 0.06, 0.36));
-    g.add(box(0.035, 0.04, 0.07, t.green, 0, 0.0, 0.18));
-    redDotOptic(g, t.rail, glass, reticle, 0, 0.07, -0.02);
+    fallback.add(box(0.058, 0.056, 0.18, t.rail, 0, 0.03, -0.02));
+    fallback.add(box(0.06, 0.05, 0.12, t.green, 0, 0.008, -0.16));
+    fallback.add(cyl(0.01, 0.12, t.barrel, 0, 0.015, -0.3));
+    fallback.add(box(0.035, 0.09, 0.055, t.mag, 0, -0.08, -0.03));
+    fallback.add(grip(t.body, t.rail, 0, -0.03, 0.06, 0.36));
+    fallback.add(box(0.035, 0.04, 0.07, t.green, 0, 0.0, 0.18));
+    redDotOptic(fallback, t.rail, glass, reticle, 0, 0.07, -0.02);
     g.userData.length = 0.5;
+    mountCarbine(modelHost, { targetLength: 0.5, castShadow: true }).then((loaded) => {
+      if (loaded) fallback.visible = false;
+    });
+
     return g;
   },
 
@@ -1754,39 +2188,60 @@ export const AVATAR_GUN_BUILDERS = {
   autoshotgun() {
     const g = new THREE.Group();
     const t = THEMES.autoshotgun();
-    g.add(box(0.07, 0.08, 0.2, t.body, 0, 0.02, -0.01));
-    g.add(cyl(0.022, 0.26, t.barrel, 0, 0.03, -0.28));
-    g.add(box(0.07, 0.05, 0.1, t.wood, 0, -0.02, -0.16));
-    g.add(box(0.048, 0.1, 0.07, t.mag, 0, -0.08, -0.03));
-    g.add(grip(t.wood, t.body, 0, -0.015, 0.065, 0.33));
-    g.add(box(0.05, 0.055, 0.14, t.wood, 0, 0.0, 0.18));
-    g.add(box(0.012, 0.018, 0.012, t.glow, 0, 0.068, -0.38));
+    const fallback = new THREE.Group();
+    const modelHost = new THREE.Group();
+    g.add(fallback, modelHost);
+    fallback.add(box(0.07, 0.08, 0.2, t.body, 0, 0.02, -0.01));
+    fallback.add(cyl(0.022, 0.26, t.barrel, 0, 0.03, -0.28));
+    fallback.add(box(0.07, 0.05, 0.1, t.wood, 0, -0.02, -0.16));
+    fallback.add(box(0.048, 0.1, 0.07, t.mag, 0, -0.08, -0.03));
+    fallback.add(grip(t.wood, t.body, 0, -0.015, 0.065, 0.33));
+    fallback.add(box(0.05, 0.055, 0.14, t.wood, 0, 0.0, 0.18));
+    fallback.add(box(0.012, 0.018, 0.012, t.glow, 0, 0.068, -0.38));
     g.userData.length = 0.95;
+    mountAutoshotgun(modelHost, { targetLength: 0.95, castShadow: true }).then((loaded) => {
+      if (loaded) fallback.visible = false;
+    });
+
     return g;
   },
   slugshotgun() {
     const g = new THREE.Group();
     const t = THEMES.slugshotgun();
-    g.add(box(0.07, 0.08, 0.24, t.body, 0, 0.02, -0.02));
-    g.add(cyl(0.022, 0.36, t.steel, 0, 0.03, -0.38));
-    g.add(cyl(0.013, 0.26, t.body, 0, -0.01, -0.3));
-    g.add(box(0.072, 0.055, 0.1, t.wood, 0, -0.025, -0.22));
-    g.add(grip(t.wood, t.woodDark, 0, -0.01, 0.065, 0.26));
-    g.add(box(0.055, 0.065, 0.18, t.wood, 0, 0.0, 0.2));
-    g.add(box(0.012, 0.02, 0.012, t.brass, 0, 0.065, -0.52));
+    const fallback = new THREE.Group();
+    const modelHost = new THREE.Group();
+    g.add(fallback, modelHost);
+    fallback.add(box(0.07, 0.08, 0.24, t.body, 0, 0.02, -0.02));
+    fallback.add(cyl(0.022, 0.36, t.steel, 0, 0.03, -0.38));
+    fallback.add(cyl(0.013, 0.26, t.body, 0, -0.01, -0.3));
+    fallback.add(box(0.072, 0.055, 0.1, t.wood, 0, -0.025, -0.22));
+    fallback.add(grip(t.wood, t.woodDark, 0, -0.01, 0.065, 0.26));
+    fallback.add(box(0.055, 0.065, 0.18, t.wood, 0, 0.0, 0.2));
+    fallback.add(box(0.012, 0.02, 0.012, t.brass, 0, 0.065, -0.52));
     g.userData.length = 1.1;
+    mountSlugshotgun(modelHost, { targetLength: 1.1, castShadow: true }).then((loaded) => {
+      if (loaded) fallback.visible = false;
+    });
+
     return g;
   },
   doublebarrel() {
     const g = new THREE.Group();
     const t = THEMES.doublebarrel();
-    g.add(box(0.08, 0.07, 0.14, t.body, 0, 0.02, -0.01));
-    g.add(cyl(0.02, 0.34, t.steel, -0.018, 0.03, -0.3));
-    g.add(cyl(0.02, 0.34, t.steel, 0.018, 0.03, -0.3));
-    g.add(grip(t.wood, t.woodDark, 0, -0.01, 0.05, 0.26));
-    g.add(box(0.058, 0.065, 0.2, t.wood, 0, 0.0, 0.18));
-    g.add(box(0.012, 0.016, 0.012, t.brass, 0, 0.06, -0.46));
+    const fallback = new THREE.Group();
+    const modelHost = new THREE.Group();
+    g.add(fallback, modelHost);
+    fallback.add(box(0.08, 0.07, 0.14, t.body, 0, 0.02, -0.01));
+    fallback.add(cyl(0.02, 0.34, t.steel, -0.018, 0.03, -0.3));
+    fallback.add(cyl(0.02, 0.34, t.steel, 0.018, 0.03, -0.3));
+    fallback.add(grip(t.wood, t.woodDark, 0, -0.01, 0.05, 0.26));
+    fallback.add(box(0.058, 0.065, 0.2, t.wood, 0, 0.0, 0.18));
+    fallback.add(box(0.012, 0.016, 0.012, t.brass, 0, 0.06, -0.46));
     g.userData.length = 1.0;
+    mountDoublebarrel(modelHost, { targetLength: 1.0, castShadow: true }).then((loaded) => {
+      if (loaded) fallback.visible = false;
+    });
+
     return g;
   },
 
@@ -1794,28 +2249,42 @@ export const AVATAR_GUN_BUILDERS = {
   scout() {
     const g = new THREE.Group();
     const t = THEMES.scout();
-    g.add(box(0.055, 0.052, 0.28, t.body, 0, 0.012, -0.04));
-    g.add(cyl(0.009, 0.34, t.black, 0, 0.018, -0.4));
-    g.add(cyl(0.02, 0.17, t.optic, 0, 0.08, -0.08));
-    g.add(cyl(0.025, 0.025, t.glass, 0, 0.08, -0.18));
-    g.add(box(0.033, 0.05, 0.045, t.black, 0, -0.05, -0.02));
-    g.add(grip(t.body, t.black, 0, -0.035, 0.08, 0.34));
-    g.add(box(0.042, 0.042, 0.16, t.tan, 0, 0.0, 0.2));
+    const fallback = new THREE.Group();
+    const modelHost = new THREE.Group();
+    g.add(fallback, modelHost);
+    fallback.add(box(0.055, 0.052, 0.28, t.body, 0, 0.012, -0.04));
+    fallback.add(cyl(0.009, 0.34, t.black, 0, 0.018, -0.4));
+    fallback.add(cyl(0.02, 0.17, t.optic, 0, 0.08, -0.08));
+    fallback.add(cyl(0.025, 0.025, t.glass, 0, 0.08, -0.18));
+    fallback.add(box(0.033, 0.05, 0.045, t.black, 0, -0.05, -0.02));
+    fallback.add(grip(t.body, t.black, 0, -0.035, 0.08, 0.34));
+    fallback.add(box(0.042, 0.042, 0.16, t.tan, 0, 0.0, 0.2));
     g.userData.length = 1.1;
+    mountScout(modelHost, { targetLength: 1.1, castShadow: true }).then((loaded) => {
+      if (loaded) fallback.visible = false;
+    });
+
     return g;
   },
   awp() {
     const g = new THREE.Group();
     const t = THEMES.awp();
-    g.add(box(0.068, 0.068, 0.38, t.body, 0, 0.015, -0.08));
-    g.add(cyl(0.012, 0.45, t.black, 0, 0.02, -0.52));
-    g.add(cyl(0.03, 0.26, t.optic, 0, 0.1, -0.12));
-    g.add(cyl(0.036, 0.035, t.glass, 0, 0.1, -0.27));
-    g.add(box(0.045, 0.075, 0.065, t.black, 0, -0.07, -0.02));
-    g.add(grip(t.body, t.black, 0, -0.045, 0.1, 0.38));
-    g.add(box(0.055, 0.055, 0.22, t.stock, 0, 0.0, 0.28));
-    g.add(box(0.065, 0.016, 0.02, t.steel, 0.04, 0.04, 0.08));
+    const fallback = new THREE.Group();
+    const modelHost = new THREE.Group();
+    g.add(fallback, modelHost);
+    fallback.add(box(0.068, 0.068, 0.38, t.body, 0, 0.015, -0.08));
+    fallback.add(cyl(0.012, 0.45, t.black, 0, 0.02, -0.52));
+    fallback.add(cyl(0.03, 0.26, t.optic, 0, 0.1, -0.12));
+    fallback.add(cyl(0.036, 0.035, t.glass, 0, 0.1, -0.27));
+    fallback.add(box(0.045, 0.075, 0.065, t.black, 0, -0.07, -0.02));
+    fallback.add(grip(t.body, t.black, 0, -0.045, 0.1, 0.38));
+    fallback.add(box(0.055, 0.055, 0.22, t.stock, 0, 0.0, 0.28));
+    fallback.add(box(0.065, 0.016, 0.02, t.steel, 0.04, 0.04, 0.08));
     g.userData.length = 1.5;
+    mountAwp(modelHost, { targetLength: 1.5, castShadow: true }).then((loaded) => {
+      if (loaded) fallback.visible = false;
+    });
+
     return g;
   },
 
@@ -1823,31 +2292,45 @@ export const AVATAR_GUN_BUILDERS = {
   lmg() {
     const g = new THREE.Group();
     const t = THEMES.lmg();
-    g.add(box(0.072, 0.07, 0.28, t.body, 0, 0.03, -0.03));
-    g.add(cyl(0.014, 0.28, t.barrel, 0, 0.02, -0.42));
-    g.add(box(0.055, 0.04, 0.16, t.rail, 0, 0.02, -0.3));
-    g.add(box(0.06, 0.08, 0.08, t.mag, 0, -0.08, -0.04));
-    g.add(box(0.062, 0.015, 0.082, t.brass, 0, -0.13, -0.04));
-    g.add(grip(t.body, t.rail, 0, -0.035, 0.1, 0.38));
-    g.add(box(0.05, 0.055, 0.14, t.body, 0, 0.0, 0.26));
-    g.add(box(0.02, 0.01, 0.12, t.steel, 0, 0.078, -0.1));
+    const fallback = new THREE.Group();
+    const modelHost = new THREE.Group();
+    g.add(fallback, modelHost);
+    fallback.add(box(0.072, 0.07, 0.28, t.body, 0, 0.03, -0.03));
+    fallback.add(cyl(0.014, 0.28, t.barrel, 0, 0.02, -0.42));
+    fallback.add(box(0.055, 0.04, 0.16, t.rail, 0, 0.02, -0.3));
+    fallback.add(box(0.06, 0.08, 0.08, t.mag, 0, -0.08, -0.04));
+    fallback.add(box(0.062, 0.015, 0.082, t.brass, 0, -0.13, -0.04));
+    fallback.add(grip(t.body, t.rail, 0, -0.035, 0.1, 0.38));
+    fallback.add(box(0.05, 0.055, 0.14, t.body, 0, 0.0, 0.26));
+    fallback.add(box(0.02, 0.01, 0.12, t.steel, 0, 0.078, -0.1));
     g.userData.length = 0.8;
+    mountLmg(modelHost, { targetLength: 0.8, castShadow: true }).then((loaded) => {
+      if (loaded) fallback.visible = false;
+    });
+
     return g;
   },
   minigun() {
     const g = new THREE.Group();
     const t = THEMES.minigun();
-    g.add(cyl(0.05, 0.12, t.housing, 0, 0.015, 0.02));
+    const fallback = new THREE.Group();
+    const modelHost = new THREE.Group();
+    g.add(fallback, modelHost);
+    fallback.add(cyl(0.05, 0.12, t.housing, 0, 0.015, 0.02));
     for (let i = 0; i < 6; i++) {
       const a = (i / 6) * Math.PI * 2;
-      g.add(cyl(0.007, 0.3, t.barrels, Math.cos(a) * 0.028, 0.015 + Math.sin(a) * 0.028, -0.22));
+      fallback.add(cyl(0.007, 0.3, t.barrels, Math.cos(a) * 0.028, 0.015 + Math.sin(a) * 0.028, -0.22));
     }
-    g.add(cyl(0.045, 0.02, t.body, 0, 0.015, -0.08));
-    g.add(cyl(0.045, 0.02, t.body, 0, 0.015, -0.28));
-    g.add(cyl(0.04, 0.025, t.brass, 0, 0.015, -0.38));
-    g.add(box(0.035, 0.07, 0.05, t.grip, 0.025, -0.04, 0.06));
-    g.add(box(0.035, 0.07, 0.05, t.grip, -0.025, -0.04, 0.06));
+    fallback.add(cyl(0.045, 0.02, t.body, 0, 0.015, -0.08));
+    fallback.add(cyl(0.045, 0.02, t.body, 0, 0.015, -0.28));
+    fallback.add(cyl(0.04, 0.025, t.brass, 0, 0.015, -0.38));
+    fallback.add(box(0.035, 0.07, 0.05, t.grip, 0.025, -0.04, 0.06));
+    fallback.add(box(0.035, 0.07, 0.05, t.grip, -0.025, -0.04, 0.06));
     g.userData.length = 0.7;
+    mountMinigun(modelHost, { targetLength: 0.7, castShadow: true }).then((loaded) => {
+      if (loaded) fallback.visible = false;
+    });
+
     return g;
   },
 
@@ -1855,38 +2338,59 @@ export const AVATAR_GUN_BUILDERS = {
   crossbow() {
     const g = new THREE.Group();
     const t = THEMES.crossbow();
-    g.add(box(0.05, 0.05, 0.28, t.body, 0, 0.015, -0.01));
-    g.add(box(0.2, 0.02, 0.03, t.limb, 0, 0.015, -0.18));
-    g.add(box(0.15, 0.005, 0.005, t.string, 0, 0.015, -0.16));
-    g.add(cyl(0.004, 0.22, t.brass, 0, 0.04, -0.12));
-    g.add(grip(t.body, t.brass, 0, -0.015, 0.06, 0.33));
-    g.add(box(0.04, 0.04, 0.12, t.body, 0, 0.0, 0.18));
+    const fallback = new THREE.Group();
+    const modelHost = new THREE.Group();
+    g.add(fallback, modelHost);
+    fallback.add(box(0.05, 0.05, 0.28, t.body, 0, 0.015, -0.01));
+    fallback.add(box(0.2, 0.02, 0.03, t.limb, 0, 0.015, -0.18));
+    fallback.add(box(0.15, 0.005, 0.005, t.string, 0, 0.015, -0.16));
+    fallback.add(cyl(0.004, 0.22, t.brass, 0, 0.04, -0.12));
+    fallback.add(grip(t.body, t.brass, 0, -0.015, 0.06, 0.33));
+    fallback.add(box(0.04, 0.04, 0.12, t.body, 0, 0.0, 0.18));
     g.userData.length = 0.6;
+    mountCrossbow(modelHost, { targetLength: 0.6, castShadow: true }).then((loaded) => {
+      if (loaded) fallback.visible = false;
+    });
+
     return g;
   },
   sawedoff() {
     const g = new THREE.Group();
     const t = THEMES.sawedoff();
-    g.add(box(0.075, 0.065, 0.1, t.steel, 0, 0.02, 0.0));
-    g.add(cyl(0.018, 0.16, t.barrel, -0.015, 0.03, -0.13));
-    g.add(cyl(0.018, 0.16, t.barrel, 0.015, 0.03, -0.13));
-    g.add(grip(t.wood, t.woodDark, 0, -0.01, 0.035, 0.28));
-    g.add(cyl(0.012, 0.06, t.brass, 0, 0.05, -0.05, 'x'));
+    const fallback = new THREE.Group();
+    const modelHost = new THREE.Group();
+    g.add(fallback, modelHost);
+    fallback.add(box(0.075, 0.065, 0.1, t.steel, 0, 0.02, 0.0));
+    fallback.add(cyl(0.018, 0.16, t.barrel, -0.015, 0.03, -0.13));
+    fallback.add(cyl(0.018, 0.16, t.barrel, 0.015, 0.03, -0.13));
+    fallback.add(grip(t.wood, t.woodDark, 0, -0.01, 0.035, 0.28));
+    fallback.add(cyl(0.012, 0.06, t.brass, 0, 0.05, -0.05, 'x'));
     g.userData.length = 0.45;
+    mountSawedoff(modelHost, { targetLength: 0.45, castShadow: true }).then((loaded) => {
+      if (loaded) fallback.visible = false;
+    });
+
     return g;
   },
   leveraction() {
     const g = new THREE.Group();
     const t = THEMES.leveraction();
-    g.add(box(0.062, 0.065, 0.18, t.brass, 0, 0.025, -0.01));
-    g.add(box(0.035, 0.035, 0.34, t.blue, 0, 0.035, -0.3));
-    g.add(cyl(0.01, 0.28, t.steel, 0, -0.002, -0.28));
-    g.add(box(0.04, 0.01, 0.08, t.brass, 0, -0.03, 0.0));
-    g.add(box(0.012, 0.05, 0.012, t.brass, -0.016, -0.055, -0.03));
-    g.add(box(0.012, 0.05, 0.012, t.brass, 0.016, -0.055, -0.03));
-    g.add(grip(t.wood, t.woodDark, 0, -0.008, 0.05, 0.26));
-    g.add(box(0.055, 0.065, 0.2, t.wood, 0, 0.008, 0.2));
+    const fallback = new THREE.Group();
+    const modelHost = new THREE.Group();
+    g.add(fallback, modelHost);
+    fallback.add(box(0.062, 0.065, 0.18, t.brass, 0, 0.025, -0.01));
+    fallback.add(box(0.035, 0.035, 0.34, t.blue, 0, 0.035, -0.3));
+    fallback.add(cyl(0.01, 0.28, t.steel, 0, -0.002, -0.28));
+    fallback.add(box(0.04, 0.01, 0.08, t.brass, 0, -0.03, 0.0));
+    fallback.add(box(0.012, 0.05, 0.012, t.brass, -0.016, -0.055, -0.03));
+    fallback.add(box(0.012, 0.05, 0.012, t.brass, 0.016, -0.055, -0.03));
+    fallback.add(grip(t.wood, t.woodDark, 0, -0.008, 0.05, 0.26));
+    fallback.add(box(0.055, 0.065, 0.2, t.wood, 0, 0.008, 0.2));
     g.userData.length = 0.9;
+    mountLeveraction(modelHost, { targetLength: 0.9, castShadow: true }).then((loaded) => {
+      if (loaded) fallback.visible = false;
+    });
+
     return g;
   },
 
@@ -1894,27 +2398,40 @@ export const AVATAR_GUN_BUILDERS = {
   bow() {
     const g = new THREE.Group();
     const t = THEMES.bow();
-    g.add(box(0.035, 0.12, 0.05, t.leather, 0, 0.0, 0.0));
-    g.add(box(0.025, 0.16, 0.03, t.wood, 0, 0.16, -0.01));
-    g.add(box(0.022, 0.06, 0.025, t.wood, 0, 0.26, -0.03));
-    g.add(box(0.025, 0.16, 0.03, t.wood, 0, -0.16, -0.01));
-    g.add(box(0.022, 0.06, 0.025, t.wood, 0, -0.26, -0.03));
-    g.add(box(0.004, 0.58, 0.004, t.string, 0, 0.0, -0.045));
-    g.add(cyl(0.003, 0.28, t.tip, 0, 0.045, -0.16));
+    const fallback = new THREE.Group();
+    fallback.add(box(0.035, 0.12, 0.05, t.leather, 0, 0.0, 0.0));
+    fallback.add(box(0.025, 0.16, 0.03, t.wood, 0, 0.16, -0.01));
+    fallback.add(box(0.022, 0.06, 0.025, t.wood, 0, 0.26, -0.03));
+    fallback.add(box(0.025, 0.16, 0.03, t.wood, 0, -0.16, -0.01));
+    fallback.add(box(0.022, 0.06, 0.025, t.wood, 0, -0.26, -0.03));
+    g.add(fallback);
+    mountBow(g, { targetLength: 0.62 }).then((mounted) => {
+      if (mounted) fallback.visible = false;
+    });
+    // Static string and nocked arrow for other players.
+    g.add(box(0.005, 0.58, 0.005, t.string, 0, 0.0, 0.026));
+    g.add(cyl(0.004, 0.4, t.tip, 0, 0.02, -0.17));
     g.userData.length = 0.5;
     return g;
   },
   laser() {
     const g = new THREE.Group();
     const t = THEMES.laser();
-    g.add(box(0.058, 0.052, 0.24, t.body, 0, 0.03, -0.03));
-    g.add(box(0.053, 0.04, 0.2, t.dark, 0, -0.008, -0.01));
-    g.add(cyl(0.018, 0.1, t.chrome, 0, 0.025, -0.2));
-    g.add(cyl(0.022, 0.025, t.cyan, 0, 0.025, -0.26));
-    g.add(box(0.06, 0.012, 0.1, t.cyan, 0, 0.06, -0.04));
-    g.add(grip(t.grip, t.dark, 0, -0.015, 0.05, 0.32));
-    g.add(box(0.05, 0.05, 0.08, t.dark, 0, 0.015, 0.14));
+    const fallback = new THREE.Group();
+    const modelHost = new THREE.Group();
+    g.add(fallback, modelHost);
+    fallback.add(box(0.058, 0.052, 0.24, t.body, 0, 0.03, -0.03));
+    fallback.add(box(0.053, 0.04, 0.2, t.dark, 0, -0.008, -0.01));
+    fallback.add(cyl(0.018, 0.1, t.chrome, 0, 0.025, -0.2));
+    fallback.add(cyl(0.022, 0.025, t.cyan, 0, 0.025, -0.26));
+    fallback.add(box(0.06, 0.012, 0.1, t.cyan, 0, 0.06, -0.04));
+    fallback.add(grip(t.grip, t.dark, 0, -0.015, 0.05, 0.32));
+    fallback.add(box(0.05, 0.05, 0.08, t.dark, 0, 0.015, 0.14));
     g.userData.length = 0.5;
+    mountLaser(modelHost, { targetLength: 0.5, castShadow: true }).then((loaded) => {
+      if (loaded) fallback.visible = false;
+    });
+
     return g;
   },
   poopgun() {
@@ -1947,6 +2464,13 @@ export const AVATAR_GUN_BUILDERS = {
       if (loaded) fallback.visible = false;
     });
     g.userData.length = 1.0;
+    return g;
+  },
+  pee() {
+    // Nothing to hold: the "weapon" is the player. The stream and splashes
+    // are drawn from the beam events, so the hands just go to the waist.
+    const g = new THREE.Group();
+    g.userData.length = 0.1;
     return g;
   },
   knife() {
@@ -2190,6 +2714,14 @@ export const AVATAR_HOLDS = {
     leftArm: [0.55, 0, 0.35],
     gunOffset: [0, 0.07, -0.02],
   },
+  pee: {
+    // Both hands drop to the waist in front of the hips.
+    rightShoulder: [0.3, 1.28, 0.04],
+    leftShoulder: [-0.3, 1.28, 0.04],
+    rightArm: [0.55, 0, -0.35],
+    leftArm: [0.55, 0, 0.35],
+    gunOffset: [0, 0, 0],
+  },
 };
 
 // The viewmodel uses its own narrow FOV so the weapon reads large without
@@ -2197,6 +2729,8 @@ export const AVATAR_HOLDS = {
 const VIEWMODEL_FOV = 54;
 const HOME = new THREE.Vector3(0.43, -0.18, -0.8);
 const KNIFE_HOME = new THREE.Vector3(0.1, -0.13, -0.82);
+const PEE_HOME = new THREE.Vector3(0, -0.28, -0.78);
+const BOW_HOME = new THREE.Vector3(0.2, -0.19, -0.82);
 const SCOPED = new THREE.Vector3(0.01, -0.16, -0.75);
 const VIEWMODEL_SCALE = 1.5;
 
@@ -2230,6 +2764,7 @@ export class ViewModel {
     this.reloadPhase = 0;
     this.swing = 0;
     this.throwPhase = 0;
+    this.bowPhase = 0;
     this.hidden = false;
   }
 
@@ -2247,6 +2782,13 @@ export class ViewModel {
       // Hold the throwable cocked near the right shoulder.
       this.weapon.rotation.set(-0.08, 0.08, 0.02);
       this.weapon.scale.setScalar(0.85);
+    } else if (id === 'pee') {
+      // Centered waist-level stance; no yaw/cant, there is no gun to cant.
+      this.weapon.rotation.set(0, 0, 0);
+    } else if (id === 'bow') {
+      // Slight archer cant; the bow stays near the screen centre so the
+      // vertical limbs and the drawn arrow both read.
+      this.weapon.rotation.set(0, 0.1, 0.1);
     } else {
       // Yawed and canted like a real FPS viewmodel: the buttstock swings off
       // the right edge instead of into frame.
@@ -2255,6 +2797,7 @@ export class ViewModel {
     this.weaponId = id;
     this.swing = 0;
     this.throwPhase = 0;
+    this.bowPhase = 0;
     this.holder.add(this.weapon);
   }
 
@@ -2298,6 +2841,11 @@ export class ViewModel {
     this.throwPhase = 1;
   }
 
+  /** Loose the arrow: string snaps, then the hand fetches a fresh one. */
+  playBowShot() {
+    this.bowPhase = 1;
+  }
+
   look(dYaw, dPitch) {
     this.swayTarget.set(
       THREE.MathUtils.clamp(dYaw * 6, -0.09, 0.09),
@@ -2305,7 +2853,10 @@ export class ViewModel {
     );
   }
 
-  update(dt, { moving, onGround, crouching, sliding, zooming, reloading, reloadProgress, ammo }) {
+  update(
+    dt,
+    { moving, onGround, crouching, sliding, zooming, reloading, reloadProgress, ammo, charge },
+  ) {
     if (!this.weapon) return;
 
     this.hidden = Boolean(zooming);
@@ -2324,16 +2875,25 @@ export class ViewModel {
     const bobX = sliding ? 0 : Math.cos(this.bobTime) * (moving && onGround ? 0.014 : 0.003);
     const bobY = sliding ? 0 : Math.abs(Math.sin(this.bobTime)) * (moving && onGround ? 0.012 : 0.002);
 
-    const home = zooming ? SCOPED : this.weaponId === 'knife' ? KNIFE_HOME : HOME;
+    const home = zooming
+      ? SCOPED
+      : this.weaponId === 'knife'
+        ? KNIFE_HOME
+        : this.weaponId === 'pee'
+          ? PEE_HOME
+          : this.weaponId === 'bow'
+            ? BOW_HOME
+            : HOME;
     const crouchDrop = crouching ? 0.06 : 0;
     const slideDrop = sliding ? 0.1 : 0;
 
     this.reloadPhase = reloading ? Math.min(1, this.reloadPhase + dt * 4) : Math.max(0, this.reloadPhase - dt * 5);
-    // The poopgun has its own reach-behind reload move on the throw pivot, so
-    // skip the generic barrel dip for it.
-    const reloadDip = this.weaponId === 'poopgun'
-      ? 0
-      : Math.sin(Math.PI * Math.min(1, reloadProgress || 0)) * this.reloadPhase;
+    // The poopgun (reach-behind grab), pee (bottle drink), and bow (arrow
+    // rearm) animate their own reload moves, so skip the generic barrel dip.
+    const reloadDip =
+      this.weaponId === 'poopgun' || this.weaponId === 'pee' || this.weaponId === 'bow'
+        ? 0
+        : Math.sin(Math.PI * Math.min(1, reloadProgress || 0)) * this.reloadPhase;
 
     // Knife stab: short anticipation pulling the arm back, a fast thrust that
     // pitches the vertical blade toward the target, then a smooth recovery.
@@ -2418,6 +2978,103 @@ export class ViewModel {
           // empty while out of ammo until the reload restocks it.
           payload.visible = !empty && !released;
         }
+      }
+    }
+
+    // Pee reload: grab the water bottle from below the frame, raise it to the
+    // mouth, tip it back with little gulp bobs, then drop it back down.
+    const bottlePivot = this.weaponId === 'pee' ? this.weapon.userData.bottlePivot : null;
+    if (bottlePivot) {
+      if (!bottlePivot.userData.drinkRest) {
+        bottlePivot.userData.drinkRest = {
+          position: bottlePivot.position.clone(),
+          rotation: bottlePivot.rotation.clone(),
+        };
+      }
+      const rest = bottlePivot.userData.drinkRest;
+      const rp = reloading ? Math.min(1, reloadProgress || 0) : 0;
+      bottlePivot.visible = rp > 0;
+      const streamHands = this.weapon.userData.streamHands;
+      if (streamHands) streamHands.visible = rp === 0;
+
+      let raise = 0;
+      let tilt = 0;
+      if (rp > 0) {
+        if (rp < 0.18) {
+          raise = smoothstep01(rp / 0.18);
+        } else if (rp < 0.8) {
+          raise = 1;
+          tilt = smoothstep01(Math.min(1, (rp - 0.18) / 0.4));
+        } else {
+          const down = smoothstep01((rp - 0.8) / 0.2);
+          raise = 1 - down;
+          tilt = 1 - down;
+        }
+      }
+      // Rhythmic little bobs while the water goes down, matching the glugs.
+      const gulp = rp > 0.18 && rp < 0.8 ? Math.sin(rp * 45) * 0.01 * tilt : 0;
+
+      bottlePivot.position.set(
+        rest.position.x - raise * 0.17,
+        rest.position.y + raise * 0.47 + gulp,
+        rest.position.z + raise * 0.04 + tilt * 0.08,
+      );
+      // Positive X rotation tips the cap back toward the camera — the player
+      // drinks; negative tipped it forward at the enemy like a toast.
+      bottlePivot.rotation.set(
+        rest.rotation.x + tilt * 1.05,
+        rest.rotation.y,
+        rest.rotation.z + tilt * 0.12,
+      );
+    }
+
+    // Bow: string and arrow follow the draw; on release the string snaps
+    // forward, the arrow is gone, and the hand reaches over the shoulder for
+    // a fresh one and nocks it.
+    const bowRig = this.weaponId === 'bow' ? this.weapon.userData.bow : null;
+    if (bowRig) {
+      const drawFrac = charge || 0;
+      // Starting a fresh draw means the arrow is logically nocked already —
+      // cut the rearm tail short instead of drawing with no arrow.
+      if (drawFrac > 0.01) this.bowPhase = 0;
+      if (this.bowPhase > 0) this.bowPhase = Math.max(0, this.bowPhase - dt * 1.05);
+      const t = 1 - this.bowPhase; // 0..1 timeline after release
+      const rest = bowRig.nockRest;
+      const pull = drawFrac * 0.24;
+
+      // String: follows the draw; right after release it snaps past rest.
+      let stringZ = rest.z + pull;
+      if (this.bowPhase > 0 && t < 0.1) {
+        stringZ = rest.z - Math.sin((t / 0.1) * Math.PI) * 0.035;
+      }
+      setStringSegment(
+        bowRig.stringTop,
+        bowRig.tipTop.x, bowRig.tipTop.y, bowRig.tipTop.z,
+        rest.x, rest.y, stringZ,
+      );
+      setStringSegment(
+        bowRig.stringBottom,
+        bowRig.tipBottom.x, bowRig.tipBottom.y, bowRig.tipBottom.z,
+        rest.x, rest.y, stringZ,
+      );
+
+      if (this.bowPhase > 0) {
+        // Rearm: hand lingers at the string through the snap, sweeps up over
+        // the right shoulder (arrow gone), and comes back holding a new one.
+        let reach = 0;
+        if (t >= 0.12 && t < 0.45) reach = smoothstep01((t - 0.12) / 0.33);
+        else if (t >= 0.45 && t < 0.85) reach = 1 - smoothstep01((t - 0.45) / 0.4);
+        bowRig.nockGroup.position.set(
+          rest.x + reach * 0.3,
+          rest.y + reach * 0.34,
+          rest.z + reach * 0.5,
+        );
+        bowRig.nockGroup.rotation.set(reach * 0.7, reach * -0.6, reach * -0.5);
+        bowRig.arrowHost.visible = t >= 0.5;
+      } else {
+        bowRig.nockGroup.position.set(rest.x, rest.y, rest.z + pull);
+        bowRig.nockGroup.rotation.set(0, 0, 0);
+        bowRig.arrowHost.visible = !(typeof ammo === 'number' && ammo <= 0);
       }
     }
 

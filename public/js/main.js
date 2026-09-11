@@ -53,9 +53,15 @@ const audio = new Audio();
 // moves its 3D audio source along with the projectile and stops on impact.
 const projSounds = new Map();
 
+// One positional pee-stream loop per remote shooter; entries expire in the
+// render loop once their beam events stop arriving.
+const remotePee = new Map();
+
 function clearProjSounds() {
   for (const sound of projSounds.values()) sound.stop();
   projSounds.clear();
+  for (const entry of remotePee.values()) entry.sound?.stop();
+  remotePee.clear();
 }
 const input = new InputController(canvas);
 const net = new Net();
@@ -126,6 +132,9 @@ const localGun = {
   // Single shared hum for the laser beam; stopped when beam shots cease.
   beamSound: null,
   lastBeamShotAt: 0,
+  // Single shared water-splatter loop for the pee stream, same lifecycle.
+  peeSound: null,
+  lastPeeShotAt: 0,
 };
 
 const tmpOrigin = new THREE.Vector3();
@@ -480,7 +489,9 @@ function fireLocal({ chargeFrac = 1, beam = false, melee = false, projectile = f
     return;
   }
 
-  if (!beam) {
+  const isPee = w.id === 'pee';
+
+  if (!beam && !isPee) {
     effects.flash(tmpMuzzle.x, tmpMuzzle.y, tmpMuzzle.z, w.id === 'shotgun' ? 1.5 : 1.1);
   }
 
@@ -492,6 +503,18 @@ function fireLocal({ chargeFrac = 1, beam = false, melee = false, projectile = f
     const yaw = view.yaw + Math.cos(angle) * radius;
     const pitch = view.pitch + Math.sin(angle) * radius;
     aimDirection(yaw, pitch, tmpDir);
+
+    if (isPee) {
+      // The stream launches from waist height and arcs under gravity; the
+      // droplets ARE the trajectory, and the server traces the same arc for
+      // damage, so no straight-ray trace or endpoint splash is needed here.
+      effects.droplets(
+        ox + tmpDir.x * 0.35, oy - 0.55, oz + tmpDir.z * 0.35,
+        tmpDir.x, tmpDir.y + 0.18, tmpDir.z,
+        3, 8.5,
+      );
+      continue;
+    }
 
     const { dist, kind } = localTrace(ox, oy, oz, tmpDir);
     tmpEnd.set(ox, oy, oz).addScaledVector(tmpDir, dist);
@@ -508,7 +531,11 @@ function fireLocal({ chargeFrac = 1, beam = false, melee = false, projectile = f
   state.shake = Math.min(2.4, state.shake + w.shake * 0.5);
   viewModel.addRecoil(w.recoil * 0.32);
   input.addKick((Math.random() - 0.5) * w.recoil * 0.004, w.recoil * 0.006);
-  if (beam) {
+  if (isPee) {
+    // One shared water loop for the whole spray, mirroring the beam hum.
+    localGun.lastPeeShotAt = performance.now();
+    if (!localGun.peeSound) localGun.peeSound = audio.peeLoop(0.55);
+  } else if (beam) {
     // One shared hum for the whole burst. Starting a new beamLoop per shot
     // (60/s at laser RPM) leaked unstoppable oscillators that droned forever.
     localGun.lastBeamShotAt = performance.now();
@@ -561,7 +588,8 @@ function updateLocalGun(mask) {
   ) {
     localGun.reloadEndsAt = now + w.reload * 1000;
     localGun.chargeStartAt = 0;
-    audio.reload();
+    if (w.id === 'pee') audio.drink(w.reload);
+    else audio.reload();
     localGun.prevShoot = pressed;
     return;
   }
@@ -585,7 +613,8 @@ function updateLocalGun(mask) {
         else localGun.secondaryAmmo = localGun.ammo;
       }
       localGun.nextShotAt = now + shotInterval(w) * 1000;
-      fireLocal({ chargeFrac });
+      fireLocal({ chargeFrac, projectile: Boolean(w.projectile) });
+      viewModel.playBowShot();
       if (localGun.ammo <= 0 && w.reload > 0) {
         localGun.reloadEndsAt = now + w.reload * 1000;
         audio.reload();
@@ -608,7 +637,8 @@ function updateLocalGun(mask) {
   if (!w.melee && !w.overheat && localGun.ammo <= 0) {
     if (w.reload > 0) {
       localGun.reloadEndsAt = now + w.reload * 1000;
-      audio.reload();
+      if (w.id === 'pee') audio.drink(w.reload);
+      else audio.reload();
     }
     return;
   }
@@ -1068,8 +1098,43 @@ function onSnapshot(msg) {
 function handleEvents(events) {
   for (const ev of events) {
     if (ev.k === 'shot' || ev.k === 'beam') {
-      if (ev.p === state.myId) continue;
       const w = WEAPONS[ev.w] || WEAPONS.pistol;
+      if (w.id === 'pee') {
+        const [ox, oy, oz] = ev.o;
+        const mine = ev.p === state.myId;
+        // Everyone (shooter included) splashes at the server's landing point:
+        // the arc is resolved server-side, so this is where damage happens.
+        for (const hit of ev.hits) {
+          if (hit.s !== 'air') {
+            effects.spark(hit.x, hit.y, hit.z, 'pee', mine ? 3 : 2, 1.5);
+          }
+          if (mine) continue;
+          const dx = hit.x - ox;
+          const dy = hit.y - oy;
+          const dz = hit.z - oz;
+          const len = Math.hypot(dx, dy, dz) || 1;
+          effects.droplets(
+            ox + (dx / len) * 0.35, oy - 0.55, oz + (dz / len) * 0.35,
+            dx / len, dy / len + 0.18, dz / len,
+            2, 8.5,
+          );
+        }
+        if (!mine) {
+          // Keep one positional water loop alive per remote shooter while
+          // their beam events keep arriving; the render loop expires stale ones.
+          const nowMs = performance.now();
+          let entry = remotePee.get(ev.p);
+          if (!entry) {
+            entry = { sound: audio.peeLoop(0.5, { x: ox, y: oy, z: oz }), lastAt: nowMs };
+            remotePee.set(ev.p, entry);
+          } else {
+            entry.sound?.move(ox, oy, oz);
+            entry.lastAt = nowMs;
+          }
+        }
+        continue;
+      }
+      if (ev.p === state.myId) continue;
       const [ox, oy, oz] = ev.o;
       if (ev.k !== 'beam') {
         effects.flash(ox, oy, oz, w.id === 'shotgun' ? 1.5 : 1.1);
@@ -1439,6 +1504,7 @@ function frame(now) {
     reloading,
     reloadProgress,
     ammo: localGun.ammo,
+    charge: localGun.chargeStartAt > 0 ? localGun.chargeFrac : 0,
   });
 
   effects.update(dt, camera);
@@ -1448,6 +1514,20 @@ function frame(now) {
   if (localGun.beamSound && performance.now() - localGun.lastBeamShotAt > 90) {
     localGun.beamSound.stop();
     localGun.beamSound = null;
+  }
+
+  // Same for the local pee stream (shots land every ~67 ms at 900 RPM).
+  if (localGun.peeSound && performance.now() - localGun.lastPeeShotAt > 160) {
+    localGun.peeSound.stop();
+    localGun.peeSound = null;
+  }
+
+  // Expire remote pee loops whose shooter stopped sending beam events.
+  for (const [id, entry] of remotePee) {
+    if (performance.now() - entry.lastAt > 250) {
+      entry.sound?.stop();
+      remotePee.delete(id);
+    }
   }
 
   // Keep each rocket's scream glued to its projectile; drop sounds whose

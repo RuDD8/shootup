@@ -75,6 +75,7 @@ export class Audio {
     if (this.ctx.state === 'suspended') this.ctx.resume();
     this.loadSample('fart', '/sounds/fart.mp3');
     this.loadSample('fahh', '/sounds/fahh.mp3');
+    this.loadSample('pee', '/sounds/pee.mp3');
   }
 
   loadSample(key, url) {
@@ -427,6 +428,99 @@ export class Audio {
         }
       },
     };
+  }
+
+  // Looping water-hitting-the-floor sound for the pee weapon.  Call once when
+  // the stream starts; the handle lets the caller follow the shooter around
+  // and cut the sound the moment they stop.  A 4 s magazine never outlasts
+  // the 10 s sample, so each spray plays the natural stream onset.
+  peeLoop(gain = 0.5, at = null) {
+    if (!this.ctx) return null;
+    const panner = at ? this.spatial(at.x, at.y, at.z, 22) : null;
+    const out = panner || this.master;
+    const env = this.ctx.createGain();
+    env.gain.value = gain;
+    env.connect(out);
+
+    const src = this.ctx.createBufferSource();
+    src.loop = true;
+    const buffer = this.samples.pee;
+    if (buffer) {
+      src.buffer = buffer;
+      src.connect(env);
+    } else {
+      // Splashy filtered noise until the sample finishes loading.
+      src.buffer = this.noise;
+      src.playbackRate.value = 0.85;
+      const bp = this.ctx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.value = 2600;
+      bp.Q.value = 0.7;
+      src.connect(bp).connect(env);
+      env.gain.value = gain * 0.6;
+    }
+    src.start(this.now);
+
+    return {
+      move: (x, y, z) => {
+        if (!panner) return;
+        if (panner.positionX) {
+          panner.positionX.value = x;
+          panner.positionY.value = y;
+          panner.positionZ.value = z;
+        } else if (panner.setPosition) {
+          panner.setPosition(x, y, z);
+        }
+      },
+      stop: () => {
+        const t = this.ctx.currentTime;
+        env.gain.setTargetAtTime(0, t, 0.04);
+        try {
+          src.stop(t + 0.2);
+        } catch {
+          // Source already stopped.
+        }
+      },
+    };
+  }
+
+  // Water-bottle gulps for the pee weapon's drinking reload: a few descending
+  // "glug" blips with a soft splash of noise under each one.
+  drink(duration = 3.0, gain = 0.6) {
+    if (!this.ctx) return;
+    const start = this.now + 0.55; // bottle needs a beat to reach the mouth
+    const gulps = 4;
+    const step = Math.max(0.3, (duration - 1.3) / gulps);
+    for (let i = 0; i < gulps; i++) {
+      const t = start + i * step;
+
+      const osc = this.ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(340 + Math.random() * 60, t);
+      osc.frequency.exponentialRampToValueAtTime(130, t + 0.14);
+      const oe = this.ctx.createGain();
+      oe.gain.setValueAtTime(0.0001, t);
+      oe.gain.linearRampToValueAtTime(0.5 * gain, t + 0.02);
+      oe.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
+      osc.connect(oe).connect(this.master);
+      osc.start(t);
+      osc.stop(t + 0.2);
+
+      const splash = this.ctx.createBufferSource();
+      splash.buffer = this.noise;
+      splash.playbackRate.value = 1.4;
+      const bp = this.ctx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.value = 1900;
+      bp.Q.value = 1.2;
+      const se = this.ctx.createGain();
+      se.gain.setValueAtTime(0.0001, t);
+      se.gain.linearRampToValueAtTime(0.18 * gain, t + 0.015);
+      se.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
+      splash.connect(bp).connect(se).connect(this.master);
+      splash.start(t);
+      splash.stop(t + 0.15);
+    }
   }
 
   // Rocket detonation: a deep filtered noise boom with a sine thump.

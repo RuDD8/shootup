@@ -348,6 +348,68 @@ async function testServer() {
         fahhSample.headers.get('content-type') === 'audio/mpeg' &&
         Number(fahhSample.headers.get('content-length')) > 1000,
     );
+    const bottleAsset = await fetch(`http://127.0.0.1:${PORT}/models/water_bottle.glb`);
+    check(
+      'Blender water bottle is served as a GLB asset',
+      bottleAsset.ok &&
+        bottleAsset.headers.get('content-type') === 'model/gltf-binary' &&
+        Number(bottleAsset.headers.get('content-length')) > 1000,
+    );
+    const bowAsset = await fetch(`http://127.0.0.1:${PORT}/models/bow.glb`);
+    check(
+      'Blender bow is served as a GLB asset',
+      bowAsset.ok &&
+        bowAsset.headers.get('content-type') === 'model/gltf-binary' &&
+        Number(bowAsset.headers.get('content-length')) > 1000,
+    );
+    const arrowAsset = await fetch(`http://127.0.0.1:${PORT}/models/arrow.glb`);
+    check(
+      'Blender arrow is served as a GLB asset',
+      arrowAsset.ok &&
+        arrowAsset.headers.get('content-type') === 'model/gltf-binary' &&
+        Number(arrowAsset.headers.get('content-length')) > 1000,
+    );
+    for (const name of [
+      'pistol',
+      'shotgun',
+      'sniper',
+      'revolver',
+      'machinepistol',
+      'deagle',
+      'smg',
+      'p90',
+      'vector',
+      'battlerifle',
+      'burstrifle',
+      'dmr',
+      'carbine',
+      'autoshotgun',
+      'slugshotgun',
+      'doublebarrel',
+      'sawedoff',
+      'scout',
+      'awp',
+      'lmg',
+      'minigun',
+      'crossbow',
+      'leveraction',
+      'laser',
+    ]) {
+      const asset = await fetch(`http://127.0.0.1:${PORT}/models/${name}.glb`);
+      check(
+        `Blender ${name} is served as a GLB asset`,
+        asset.ok &&
+          asset.headers.get('content-type') === 'model/gltf-binary' &&
+          Number(asset.headers.get('content-length')) > 1000,
+      );
+    }
+    const peeSample = await fetch(`http://127.0.0.1:${PORT}/sounds/pee.mp3`);
+    check(
+      'pee sample is served as an MP3 asset',
+      peeSample.ok &&
+        peeSample.headers.get('content-type') === 'audio/mpeg' &&
+        Number(peeSample.headers.get('content-length')) > 1000,
+    );
 
     const a = openClient('A');
     const b = openClient('B');

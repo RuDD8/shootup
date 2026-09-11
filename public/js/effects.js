@@ -1,5 +1,5 @@
 import * as THREE from '/vendor/three.module.js';
-import { mountPoopModel, mountFahhText } from './model-assets.js';
+import { mountArrow, mountPoopModel, mountFahhText } from './model-assets.js';
 
 // Every visual is drawn from a fixed pool. Nothing is allocated during a
 // firefight, so there are no GC hitches mid-duel.
@@ -18,6 +18,7 @@ const SPARK_COLORS = {
   floor: 0xffc98a,
   player: 0xff4d63,
   air: 0x9fc4ef,
+  pee: 0xe9c93b,
 };
 
 export class Effects {
@@ -144,10 +145,30 @@ export class Effects {
       fahhHost.visible = false;
       group.add(fahhHost);
 
+      // Flying arrow for the bow; it points along its velocity in update().
+      const arrowHost = new THREE.Group();
+      const arrowFallback = new THREE.Group();
+      const shaftMat = new THREE.MeshStandardMaterial({ color: 0x8c6b38, roughness: 0.6 });
+      const headMat = new THREE.MeshStandardMaterial({
+        color: 0x80888f, roughness: 0.25, metalness: 0.8,
+      });
+      const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.66, 6), shaftMat);
+      shaft.rotation.x = Math.PI / 2;
+      arrowFallback.add(shaft);
+      const tip = new THREE.Mesh(new THREE.BoxGeometry(0.024, 0.024, 0.06), headMat);
+      tip.position.z = -0.33;
+      arrowFallback.add(tip);
+      arrowHost.add(arrowFallback);
+      mountArrow(arrowHost, { targetLength: 0.7, castShadow: true }).then((mounted) => {
+        if (mounted) arrowFallback.visible = false;
+      });
+      arrowHost.visible = false;
+      group.add(arrowHost);
+
       group.visible = false;
       scene.add(group);
       this.projectilePool.push({
-        mesh: group, mat: bodyMat, poopHost, fahhHost,
+        mesh: group, mat: bodyMat, poopHost, fahhHost, arrowHost,
         id: null, kind: 'poopgun', gravity: 15,
         x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0,
         active: false, spin: Math.random() * Math.PI * 2,
@@ -223,6 +244,9 @@ export class Effects {
       slot.mesh.position.set(x, y, z);
       slot.mesh.scale.setScalar(0.6 + Math.random() * 0.9);
       slot.material.color.setHex(color);
+      // Additive sparks wash out to white on bright floors; liquid splashes
+      // need their actual color to read.
+      slot.material.blending = kind === 'pee' ? THREE.NormalBlending : THREE.AdditiveBlending;
       slot.material.opacity = 1;
       slot.vel.set(
         (Math.random() - 0.5) * power,
@@ -230,6 +254,30 @@ export class Effects {
         (Math.random() - 0.5) * power,
       );
       slot.maxLife = 0.22 + Math.random() * 0.24;
+      slot.life = slot.maxLife;
+    }
+  }
+
+  // Directed droplets for the pee stream: unlike spark(), these launch along
+  // a given direction so gravity bends them into a proper arc.
+  droplets(x, y, z, dx, dy, dz, count = 3, speed = 8.5) {
+    for (let i = 0; i < count; i++) {
+      const slot = this.sparks[this.sparkCursor];
+      this.sparkCursor = (this.sparkCursor + 1) % SPARK_COUNT;
+
+      slot.mesh.visible = true;
+      slot.mesh.position.set(x, y, z);
+      slot.mesh.scale.setScalar(0.45 + Math.random() * 0.45);
+      slot.material.color.setHex(SPARK_COLORS.pee);
+      slot.material.blending = THREE.NormalBlending;
+      slot.material.opacity = 0.9;
+      const jitter = 0.9;
+      slot.vel.set(
+        dx * speed + (Math.random() - 0.5) * jitter,
+        dy * speed + (Math.random() - 0.5) * jitter,
+        dz * speed + (Math.random() - 0.5) * jitter,
+      );
+      slot.maxLife = 0.5 + Math.random() * 0.25;
       slot.life = slot.maxLife;
     }
   }
@@ -253,9 +301,10 @@ export class Effects {
     this.projCursor = (this.projCursor + 1) % PROJECTILE_COUNT;
     slot.id = id;
     slot.kind = kind;
-    slot.gravity = kind === 'fahgun' ? 4 : 15;
-    slot.poopHost.visible = kind !== 'fahgun';
+    slot.gravity = kind === 'fahgun' ? 4 : kind === 'bow' ? 9 : 15;
+    slot.poopHost.visible = kind !== 'fahgun' && kind !== 'bow';
     slot.fahhHost.visible = kind === 'fahgun';
+    slot.arrowHost.visible = kind === 'bow';
     slot.x = x;
     slot.y = y;
     slot.z = z;
@@ -374,6 +423,10 @@ export class Effects {
         // Billboard the text toward the viewer, with a frantic little wobble.
         const yaw = Math.atan2(camera.position.x - slot.x, camera.position.z - slot.z);
         slot.mesh.rotation.set(0, yaw, Math.sin(this.time * 11 + slot.spin) * 0.14);
+      } else if (slot.kind === 'bow') {
+        // Arrows fly tip-first along their velocity instead of tumbling.
+        // lookAt aims the group's +Z, and the arrow's tip points to -Z.
+        slot.mesh.lookAt(slot.x - slot.vx, slot.y - slot.vy, slot.z - slot.vz);
       } else {
         slot.mesh.rotation.set(slot.spin, slot.spin * 0.7, 0);
       }

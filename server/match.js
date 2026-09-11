@@ -57,6 +57,16 @@ const KEY = {
 
 const HIT_RADIUS = 0.45;
 const MAX_SHOT_RANGE = 400;
+
+// Ballistic pee stream: these mirror the client droplet launch (waist height,
+// upward bias, launch speed, spark gravity) so damage lands exactly where the
+// liquid visually falls — not where the crosshair points.
+const STREAM_SPEED = 8.5;
+const STREAM_UP_BIAS = 0.18;
+const STREAM_GRAVITY = 11;
+const STREAM_WAIST_DROP = 0.55;
+const STREAM_STEP = 1 / 60;
+const STREAM_MAX_STEPS = 90; // 1.5 s of flight, plenty for a 9 m lob
 const INPUT_QUEUE_LIMIT = 6;
 const MAX_INPUT_QUEUE = 24;
 const INPUT_IDLE_TICKS = Math.round(TICK_RATE * 0.5);
@@ -975,6 +985,13 @@ export class Match {
       return;
     }
 
+    // The pee stream is ballistic: hits register along the arc the liquid
+    // actually travels, not along the straight crosshair ray.
+    if (weapon.stream) {
+      this.fireStream(player, weapon, ox, oy, oz);
+      return;
+    }
+
     const targets = (this.isDM || this.isGunGame) ? this.opponentsOf(player) : [this.opponentOf(player)].filter(Boolean);
 
     const chargeFrac = weapon.charge ? (player.chargeFrac || 0) : 1;
@@ -997,8 +1014,11 @@ export class Match {
       const dy = Math.sin(pitch);
       const dz = -Math.cos(yaw) * cp;
 
-      const world = raycastWorld(this.arena.grid, ox, oy, oz, dx, dy, dz, MAX_SHOT_RANGE);
-      let hitDist = world.hit ? world.dist : MAX_SHOT_RANGE;
+      // Short-range weapons (the pee stream) cap the ray well before the
+      // arena-wide maximum.
+      const maxRange = weapon.range || MAX_SHOT_RANGE;
+      const world = raycastWorld(this.arena.grid, ox, oy, oz, dx, dy, dz, maxRange);
+      let hitDist = world.hit ? Math.min(world.dist, maxRange) : maxRange;
       let hitTarget = null;
       let hitLagComp = null;
 
@@ -1066,11 +1086,128 @@ export class Match {
     }
   }
 
+  // Integrate the pee arc in substeps, checking players (lag compensated) and
+  // walls along each segment. The whole arc resolves within the firing tick,
+  // like a hitscan that bends under gravity.
+  fireStream(player, weapon, ox, oy, oz) {
+    const targets = (this.isDM || this.isGunGame)
+      ? this.opponentsOf(player)
+      : [this.opponentOf(player)].filter(Boolean);
+
+    const spread = shotSpread(weapon, player.bloom, player.zooming, 1);
+    const angle = Math.random() * Math.PI * 2;
+    const radius = Math.sqrt(Math.random()) * spread;
+    const yaw = player.yaw + Math.cos(angle) * radius;
+    const pitch = Math.max(
+      -MAX_PITCH,
+      Math.min(MAX_PITCH, player.pitch + Math.sin(angle) * radius),
+    );
+
+    const cp = Math.cos(pitch);
+    const dx = -Math.sin(yaw) * cp;
+    const dy = Math.sin(pitch);
+    const dz = -Math.cos(yaw) * cp;
+
+    let px = ox;
+    let py = oy - STREAM_WAIST_DROP;
+    let pz = oz;
+    const vx = dx * STREAM_SPEED;
+    let vy = (dy + STREAM_UP_BIAS) * STREAM_SPEED;
+    const vz = dz * STREAM_SPEED;
+
+    const impacts = [];
+    let hitTarget = null;
+    let hitState = null;
+    let hitPoint = null;
+
+    outer: for (let i = 0; i < STREAM_MAX_STEPS; i++) {
+      vy -= STREAM_GRAVITY * STREAM_STEP;
+      const nx = px + vx * STREAM_STEP;
+      const ny = py + vy * STREAM_STEP;
+      const nz = pz + vz * STREAM_STEP;
+      const sx = nx - px;
+      const sy = ny - py;
+      const sz = nz - pz;
+      const segLen = Math.hypot(sx, sy, sz);
+      if (segLen < 1e-6) break;
+      const ux = sx / segLen;
+      const uy = sy / segLen;
+      const uz = sz / segLen;
+
+      for (const target of targets) {
+        if (!target.alive) continue;
+        const tState = this.targetStateAtShot(player, target);
+        const t = rayCylinder(
+          px, py, pz, ux, uy, uz,
+          tState.x, tState.y, tState.z,
+          HIT_RADIUS, playerHeight(tState.cr),
+        );
+        if (t !== null && t <= segLen) {
+          hitTarget = target;
+          hitState = tState;
+          hitPoint = { x: px + ux * t, y: py + uy * t, z: pz + uz * t };
+          impacts.push({ ...hitPoint, s: 'player' });
+          break outer;
+        }
+      }
+
+      const world = raycastWorld(this.arena.grid, px, py, pz, ux, uy, uz, segLen);
+      if (world.hit) {
+        impacts.push({
+          x: px + ux * world.dist,
+          y: py + uy * world.dist,
+          z: pz + uz * world.dist,
+          s: world.surface || 'wall',
+        });
+        break;
+      }
+
+      px = nx;
+      py = ny;
+      pz = nz;
+      if (py <= 0.02) {
+        impacts.push({ x: px, y: 0.02, z: pz, s: 'floor' });
+        break;
+      }
+    }
+
+    if (!impacts.length) impacts.push({ x: px, y: py, z: pz, s: 'air' });
+
+    this.events.push({
+      k: weapon.beam ? 'beam' : 'shot',
+      p: player.id,
+      w: weapon.id,
+      o: [ox, oy, oz],
+      hits: impacts,
+    });
+
+    if (!hitTarget || !hitTarget.alive) return;
+    if (this.tick < hitTarget.spawnProtectUntil) return;
+
+    const travel = Math.hypot(hitPoint.x - ox, hitPoint.z - oz);
+    const isHead = hitPoint.y > hitState.y + playerHeadHeight(hitState.cr);
+    let dmg = damageAtRange(weapon, travel);
+    if (isHead) dmg *= HEADSHOT_MULT;
+    dmg = Math.round(dmg);
+    if (dmg <= 0) return;
+
+    hitTarget.health -= dmg;
+    this.events.push({ k: 'hurt', p: hitTarget.id, by: player.id, dmg, head: isHead });
+    if (hitTarget.health <= 0) {
+      this.handleKill(player, hitTarget, isHead);
+    }
+  }
+
   fireProjectile(player, weapon, ox, oy, oz) {
     const cp = Math.cos(player.pitch);
     const dx = -Math.sin(player.yaw) * cp;
     const dy = Math.sin(player.pitch);
     const dz = -Math.cos(player.yaw) * cp;
+
+    // Charge weapons (the bow) launch slower and weaker on a partial draw:
+    // a tap lobs the arrow a few metres, a full draw sends it fast and flat.
+    const chargeFrac = weapon.charge ? (player.chargeFrac ?? 1) : 1;
+    const speed = weapon.projSpeed * (weapon.charge ? 0.35 + 0.65 * chargeFrac : 1);
 
     const proj = {
       id: `proj_${this.tick}_${player.id}`,
@@ -1079,9 +1216,12 @@ export class Match {
       x: ox,
       y: oy,
       z: oz,
-      vx: dx * weapon.projSpeed,
-      vy: dy * weapon.projSpeed + (weapon.projArc ?? 3),
-      vz: dz * weapon.projSpeed,
+      vx: dx * speed,
+      vy: dy * speed + (weapon.projArc ?? 3),
+      vz: dz * speed,
+      damage: Math.round(
+        weapon.damage * (weapon.charge ? chargeDamageMult(weapon, chargeFrac) : 1),
+      ),
       age: 0,
     };
     this.projectiles.push(proj);
@@ -1239,7 +1379,7 @@ export class Match {
 
       if (hitPlayer) {
         if (this.tick >= hitPlayer.spawnProtectUntil) {
-          const dmg = Math.round(proj.weapon.damage);
+          const dmg = Math.round(proj.damage ?? proj.weapon.damage);
           hitPlayer.health -= dmg;
           this.events.push({ k: 'hurt', p: hitPlayer.id, by: proj.owner, dmg, head: false });
           if (hitPlayer.health <= 0) {

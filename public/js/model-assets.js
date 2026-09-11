@@ -115,6 +115,253 @@ export function mountFahhGun(parent, options = {}) {
   });
 }
 
+export function mountPistol(parent, options = {}) {
+  return mountWeaponModel(parent, {
+    url: '/models/pistol.glb',
+    name: 'Blender_Pistol',
+    targetLength: 0.5,
+    ...options,
+  });
+}
+
+export function mountShotgun(parent, options = {}) {
+  return mountWeaponModel(parent, {
+    url: '/models/shotgun.glb',
+    name: 'Blender_Shotgun',
+    targetLength: 1.05,
+    ...options,
+  });
+}
+
+export function mountSniper(parent, options = {}) {
+  return mountWeaponModel(parent, {
+    url: '/models/sniper.glb',
+    name: 'Blender_Sniper',
+    targetLength: 1.35,
+    ...options,
+  });
+}
+
+export function mountRevolver(parent, options = {}) {
+  return mountWeaponModel(parent, {
+    url: '/models/revolver.glb',
+    name: 'Blender_Revolver',
+    targetLength: 0.55,
+    ...options,
+  });
+}
+
+export function mountMachinePistol(parent, options = {}) {
+  return mountWeaponModel(parent, {
+    url: '/models/machinepistol.glb',
+    name: 'Blender_Machine_Pistol',
+    targetLength: 0.45,
+    ...options,
+  });
+}
+
+export function mountDeagle(parent, options = {}) {
+  return mountWeaponModel(parent, {
+    url: '/models/deagle.glb',
+    name: 'Blender_Deagle',
+    targetLength: 0.6,
+    ...options,
+  });
+}
+
+export function mountSmg(parent, options = {}) {
+  return mountWeaponModel(parent, {
+    url: '/models/smg.glb',
+    name: 'Blender_Smg',
+    targetLength: 0.5,
+    ...options,
+  });
+}
+
+export function mountP90(parent, options = {}) {
+  return mountWeaponModel(parent, {
+    url: '/models/p90.glb',
+    name: 'Blender_P90',
+    targetLength: 0.5,
+    ...options,
+  });
+}
+
+export function mountVector(parent, options = {}) {
+  return mountWeaponModel(parent, {
+    url: '/models/vector.glb',
+    name: 'Blender_Vector',
+    targetLength: 0.48,
+    ...options,
+  });
+}
+
+export function mountBattlerifle(parent, options = {}) {
+  return mountWeaponModel(parent, {
+    url: '/models/battlerifle.glb',
+    name: 'Blender_Battlerifle',
+    targetLength: 0.65,
+    ...options,
+  });
+}
+
+export function mountBurstrifle(parent, options = {}) {
+  return mountWeaponModel(parent, {
+    url: '/models/burstrifle.glb',
+    name: 'Blender_Burstrifle',
+    targetLength: 0.6,
+    ...options,
+  });
+}
+
+export function mountDmr(parent, options = {}) {
+  return mountWeaponModel(parent, {
+    url: '/models/dmr.glb',
+    name: 'Blender_Dmr',
+    targetLength: 0.85,
+    ...options,
+  });
+}
+
+export function mountCarbine(parent, options = {}) {
+  return mountWeaponModel(parent, {
+    url: '/models/carbine.glb',
+    name: 'Blender_Carbine',
+    targetLength: 0.5,
+    ...options,
+  });
+}
+
+export function mountAutoshotgun(parent, options = {}) {
+  return mountWeaponModel(parent, {
+    url: '/models/autoshotgun.glb',
+    name: 'Blender_Autoshotgun',
+    targetLength: 0.95,
+    ...options,
+  });
+}
+
+export function mountSlugshotgun(parent, options = {}) {
+  return mountWeaponModel(parent, {
+    url: '/models/slugshotgun.glb',
+    name: 'Blender_Slugshotgun',
+    targetLength: 1.1,
+    ...options,
+  });
+}
+
+export function mountDoublebarrel(parent, options = {}) {
+  return mountWeaponModel(parent, {
+    url: '/models/doublebarrel.glb',
+    name: 'Blender_Doublebarrel',
+    targetLength: 1.0,
+    ...options,
+  });
+}
+
+export function mountSawedoff(parent, options = {}) {
+  return mountWeaponModel(parent, {
+    url: '/models/sawedoff.glb',
+    name: 'Blender_Sawedoff',
+    targetLength: 0.45,
+    ...options,
+  });
+}
+
+export function mountScout(parent, options = {}) {
+  return mountWeaponModel(parent, {
+    url: '/models/scout.glb',
+    name: 'Blender_Scout',
+    targetLength: 1.1,
+    ...options,
+  });
+}
+
+export function mountAwp(parent, options = {}) {
+  return mountWeaponModel(parent, {
+    url: '/models/awp.glb',
+    name: 'Blender_Awp',
+    targetLength: 1.5,
+    ...options,
+  });
+}
+
+export function mountLmg(parent, options = {}) {
+  return mountWeaponModel(parent, {
+    url: '/models/lmg.glb',
+    name: 'Blender_Lmg',
+    targetLength: 0.8,
+    ...options,
+  });
+}
+
+export function mountMinigun(parent, options = {}) {
+  return mountWeaponModel(parent, {
+    url: '/models/minigun.glb',
+    name: 'Blender_Minigun',
+    targetLength: 0.7,
+    ...options,
+  });
+}
+
+export function mountCrossbow(parent, options = {}) {
+  return mountWeaponModel(parent, {
+    url: '/models/crossbow.glb',
+    name: 'Blender_Crossbow',
+    targetLength: 0.6,
+    ...options,
+  });
+}
+
+export function mountLeveraction(parent, options = {}) {
+  return mountWeaponModel(parent, {
+    url: '/models/leveraction.glb',
+    name: 'Blender_Leveraction',
+    targetLength: 0.9,
+    ...options,
+  });
+}
+
+export function mountLaser(parent, options = {}) {
+  return mountWeaponModel(parent, {
+    url: '/models/laser.glb',
+    name: 'Blender_Laser',
+    targetLength: 0.5,
+    ...options,
+  });
+}
+
+/** Recurve bow body (no string or arrow — those animate in three.js). */
+export function mountBow(parent, options = {}) {
+  return mountWeaponModel(parent, {
+    url: '/models/bow.glb',
+    name: 'Blender_Bow',
+    targetLength: 0.72,
+    ...options,
+  });
+}
+
+/** Arrow for the bow: nocked in the viewmodel and carried during the rearm. */
+export function mountArrow(parent, options = {}) {
+  return mountWeaponModel(parent, {
+    url: '/models/arrow.glb',
+    name: 'Blender_Arrow',
+    targetLength: 0.6,
+    ...options,
+  });
+}
+
+/** The pee weapon's reload prop: a water bottle; targetLength = bottle height. */
+export function mountWaterBottle(parent, options = {}) {
+  return mountWeaponModel(parent, {
+    url: '/models/water_bottle.glb',
+    name: 'Blender_Water_Bottle',
+    targetLength: 0.24,
+    yaw: 0,
+    ...options,
+  });
+}
+
 /** The flying "FAHH" projectile text; targetLength normalizes glyph height. */
 export function mountFahhText(parent, options = {}) {
   return mountWeaponModel(parent, {
