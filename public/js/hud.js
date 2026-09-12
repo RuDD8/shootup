@@ -38,6 +38,14 @@ export class Hud {
     // Smoothed frame rate so the readout does not flicker every frame.
     this.fps = 60;
     this.fpsTimer = 0;
+
+    // Current render-resolution scale; a badge appears next to the FPS
+    // counter whenever the game is rendering below native resolution.
+    this.renderScale = 1;
+  }
+
+  setRenderScale(scale) {
+    this.renderScale = scale;
   }
 
   show() {
@@ -202,6 +210,10 @@ export class Hud {
     if (this.fpsTimer <= 0) {
       this.fpsTimer = 0.25;
       $('fps').textContent = Math.round(this.fps);
+      const scaled = this.renderScale < 0.995;
+      $('res-stat').classList.toggle('hidden', !scaled);
+      $('res-div').classList.toggle('hidden', !scaled);
+      if (scaled) $('res-scale').textContent = Math.round(this.renderScale * 100);
     }
 
     if (this.hitmarkerTimer > 0) {

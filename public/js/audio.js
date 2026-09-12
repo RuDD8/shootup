@@ -2,6 +2,11 @@
 // (public/sounds/fart.mp3, CC0 from bigsoundbank.com), because no oscillator
 // does a real fart justice.
 
+// Four over-the-top recorded sneezes (myinstants meme clips: a screamed
+// Russian APCHKHI, two violent blasts, and a wet slimy one), rotated at
+// random so the sneeze gun doesn't sound canned.
+const SNEEZE_KEYS = ['sneeze1', 'sneeze2', 'sneeze3', 'sneeze4'];
+
 const SHOT_PROFILES = {
   // ── Original weapons ──────────────────────────────────────────────
   pistol:       { dur: 0.16, cutoff: 2400, thump: 150, gain: 0.50, q: 1.2 },
@@ -76,6 +81,8 @@ export class Audio {
     this.loadSample('fart', '/sounds/fart.mp3');
     this.loadSample('fahh', '/sounds/fahh.mp3');
     this.loadSample('pee', '/sounds/pee.mp3');
+    for (const key of SNEEZE_KEYS) this.loadSample(key, `/sounds/${key}.mp3`);
+    this.loadSample('noseblow', '/sounds/noseblow.mp3');
   }
 
   loadSample(key, url) {
@@ -287,6 +294,53 @@ export class Audio {
   reload() {
     this.blip(320, 0.05, 0.2, 'sawtooth');
     setTimeout(() => this.blip(240, 0.07, 0.18, 'sawtooth'), 120);
+  }
+
+  // Extreme recorded sneezes (see SNEEZE_KEYS), rotated at random so rapid
+  // fire doesn't sound canned. The blast transient sits ~70 ms into each cut,
+  // which the snot spray delay matches. Nothing is layered on top and there
+  // is no synth fallback: the sneeze gun should sound like a sneeze, full
+  // stop. Pass `at` ({x, y, z}) to place a remote player's sneeze in the
+  // world so it pans and attenuates with distance.
+  sneeze(gain = 1, at = null) {
+    if (!this.ctx) return;
+    const out = at ? this.spatial(at.x, at.y, at.z, 45) : this.master;
+    const pick = SNEEZE_KEYS[Math.floor(Math.random() * SNEEZE_KEYS.length)];
+    // Slight pitch variance for extra spread between back-to-back sneezes.
+    const tryPlay = () => {
+      if (this.playSample(pick, 1.1 * gain, out, 0.04)) return true;
+      // Preferred cut not decoded yet — any loaded variant beats silence.
+      for (const key of SNEEZE_KEYS) {
+        if (this.playSample(key, 1.1 * gain, out, 0.04)) return true;
+      }
+      return false;
+    };
+    if (tryPlay()) return;
+    // Samples still fetching/decoding (e.g. the first shot right after page
+    // load): kick the loader and play late rather than dropping the sneeze.
+    for (const key of SNEEZE_KEYS) this.loadSample(key, `/sounds/${key}.mp3`);
+    const startedAt = performance.now();
+    const retry = () => {
+      if (tryPlay()) return;
+      if (performance.now() - startedAt < 1500) setTimeout(retry, 120);
+    };
+    setTimeout(retry, 120);
+  }
+
+  // Sneeze reload gag: a big recorded honk into the napkin. Like sneeze(),
+  // recording-only (no synth fallback) with a short retry window in case the
+  // sample is still decoding. Pass `at` to place a remote player's honk.
+  noseBlow(gain = 1, at = null) {
+    if (!this.ctx) return;
+    const out = at ? this.spatial(at.x, at.y, at.z, 40) : this.master;
+    if (this.playSample('noseblow', 0.95 * gain, out, 0.04)) return;
+    this.loadSample('noseblow', '/sounds/noseblow.mp3');
+    const startedAt = performance.now();
+    const retry = () => {
+      if (this.playSample('noseblow', 0.95 * gain, out, 0.04)) return;
+      if (performance.now() - startedAt < 1200) setTimeout(retry, 120);
+    };
+    setTimeout(retry, 120);
   }
 
   // Real recorded fart for the poopgun reload, played when the hand reaches

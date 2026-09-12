@@ -854,11 +854,20 @@ export class Match {
     // the player's rear (35% into the reload) so nearby players hear it too.
     if (!player.reloadUntilTick) {
       player.fartedThisReload = false;
+      player.blewThisReload = false;
     } else if (player.weaponId === 'poopgun' && !player.fartedThisReload) {
       const grabTick = player.reloadUntilTick - Math.round(weapon.reload * TICK_RATE * 0.65);
       if (this.tick >= grabTick) {
         player.fartedThisReload = true;
         this.events.push({ k: 'fart', p: player.id, x: player.x, y: player.y, z: player.z });
+      }
+    } else if (player.weaponId === 'sneeze' && !player.blewThisReload) {
+      // Sneeze reload gag: the honking nose-blow into the napkin lands 55%
+      // into the reload, matching the local viewmodel timing.
+      const blowTick = player.reloadUntilTick - Math.round(weapon.reload * TICK_RATE * 0.45);
+      if (this.tick >= blowTick) {
+        player.blewThisReload = true;
+        this.events.push({ k: 'blow', p: player.id, x: player.x, y: player.y, z: player.z });
       }
     }
 

@@ -51,6 +51,8 @@
 
       <div id="top-right">
         <div id="net-info" class="hud-panel">
+          <span class="net-stat hidden" id="res-stat"><b id="res-scale">--</b>%res</span>
+          <span class="net-div hidden" id="res-div"></span>
           <span class="net-stat"><b id="fps">--</b>fps</span>
           <span class="net-div"></span>
           <span class="net-stat"><i id="ping-dot"></i><b id="ping">--</b>ms</span>
@@ -141,6 +143,16 @@
               <span>Sound volume</span>
               <input id="volume" type="range" min="0" max="100" value="55" step="5" />
               <output id="volume-val" for="volume">55%</output>
+            </label>
+            <label class="preference-row">
+              <span>Render resolution</span>
+              <input id="resolution" type="range" min="30" max="100" value="100" step="5" />
+              <output id="resolution-val" for="resolution">100%</output>
+            </label>
+            <label class="preference-row">
+              <span>Auto FPS boost</span>
+              <input id="auto-res" type="checkbox" checked />
+              <output id="auto-res-val" for="auto-res">On</output>
             </label>
           </div>
 

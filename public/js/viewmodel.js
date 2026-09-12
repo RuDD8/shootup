@@ -20,6 +20,7 @@ import {
   mountLmg,
   mountMachinePistol,
   mountMinigun,
+  mountNapkin,
   mountP90,
   mountPistol,
   mountPoopModel,
@@ -338,6 +339,10 @@ const THEMES = {
     water: mat(0x2f8fd6, { roughness: 0.1, metalness: 0 }),
     cap: mat(0x2f6fb8, { roughness: 0.35, metalness: 0.1 }),
     label: mat(0xf2f7fb, { roughness: 0.6, metalness: 0.02 }),
+  }),
+  sneeze: () => ({
+    // Theme exists so THEMES.sneeze() is safe; the viewmodel is just gloves.
+    skin: mat(0xd4a574, { roughness: 0.7, metalness: 0 }),
   }),
 };
 
@@ -1836,6 +1841,66 @@ const BUILDERS = {
     return g;
   },
 
+  sneeze() {
+    const g = new THREE.Group();
+    const gloveMat = GLOVE();
+    const fingerMat = FINGER();
+
+    // Idle: empty hands hovering mid-chest. On fire the cover hand rises to
+    // the face — but always late, after the snot has already blasted out.
+    // Built palm-toward-camera with the fingers UP and the forearm hanging
+    // from the palm's base, so the raise reads like a real arm coming up from
+    // the elbow instead of a wrist bending backwards.
+    const coverHand = new THREE.Group();
+    coverHand.position.set(0.18, -0.16, -0.18);
+    coverHand.rotation.set(-0.15, -0.25, 0.08);
+    coverHand.add(box(0.09, 0.11, 0.05, gloveMat, 0, 0, 0.01));
+    for (let i = 0; i < 4; i++) {
+      coverHand.add(box(0.02, 0.06, 0.03, fingerMat, -0.033 + i * 0.022, 0.075, 0.005));
+    }
+    // Right hand, palm out: thumb sits on the viewer's left.
+    coverHand.add(box(0.028, 0.045, 0.032, fingerMat, -0.052, 0.01, 0.015));
+    const wrist = new THREE.Group();
+    wrist.position.set(0.01, -0.065, 0.02);
+    wrist.add(forearm(1.0, 0.25, 0.36));
+    coverHand.add(wrist);
+    g.add(coverHand);
+
+    // Crumpled napkin pinched above the fingers, hidden until the reload
+    // pulls it out of the pocket. Parented to the cover hand so the pocket
+    // reach / wipe / blow all carry it for free.
+    const napkinHost = new THREE.Group();
+    napkinHost.position.set(0, 0.09, 0.03);
+    napkinHost.rotation.set(1.25, 0, 0.15);
+    const napkinMat = mat(0xeef0f3, { roughness: 0.95, metalness: 0 });
+    const napkinFallback = new THREE.Group();
+    napkinFallback.add(box(0.09, 0.013, 0.08, napkinMat, 0, 0, 0));
+    napkinFallback.add(box(0.06, 0.02, 0.055, napkinMat, 0.01, 0.013, -0.006));
+    napkinFallback.add(box(0.038, 0.016, 0.038, napkinMat, -0.012, 0.024, 0.006));
+    napkinHost.add(napkinFallback);
+    napkinHost.visible = false;
+    coverHand.add(napkinHost);
+    g.userData.napkin = napkinHost;
+    mountNapkin(napkinHost, { targetLength: 0.1 }).then((mounted) => {
+      if (mounted) napkinFallback.visible = false;
+    });
+
+    // Idle off-hand just hanging so the frame isn't empty between sneezes.
+    g.add(supportHand({
+      x: -0.16, y: -0.18, z: -0.05, rise: 0.04,
+      armPitch: 1.05, armYaw: -0.35, armLength: 0.36,
+    }));
+
+    g.userData.sneezeHand = coverHand;
+    g.userData.sneezeRest = {
+      position: coverHand.position.clone(),
+      rotation: coverHand.rotation.clone(),
+    };
+    // Blast originates from the face / camera, not a gun muzzle.
+    addMuzzle(g, 0, 0.08, -0.25, 0.2);
+    return g;
+  },
+
   knife() {
     const g = new THREE.Group();
     const t = THEMES.knife();
@@ -2473,6 +2538,11 @@ export const AVATAR_GUN_BUILDERS = {
     g.userData.length = 0.1;
     return g;
   },
+  sneeze() {
+    const g = new THREE.Group();
+    g.userData.length = 0.1;
+    return g;
+  },
   knife() {
     const g = new THREE.Group();
     const t = THEMES.knife();
@@ -2722,6 +2792,14 @@ export const AVATAR_HOLDS = {
     leftArm: [0.55, 0, 0.35],
     gunOffset: [0, 0, 0],
   },
+  sneeze: {
+    // Hands float near the chest — the cover hand will animate up on fire.
+    rightShoulder: [0.32, 1.32, 0.06],
+    leftShoulder: [-0.32, 1.28, 0.02],
+    rightArm: [0.7, 0.15, -0.45],
+    leftArm: [0.65, 0, 0.4],
+    gunOffset: [0, 0, 0],
+  },
 };
 
 // The viewmodel uses its own narrow FOV so the weapon reads large without
@@ -2730,6 +2808,7 @@ const VIEWMODEL_FOV = 54;
 const HOME = new THREE.Vector3(0.43, -0.18, -0.8);
 const KNIFE_HOME = new THREE.Vector3(0.1, -0.13, -0.82);
 const PEE_HOME = new THREE.Vector3(0, -0.28, -0.78);
+const SNEEZE_HOME = new THREE.Vector3(0, -0.12, -0.72);
 const BOW_HOME = new THREE.Vector3(0.2, -0.19, -0.82);
 const SCOPED = new THREE.Vector3(0.01, -0.16, -0.75);
 const VIEWMODEL_SCALE = 1.5;
@@ -2765,6 +2844,7 @@ export class ViewModel {
     this.swing = 0;
     this.throwPhase = 0;
     this.bowPhase = 0;
+    this.sneezePhase = 0;
     this.hidden = false;
   }
 
@@ -2785,6 +2865,9 @@ export class ViewModel {
     } else if (id === 'pee') {
       // Centered waist-level stance; no yaw/cant, there is no gun to cant.
       this.weapon.rotation.set(0, 0, 0);
+    } else if (id === 'sneeze') {
+      // Hands float in front of the face/chest — no gun cant.
+      this.weapon.rotation.set(0, 0, 0);
     } else if (id === 'bow') {
       // Slight archer cant; the bow stays near the screen centre so the
       // vertical limbs and the drawn arrow both read.
@@ -2798,6 +2881,7 @@ export class ViewModel {
     this.swing = 0;
     this.throwPhase = 0;
     this.bowPhase = 0;
+    this.sneezePhase = 0;
     this.holder.add(this.weapon);
   }
 
@@ -2816,6 +2900,7 @@ export class ViewModel {
     this.weaponId = null;
     this.swing = 0;
     this.throwPhase = 0;
+    this.sneezePhase = 0;
   }
 
   get barrelLength() {
@@ -2846,6 +2931,11 @@ export class ViewModel {
     this.bowPhase = 1;
   }
 
+  /** Mistimed face-cover: hand lunges for the mouth after the spray already left. */
+  playSneeze() {
+    this.sneezePhase = 1;
+  }
+
   look(dYaw, dPitch) {
     this.swayTarget.set(
       THREE.MathUtils.clamp(dYaw * 6, -0.09, 0.09),
@@ -2868,6 +2958,7 @@ export class ViewModel {
 
     if (this.swing > 0) this.swing = Math.max(0, this.swing - dt * 2.5);
     if (this.throwPhase > 0) this.throwPhase = Math.max(0, this.throwPhase - dt * 2.8);
+    if (this.sneezePhase > 0) this.sneezePhase = Math.max(0, this.sneezePhase - dt * 1.15);
 
     if (moving && onGround && !sliding) this.bobTime += dt * 9.5;
     else this.bobTime += dt * 1.6;
@@ -2881,17 +2972,23 @@ export class ViewModel {
         ? KNIFE_HOME
         : this.weaponId === 'pee'
           ? PEE_HOME
-          : this.weaponId === 'bow'
-            ? BOW_HOME
-            : HOME;
+          : this.weaponId === 'sneeze'
+            ? SNEEZE_HOME
+            : this.weaponId === 'bow'
+              ? BOW_HOME
+              : HOME;
     const crouchDrop = crouching ? 0.06 : 0;
     const slideDrop = sliding ? 0.1 : 0;
 
     this.reloadPhase = reloading ? Math.min(1, this.reloadPhase + dt * 4) : Math.max(0, this.reloadPhase - dt * 5);
-    // The poopgun (reach-behind grab), pee (bottle drink), and bow (arrow
-    // rearm) animate their own reload moves, so skip the generic barrel dip.
+    // The poopgun (reach-behind grab), pee (bottle drink), sneeze (face cover),
+    // and bow (arrow rearm) animate their own reload moves, so skip the
+    // generic barrel dip.
     const reloadDip =
-      this.weaponId === 'poopgun' || this.weaponId === 'pee' || this.weaponId === 'bow'
+      this.weaponId === 'poopgun' ||
+      this.weaponId === 'pee' ||
+      this.weaponId === 'sneeze' ||
+      this.weaponId === 'bow'
         ? 0
         : Math.sin(Math.PI * Math.min(1, reloadProgress || 0)) * this.reloadPhase;
 
@@ -3075,6 +3172,92 @@ export class ViewModel {
         bowRig.nockGroup.position.set(rest.x, rest.y, rest.z + pull);
         bowRig.nockGroup.rotation.set(0, 0, 0);
         bowRig.arrowHost.visible = !(typeof ammo === 'number' && ammo <= 0);
+      }
+    }
+
+    // Sneeze: the hand lunges AT the camera — palm growing until it covers
+    // most of the frame — but only arrives after the atchoo already fired.
+    // Timeline: barely moving at the blast (~t 0.08), lunge, cover, drop.
+    const sneezeHand = this.weaponId === 'sneeze' ? this.weapon.userData.sneezeHand : null;
+    if (sneezeHand && this.weapon.userData.sneezeRest) {
+      const rest = this.weapon.userData.sneezeRest;
+      const napkin = this.weapon.userData.napkin;
+      const rp = reloading ? Math.min(1, reloadProgress || 0) : 0;
+      if (rp > 0) {
+        // Napkin reload: the hand drops to the hip pocket, comes back up
+        // pinching a napkin, wipes across the nose, then a big honking blow
+        // (the noseblow sample lands at rp 0.55 — see main.js) before the
+        // napkin is stuffed back into the pocket.
+        this.sneezePhase = 0; // a pending cover lunge yields to the reload
+        const keys = [
+          { t: 0.0, p: [rest.position.x, rest.position.y, rest.position.z],
+            r: [rest.rotation.x, rest.rotation.y, rest.rotation.z] },
+          { t: 0.16, p: [0.3, -0.56, -0.1], r: [0.7, -0.2, -0.45] }, // into the pocket
+          { t: 0.24, p: [0.3, -0.56, -0.1], r: [0.7, -0.2, -0.45] }, // rummage
+          { t: 0.4, p: [0.03, -0.05, 0.14], r: [-0.28, 0, 0] }, // napkin to the face
+          { t: 0.52, p: [0.03, -0.05, 0.14], r: [-0.28, 0, 0] }, // wipe (wiggle below)
+          { t: 0.7, p: [0.03, -0.07, 0.17], r: [-0.35, 0, 0] }, // pressed in: the blow
+          { t: 0.88, p: [0.3, -0.56, -0.1], r: [0.7, -0.2, -0.45] }, // stow it
+          { t: 1.0, p: [rest.position.x, rest.position.y, rest.position.z],
+            r: [rest.rotation.x, rest.rotation.y, rest.rotation.z] },
+        ];
+        let a = keys[0];
+        let b = keys[keys.length - 1];
+        for (let i = 0; i < keys.length - 1; i++) {
+          if (rp >= keys[i].t && rp <= keys[i + 1].t) {
+            a = keys[i];
+            b = keys[i + 1];
+            break;
+          }
+        }
+        const u = smoothstep01((rp - a.t) / Math.max(0.0001, b.t - a.t));
+        // Side-to-side nose wipe, then a fast tremble while the honk rips.
+        const wipe = rp > 0.4 && rp < 0.54 ? Math.sin((rp - 0.4) * 135) * 0.035 : 0;
+        const tremor = rp > 0.54 && rp < 0.7 ? Math.sin(rp * 320) * 0.007 : 0;
+        sneezeHand.position.set(
+          THREE.MathUtils.lerp(a.p[0], b.p[0], u) + wipe + tremor,
+          THREE.MathUtils.lerp(a.p[1], b.p[1], u) + tremor * 0.6,
+          THREE.MathUtils.lerp(a.p[2], b.p[2], u),
+        );
+        sneezeHand.rotation.set(
+          THREE.MathUtils.lerp(a.r[0], b.r[0], u),
+          THREE.MathUtils.lerp(a.r[1], b.r[1], u),
+          THREE.MathUtils.lerp(a.r[2], b.r[2], u) + wipe * 2,
+        );
+        sneezeHand.scale.setScalar(1);
+        if (napkin) {
+          napkin.visible = rp > 0.18 && rp < 0.86;
+          // The napkin puffs out while the honk blasts into it.
+          const puff = rp > 0.54 && rp < 0.7
+            ? Math.sin(((rp - 0.54) / 0.16) * Math.PI) * 0.3
+            : 0;
+          napkin.scale.setScalar(1 + puff);
+        }
+      } else {
+        if (napkin) napkin.visible = false;
+        const t = 1 - this.sneezePhase;
+        let cover = 0;
+        if (this.sneezePhase > 0) {
+          if (t < 0.12) cover = smoothstep01(t / 0.12) * 0.2; // blast beats the hand
+          else if (t < 0.42) cover = 0.2 + smoothstep01((t - 0.12) / 0.3) * 0.8; // late lunge
+          else if (t < 0.72) cover = 1; // covering, after the fact
+          else cover = 1 - smoothstep01((t - 0.72) / 0.28); // sheepish drop
+        }
+        // Face pose: the hand rises to centre-frame just below the eye line and
+        // pushes toward the camera so the palm fills the lower half of the
+        // screen. Fingers stay up the whole way — only a slight backward tilt
+        // squares the palm to the camera, so the wrist never hyper-extends.
+        sneezeHand.position.set(
+          THREE.MathUtils.lerp(rest.position.x, 0.02, cover),
+          THREE.MathUtils.lerp(rest.position.y, -0.02, cover),
+          THREE.MathUtils.lerp(rest.position.z, 0.24, cover),
+        );
+        sneezeHand.rotation.set(
+          THREE.MathUtils.lerp(rest.rotation.x, -0.32, cover),
+          THREE.MathUtils.lerp(rest.rotation.y, 0, cover),
+          THREE.MathUtils.lerp(rest.rotation.z, 0, cover),
+        );
+        sneezeHand.scale.setScalar(1 + cover * 0.35);
       }
     }
 

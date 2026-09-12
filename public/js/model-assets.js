@@ -362,6 +362,17 @@ export function mountWaterBottle(parent, options = {}) {
   });
 }
 
+/** The sneeze weapon's reload prop: a crumpled napkin; targetLength = width. */
+export function mountNapkin(parent, options = {}) {
+  return mountWeaponModel(parent, {
+    url: '/models/napkin.glb',
+    name: 'Blender_Napkin',
+    targetLength: 0.16,
+    yaw: 0,
+    ...options,
+  });
+}
+
 /** The flying "FAHH" projectile text; targetLength normalizes glyph height. */
 export function mountFahhText(parent, options = {}) {
   return mountWeaponModel(parent, {

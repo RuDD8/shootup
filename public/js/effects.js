@@ -19,6 +19,7 @@ const SPARK_COLORS = {
   player: 0xff4d63,
   air: 0x9fc4ef,
   pee: 0xe9c93b,
+  snot: 0x8fbf3a,
 };
 
 export class Effects {
@@ -246,7 +247,8 @@ export class Effects {
       slot.material.color.setHex(color);
       // Additive sparks wash out to white on bright floors; liquid splashes
       // need their actual color to read.
-      slot.material.blending = kind === 'pee' ? THREE.NormalBlending : THREE.AdditiveBlending;
+      slot.material.blending =
+        kind === 'pee' || kind === 'snot' ? THREE.NormalBlending : THREE.AdditiveBlending;
       slot.material.opacity = 1;
       slot.vel.set(
         (Math.random() - 0.5) * power,
@@ -278,6 +280,30 @@ export class Effects {
         dz * speed + (Math.random() - 0.5) * jitter,
       );
       slot.maxLife = 0.5 + Math.random() * 0.25;
+      slot.life = slot.maxLife;
+    }
+  }
+
+  // Shotgun-style snot blast: thick green droplets launched hard along aim
+  // with a wide cone of jitter so the spray reads like sneeze mucus.
+  snotSpray(x, y, z, dx, dy, dz, count = 4, speed = 16) {
+    for (let i = 0; i < count; i++) {
+      const slot = this.sparks[this.sparkCursor];
+      this.sparkCursor = (this.sparkCursor + 1) % SPARK_COUNT;
+
+      slot.mesh.visible = true;
+      slot.mesh.position.set(x, y, z);
+      slot.mesh.scale.setScalar(0.55 + Math.random() * 0.7);
+      slot.material.color.setHex(SPARK_COLORS.snot);
+      slot.material.blending = THREE.NormalBlending;
+      slot.material.opacity = 0.95;
+      const jitter = 2.8;
+      slot.vel.set(
+        dx * speed + (Math.random() - 0.5) * jitter,
+        dy * speed + (Math.random() - 0.5) * jitter + 0.8,
+        dz * speed + (Math.random() - 0.5) * jitter,
+      );
+      slot.maxLife = 0.35 + Math.random() * 0.3;
       slot.life = slot.maxLife;
     }
   }

@@ -454,6 +454,7 @@ export function createAvatar(scene, slot) {
   let hold = AVATAR_HOLDS.pistol;
   let meleeSwing = 0;
   let throwAnim = 0;
+  let sneezeAnim = 0;
   const combinedArmRotation = new THREE.Quaternion();
 
   function applyHold() {
@@ -487,6 +488,18 @@ export function createAvatar(scene, slot) {
         rightForearm.rotation.set(-1.05 + follow * 0.82, 0, follow * -0.18);
         left.rotation.set(-hold.leftArm[0] * 0.45, hold.leftArm[1], hold.leftArm[2] * 0.45);
         leftForearm.rotation.set(-0.5, 0, 0);
+      } else if (sneezeAnim > 0 && gunId === 'sneeze') {
+        // Raise the right hand to the face — always a beat late vs the spray.
+        const t = 1 - sneezeAnim;
+        let cover = 0;
+        if (t < 0.3) cover = t / 0.3 * 0.55;
+        else if (t < 0.55) cover = 0.55 + ((t - 0.3) / 0.25) * 0.45;
+        else if (t < 0.75) cover = 1;
+        else cover = 1 - (t - 0.75) / 0.25;
+        right.rotation.set(-0.4 - cover * 1.15, cover * 0.35, -0.25 - cover * 0.4);
+        rightForearm.rotation.set(-0.7 - cover * 0.9, 0, cover * 0.25);
+        left.rotation.set(-hold.leftArm[0], hold.leftArm[1], hold.leftArm[2]);
+        leftForearm.rotation.set(-0.55, 0, 0);
       } else if (gunId === 'poopgun') {
         right.rotation.set(-0.58, 0, -0.32);
         rightForearm.rotation.set(-1.05, 0, 0);
@@ -583,6 +596,23 @@ export function createAvatar(scene, slot) {
       return;
     }
 
+    if (sneezeAnim > 0 && gunId === 'sneeze') {
+      const t = 1 - sneezeAnim;
+      let cover = 0;
+      if (t < 0.3) cover = (t / 0.3) * 0.55;
+      else if (t < 0.55) cover = 0.55 + ((t - 0.3) / 0.25) * 0.45;
+      else if (t < 0.75) cover = 1;
+      else cover = 1 - (t - 0.75) / 0.25;
+      rightArm.rotation.set(
+        hold.rightArm[0] - cover * 1.2,
+        hold.rightArm[1] + cover * 0.4,
+        hold.rightArm[2] - cover * 0.35,
+      );
+      leftArm.rotation.set(hold.leftArm[0], hold.leftArm[1], hold.leftArm[2]);
+      gunHold.quaternion.identity();
+      return;
+    }
+
     if (meleeSwing > 0 && gunId === 'knife') {
       const t = 1 - meleeSwing;
       const slash = Math.sin(Math.min(1, t * 1.05) * Math.PI);
@@ -633,6 +663,7 @@ export function createAvatar(scene, slot) {
     if (next === gunId) return;
     disposeGun();
     throwAnim = 0;
+    sneezeAnim = 0;
     const build = AVATAR_GUN_BUILDERS[next] || AVATAR_GUN_BUILDERS.pistol;
     gun = build();
     gunId = next;
@@ -666,6 +697,9 @@ export function createAvatar(scene, slot) {
     playThrow() {
       throwAnim = 1;
     },
+    playSneeze() {
+      sneezeAnim = 1;
+    },
     setWeaponLength(length) {
       // Kept for older call sites; prefer setWeapon(id).
       if (gun) gun.scale.z = Math.max(0.6, length);
@@ -680,6 +714,7 @@ export function createAvatar(scene, slot) {
 
       if (meleeSwing > 0) meleeSwing = Math.max(0, meleeSwing - 0.085);
       if (throwAnim > 0) throwAnim = Math.max(0, throwAnim - 0.075);
+      if (sneezeAnim > 0) sneezeAnim = Math.max(0, sneezeAnim - 0.055);
 
       const swing = Math.sin(walkPhase) * Math.min(1, speed / 4) * 0.55;
 

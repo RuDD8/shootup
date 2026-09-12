@@ -49,6 +49,29 @@ const effects = new Effects(scene);
 const hud = new Hud();
 const audio = new Audio();
 
+// Render-resolution scaling. BASE_PIXEL_RATIO is the crisp native ceiling;
+// the effective ratio is scaled down for weak GPUs — manually via the lobby
+// slider, or dynamically when Auto FPS boost sees the frame rate tank.
+const BASE_PIXEL_RATIO = Math.min(window.devicePixelRatio, 2);
+const resolution = {
+  scale: 1, // player preference (also the ceiling for auto mode)
+  auto: true,
+  dynamic: 1, // current auto-managed scale, never above `scale`
+  checkTimer: 0,
+  lastUpAt: -1e9, // "never" — so early step-downs aren't mistaken for failed probes
+  noUpUntil: 0,
+};
+
+function appliedResolutionScale() {
+  return resolution.auto ? Math.min(resolution.scale, resolution.dynamic) : resolution.scale;
+}
+
+function applyResolution() {
+  renderer.setPixelRatio(BASE_PIXEL_RATIO * appliedResolutionScale());
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  hud.setRenderScale(appliedResolutionScale());
+}
+
 // Screams pinned to live FAHH rockets, keyed by projectile id. Each handle
 // moves its 3D audio source along with the projectile and stops on impact.
 const projSounds = new Map();
@@ -157,6 +180,8 @@ function savePreferences() {
       JSON.stringify({
         sensitivity: Number($('sensitivity').value),
         volume: Number($('volume').value),
+        resolution: Number($('resolution').value),
+        autoRes: $('auto-res').checked,
       }),
     );
   } catch {
@@ -171,6 +196,16 @@ function applyPreferences() {
   audio.setVolume(volume / 100);
   $('sensitivity-val').textContent = String(sensitivity);
   $('volume-val').textContent = `${volume}%`;
+
+  const resolutionPct = Number($('resolution').value);
+  resolution.scale = resolutionPct / 100;
+  resolution.auto = $('auto-res').checked;
+  // A preference change is a fresh start for the auto stepper.
+  resolution.dynamic = resolution.scale;
+  resolution.noUpUntil = 0;
+  $('resolution-val').textContent = `${resolutionPct}%`;
+  $('auto-res-val').textContent = resolution.auto ? 'On' : 'Off';
+  applyResolution();
 }
 
 function loadPreferences() {
@@ -178,6 +213,8 @@ function loadPreferences() {
     const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
     if (Number.isFinite(saved.sensitivity)) $('sensitivity').value = saved.sensitivity;
     if (Number.isFinite(saved.volume)) $('volume').value = saved.volume;
+    if (Number.isFinite(saved.resolution)) $('resolution').value = saved.resolution;
+    if (typeof saved.autoRes === 'boolean') $('auto-res').checked = saved.autoRes;
   } catch {
     // Ignore malformed or unavailable local storage.
   }
@@ -490,9 +527,16 @@ function fireLocal({ chargeFrac = 1, beam = false, melee = false, projectile = f
   }
 
   const isPee = w.id === 'pee';
+  const isSneeze = w.id === 'sneeze';
 
-  if (!beam && !isPee) {
+  if (!beam && !isPee && !isSneeze) {
     effects.flash(tmpMuzzle.x, tmpMuzzle.y, tmpMuzzle.z, w.id === 'shotgun' ? 1.5 : 1.1);
+  }
+
+  if (isSneeze) {
+    // Hand starts covering immediately; the snot blast waits for the "CHOO"
+    // so the glove always arrives late.
+    viewModel.playSneeze();
   }
 
   const spreadBase = shotSpread(w, state.bloom, state.zooming, chargeFrac);
@@ -519,11 +563,11 @@ function fireLocal({ chargeFrac = 1, beam = false, melee = false, projectile = f
     const { dist, kind } = localTrace(ox, oy, oz, tmpDir);
     tmpEnd.set(ox, oy, oz).addScaledVector(tmpDir, dist);
 
-    if (!beam) {
+    if (!beam && !isSneeze) {
       effects.tracer(tmpMuzzle, tmpEnd, w.id === 'sniper' ? 0.03 : 0.02);
     }
     if (kind !== 'air') {
-      effects.spark(tmpEnd.x, tmpEnd.y, tmpEnd.z, kind, kind === 'player' ? 6 : 4);
+      effects.spark(tmpEnd.x, tmpEnd.y, tmpEnd.z, isSneeze ? 'snot' : kind, kind === 'player' ? 6 : 4);
     }
   }
 
@@ -535,6 +579,20 @@ function fireLocal({ chargeFrac = 1, beam = false, melee = false, projectile = f
     // One shared water loop for the whole spray, mirroring the beam hum.
     localGun.lastPeeShotAt = performance.now();
     if (!localGun.peeSound) localGun.peeSound = audio.peeLoop(0.55);
+  } else if (isSneeze) {
+    audio.sneeze(1);
+    // Match the recorded atchoo: the blast transient is ~70 ms into the
+    // sample, and the cover hand needs ~350 ms — so it always misses.
+    aimDirection(view.yaw, view.pitch, tmpDir);
+    const sx = ox + tmpDir.x * 0.2;
+    const sy = oy - 0.05;
+    const sz = oz + tmpDir.z * 0.2;
+    const dx = tmpDir.x;
+    const dy = tmpDir.y;
+    const dz = tmpDir.z;
+    setTimeout(() => {
+      effects.snotSpray(sx, sy, sz, dx, dy, dz, 16, 17);
+    }, 80);
   } else if (beam) {
     // One shared hum for the whole burst. Starting a new beamLoop per shot
     // (60/s at laser RPM) leaked unstoppable oscillators that droned forever.
@@ -589,7 +647,8 @@ function updateLocalGun(mask) {
     localGun.reloadEndsAt = now + w.reload * 1000;
     localGun.chargeStartAt = 0;
     if (w.id === 'pee') audio.drink(w.reload);
-    else audio.reload();
+    // Sneeze: no gun, so no magazine clack — recovery is silent.
+    else if (w.id !== 'sneeze') audio.reload();
     localGun.prevShoot = pressed;
     return;
   }
@@ -638,7 +697,8 @@ function updateLocalGun(mask) {
     if (w.reload > 0) {
       localGun.reloadEndsAt = now + w.reload * 1000;
       if (w.id === 'pee') audio.drink(w.reload);
-      else audio.reload();
+      // Sneeze: no gun, so no magazine clack — recovery is silent.
+      else if (w.id !== 'sneeze') audio.reload();
     }
     return;
   }
@@ -1136,6 +1196,36 @@ function handleEvents(events) {
       }
       if (ev.p === state.myId) continue;
       const [ox, oy, oz] = ev.o;
+      if (w.id === 'sneeze') {
+        const shooter = state.players.get(ev.p);
+        if (shooter?.avatar) shooter.avatar.playSneeze();
+        // Fixed gain: the spatial panner already attenuates with distance, so
+        // scaling by distance again made far sneezes doubly quiet.
+        audio.sneeze(1, { x: ox, y: oy, z: oz });
+        // Aim from origin toward the first hit (or forward if empty).
+        let dx = 0;
+        let dy = 0;
+        let dz = -1;
+        if (ev.hits?.length) {
+          const hit = ev.hits[0];
+          dx = hit.x - ox;
+          dy = hit.y - oy;
+          dz = hit.z - oz;
+          const len = Math.hypot(dx, dy, dz) || 1;
+          dx /= len;
+          dy /= len;
+          dz /= len;
+        }
+        setTimeout(() => {
+          effects.snotSpray(ox, oy, oz, dx, dy, dz, 14, 16);
+        }, 80);
+        for (const hit of ev.hits) {
+          if (hit.s !== 'air') {
+            effects.spark(hit.x, hit.y, hit.z, 'snot', hit.s === 'player' ? 6 : 4);
+          }
+        }
+        continue;
+      }
       if (ev.k !== 'beam') {
         effects.flash(ox, oy, oz, w.id === 'shotgun' ? 1.5 : 1.1);
       }
@@ -1185,6 +1275,18 @@ function handleEvents(events) {
           // World-positioned: the live listener pose keeps the sound coming
           // from the farter's direction even while the camera turns.
           audio.fart(1.15, { x: sx, y: sy, z: sz });
+        }
+      }
+    } else if (ev.k === 'blow') {
+      // Sneeze reload honk. The local player already honks in sync with its
+      // own napkin animation, so only remote blows are played here.
+      if (ev.p !== state.myId) {
+        const src = state.players.get(ev.p);
+        const sx = src?.render?.x ?? ev.x;
+        const sy = (src?.render?.y ?? ev.y) + 1;
+        const sz = src?.render?.z ?? ev.z;
+        if (Math.hypot(sx - state.local.x, sz - state.local.z) < 30) {
+          audio.noseBlow(1, { x: sx, y: sy, z: sz });
         }
       }
     } else if (ev.k === 'projImpact') {
@@ -1495,6 +1597,20 @@ function frame(now) {
     localGun.fartArmed = false;
   }
 
+  // Sneeze reload gag: the honking nose-blow rips exactly when the napkin is
+  // pressed into the face (55% through the reload — see the viewmodel keys).
+  // Same arm/disarm scheme as the fart so server-echo tails can't double it.
+  if (w.id === 'sneeze' && reloading) {
+    if (reloadProgress < 0.55) {
+      localGun.blowArmed = true;
+    } else if (localGun.blowArmed) {
+      localGun.blowArmed = false;
+      audio.noseBlow();
+    }
+  } else {
+    localGun.blowArmed = false;
+  }
+
   viewModel.update(dt, {
     moving,
     onGround: state.local.onGround,
@@ -1545,6 +1661,30 @@ function frame(now) {
   updateFootsteps(dt);
   hud.update(dt);
   updateHud(reloading, reloadProgress);
+
+  // Auto FPS boost: trade render resolution for frame rate. Steps down hard
+  // while the GPU can't keep up, then probes back up once there is headroom.
+  // A probe that immediately tanks the frame rate blocks further probing for
+  // a while so the picture doesn't visibly pump between sharp and blurry.
+  if (resolution.auto && state.phase === 'game') {
+    resolution.checkTimer -= dt;
+    if (resolution.checkTimer <= 0) {
+      resolution.checkTimer = 2;
+      if (hud.fps < 50 && resolution.dynamic > 0.35) {
+        resolution.dynamic = Math.max(0.35, resolution.dynamic - 0.1);
+        if (now - resolution.lastUpAt < 6000) resolution.noUpUntil = now + 30000;
+        applyResolution();
+      } else if (
+        hud.fps > 57 &&
+        resolution.dynamic < resolution.scale &&
+        now >= resolution.noUpUntil
+      ) {
+        resolution.dynamic = Math.min(resolution.scale, resolution.dynamic + 0.05);
+        resolution.lastUpAt = now;
+        applyResolution();
+      }
+    }
+  }
 
   renderer.clear();
   renderer.render(scene, camera);
@@ -1715,12 +1855,17 @@ for (const btn of document.querySelectorAll('.mode-btn')) {
   });
 }
 
-for (const id of ['sensitivity', 'volume']) {
+for (const id of ['sensitivity', 'volume', 'resolution']) {
   $(id).addEventListener('input', () => {
     applyPreferences();
     savePreferences();
   });
 }
+
+$('auto-res').addEventListener('change', () => {
+  applyPreferences();
+  savePreferences();
+});
 
 $('dm-minutes').addEventListener('input', () => {
   $('dm-minutes-val').textContent = $('dm-minutes').value;

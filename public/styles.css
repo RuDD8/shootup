@@ -167,6 +167,13 @@ input[type="range"] {
   color: var(--text);
 }
 
+.preference-row input[type='checkbox'] {
+  justify-self: start;
+  width: 14px;
+  height: 14px;
+  accent-color: var(--cyan);
+}
+
 #code-input {
   font-family: var(--mono);
   text-transform: uppercase;

@@ -355,6 +355,20 @@ async function testServer() {
         bottleAsset.headers.get('content-type') === 'model/gltf-binary' &&
         Number(bottleAsset.headers.get('content-length')) > 1000,
     );
+    const napkinAsset = await fetch(`http://127.0.0.1:${PORT}/models/napkin.glb`);
+    check(
+      'Blender napkin is served as a GLB asset',
+      napkinAsset.ok &&
+        napkinAsset.headers.get('content-type') === 'model/gltf-binary' &&
+        Number(napkinAsset.headers.get('content-length')) > 1000,
+    );
+    const noseblowSample = await fetch(`http://127.0.0.1:${PORT}/sounds/noseblow.mp3`);
+    check(
+      'noseblow sample is served as an MP3 asset',
+      noseblowSample.ok &&
+        noseblowSample.headers.get('content-type') === 'audio/mpeg' &&
+        Number(noseblowSample.headers.get('content-length')) > 1000,
+    );
     const bowAsset = await fetch(`http://127.0.0.1:${PORT}/models/bow.glb`);
     check(
       'Blender bow is served as a GLB asset',
@@ -410,6 +424,15 @@ async function testServer() {
         peeSample.headers.get('content-type') === 'audio/mpeg' &&
         Number(peeSample.headers.get('content-length')) > 1000,
     );
+    for (const name of ['sneeze1', 'sneeze2', 'sneeze3', 'sneeze4']) {
+      const sneezeSample = await fetch(`http://127.0.0.1:${PORT}/sounds/${name}.mp3`);
+      check(
+        `${name} sample is served as an MP3 asset`,
+        sneezeSample.ok &&
+          sneezeSample.headers.get('content-type') === 'audio/mpeg' &&
+          Number(sneezeSample.headers.get('content-length')) > 1000,
+      );
+    }
 
     const a = openClient('A');
     const b = openClient('B');
