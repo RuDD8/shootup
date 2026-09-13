@@ -5,7 +5,7 @@
 //   node test/smoke.mjs
 
 import { spawn } from 'node:child_process';
-import { generateArena, mulberry32, pickSafeSpawn, tileHeight } from '../shared/arena.js';
+import { cellCenter, generateArena, mulberry32, pickSafeSpawn, tileHeight } from '../shared/arena.js';
 import { stepPlayer } from '../shared/physics.js';
 import { loadArena, MAP_FY_SNOW } from '../shared/maps/index.js';
 import { FY_SNOW_SPAWNS } from '../shared/maps/fy_snow.js';
@@ -291,6 +291,47 @@ function testClimbPhysics() {
     `ended at y=${p.y.toFixed(2)} x=${p.x.toFixed(1)} (deck is ${DECK_H})`,
   );
   check('climb never exceeds wall height', peak + 0.01 < WALL_H, `peak ${peak.toFixed(2)}`);
+}
+
+// A full simulated duel on Dust Bowl: the human is pinned on the central
+// platform and the bot has to route up the stair ladder to contest it. This
+// exercises the climb-aware pathfinding and the ledge-hop input end to end.
+function testBotClimb() {
+  console.log('\nbot verticality');
+
+  const match = new Match({ code: 'CLIMB' }, { mode: GAME_MODE.DUEL, mapId: 'dust_bowl' });
+  const human = match.addPlayer('h', 'Human', null);
+  match.addBot('b1', 'Bot 1');
+  const bot = match.players.find((p) => p.isBot);
+
+  for (let i = 0; i < 60 * 10 && match.state !== MATCH_STATE.LIVE; i++) match.update();
+  check('duel with a bot reaches the live state', match.state === MATCH_STATE.LIVE);
+
+  const platform = cellCenter(5, 5, 12);
+  let peak = 0;
+  let climbed = false;
+  for (let t = 0; t < 60 * 30; t++) {
+    // Park an unkillable human on the platform so the bot must come up.
+    human.x = platform.x;
+    human.z = platform.z;
+    human.y = HIGH_H;
+    human.vx = 0;
+    human.vy = 0;
+    human.vz = 0;
+    human.health = 1e9;
+    human.alive = true;
+    match.update();
+    peak = Math.max(peak, bot.y);
+    if (bot.onGround && bot.y >= HIGH_H - 0.01) {
+      climbed = true;
+      break;
+    }
+  }
+  check(
+    'bot climbs the Dust Bowl platform to contest high ground',
+    climbed,
+    `bot y=${bot.y.toFixed(2)} peak=${peak.toFixed(2)} (platform is ${HIGH_H})`,
+  );
 }
 
 function testWeaponRandomisation() {
@@ -856,6 +897,7 @@ console.log('Duel Arena smoke test');
 testArenas();
 testStaticMaps();
 testClimbPhysics();
+testBotClimb();
 testWeaponRandomisation();
 testGunGameRules();
 testLagComp();

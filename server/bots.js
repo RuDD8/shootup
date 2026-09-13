@@ -3,9 +3,18 @@ import {
   MAX_PITCH,
   MATCH_STATE,
   TICK_DT,
-  TILE_OPEN,
+  TILE_WALL,
+  JUMP_SPEED,
+  GRAVITY,
+  STEP_UP,
 } from '../shared/constants.js';
-import { cellCenter, cellOf, gridSize, listSpawnCells } from '../shared/arena.js';
+import {
+  cellCenter,
+  cellOf,
+  gridSize,
+  solidHeightAt,
+  tileHeight,
+} from '../shared/arena.js';
 import { raycastWorld } from '../shared/physics.js';
 import { PRIMARY_WEAPON_IDS } from '../shared/weapons.js';
 
@@ -30,6 +39,11 @@ const REACTION_MAX_TICKS = 34;
 // Keep tracking the last known position briefly after LOS breaks.
 const MEMORY_TICKS = 72;
 const REPATH_TICKS = 18;
+
+// Highest ledge a hop can mount: jump apex plus the step-up allowance. Same
+// ladder the maps are designed around (ground -> step -> crate -> platform ->
+// deck), so bots can contest every perch a human can reach.
+const MAX_MOUNT = (JUMP_SPEED * JUMP_SPEED) / (2 * GRAVITY) + STEP_UP;
 
 function decodeInput(mask, yaw, pitch) {
   return {
@@ -105,7 +119,12 @@ function aimError(yaw, pitch, dx, dy, dz, horiz) {
   return Math.hypot(yawErr, pitchErr);
 }
 
-/** Return the first open cell on a shortest path, or null when no path exists. */
+/**
+ * Return the first cell on a shortest path, or null when no path exists.
+ * The graph walks column tops, not just open floor: a neighbour is reachable
+ * when the height gain fits under a hop (drops are always allowed), so routes
+ * legitimately cross crates, steps, platforms and sniper decks.
+ */
 function nextPathCell(grid, start, goal) {
   const size = gridSize(grid);
   const index = (c, r) => r * size + c;
@@ -125,12 +144,14 @@ function nextPathCell(grid, start, goal) {
     const current = queue[read++];
     const c = current % size;
     const r = Math.floor(current / size);
+    const standing = tileHeight(grid[current]);
     for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
       const nc = c + dc;
       const nr = r + dr;
       if (nc < 0 || nr < 0 || nc >= size || nr >= size) continue;
       const next = index(nc, nr);
-      if (previous[next] !== -1 || grid[next] !== TILE_OPEN) continue;
+      if (previous[next] !== -1 || grid[next] === TILE_WALL) continue;
+      if (tileHeight(grid[next]) - standing > MAX_MOUNT) continue;
       previous[next] = current;
       queue[write++] = next;
     }
@@ -142,8 +163,17 @@ function nextPathCell(grid, start, goal) {
   return { c: step % size, r: Math.floor(step / size) };
 }
 
+// Patrol anywhere standable, high ground included — bots that only wander the
+// floor never contest a catwalk or deck.
 function randomPatrolCell(match) {
-  const cells = listSpawnCells(match.arena.grid);
+  const grid = match.arena.grid;
+  const size = gridSize(grid);
+  const cells = [];
+  for (let r = 1; r < size - 1; r++) {
+    for (let c = 1; c < size - 1; c++) {
+      if (grid[r * size + c] !== TILE_WALL) cells.push({ c, r });
+    }
+  }
   return cells[Math.floor(Math.random() * cells.length)] || { c: 2, r: 2 };
 }
 
@@ -161,6 +191,7 @@ function initBotState(player, tick) {
     patrolCell: null,
     waypoint: null,
     nextPathTick: tick,
+    climbUntil: 0,
   };
 }
 
@@ -216,20 +247,27 @@ function computeBotInput(match, player) {
     );
   }
 
-  // When sight is blocked, follow the open-cell graph toward the last seen
-  // position. Once memory expires, patrol instead of staring into a wall.
+  // Navigate the walkable graph when sight is blocked (chase memory, then
+  // patrol) — and also when the target visibly holds ground too high to hop
+  // straight up, in which case the route is the climb ladder toward them.
+  // Strafing at the base of a platform never wins that fight.
+  const targetTooHigh = canSee && target.y - player.y > MAX_MOUNT;
   let navigating = false;
-  if (!canSee) {
+  if (!canSee || targetTooHigh) {
     const arenaSize = gridSize(match.arena.grid);
     const currentCell = cellOf(player.x, player.z, arenaSize);
     const reachedPatrol =
       bs.patrolCell &&
       currentCell.c === bs.patrolCell.c &&
       currentCell.r === bs.patrolCell.r;
-    if (!hasMemory && (!bs.patrolCell || reachedPatrol)) {
+    if (!canSee && !hasMemory && (!bs.patrolCell || reachedPatrol)) {
       bs.patrolCell = randomPatrolCell(match);
     }
-    const goal = hasMemory ? cellOf(bs.lastSeen.x, bs.lastSeen.z, arenaSize) : bs.patrolCell;
+    const goal = canSee
+      ? cellOf(target.x, target.z, arenaSize)
+      : hasMemory
+        ? cellOf(bs.lastSeen.x, bs.lastSeen.z, arenaSize)
+        : bs.patrolCell;
     if (goal && match.tick >= bs.nextPathTick) {
       bs.nextPathTick = match.tick + REPATH_TICKS;
       bs.waypoint = nextPathCell(match.arena.grid, currentCell, goal);
@@ -272,6 +310,21 @@ function computeBotInput(match, player) {
   if (player.onGround && horiz > 6 && match.tick % 150 < 8) {
     mask |= KEY.JUMP;
   }
+
+  // Hop climbable ledges: when the column just ahead of the facing direction
+  // is a mountable step up (crate, stair, platform edge), jump instead of
+  // shuffling against the face — and keep pushing forward through the whole
+  // arc, or the hop stalls mid-air and drops back onto the lower tier.
+  if (player.onGround && (mask & (KEY.FORWARD | KEY.LEFT | KEY.RIGHT))) {
+    const aheadX = player.x - Math.sin(yaw) * 1.1;
+    const aheadZ = player.z - Math.cos(yaw) * 1.1;
+    const aheadH = solidHeightAt(match.arena.grid, aheadX, aheadZ);
+    if (aheadH > player.y + STEP_UP && aheadH <= player.y + MAX_MOUNT) {
+      mask |= KEY.JUMP;
+      if (navigating || dy > STEP_UP) bs.climbUntil = match.tick + 30;
+    }
+  }
+  if (match.tick < bs.climbUntil) mask |= KEY.FORWARD;
 
   if (player.ammo <= 0 && player.reloadUntilTick === 0) {
     mask |= KEY.RELOAD;
