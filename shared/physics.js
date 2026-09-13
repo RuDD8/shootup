@@ -261,8 +261,12 @@ export function raycastWorld(grid, ox, oy, oz, dx, dy, dz, maxDist) {
         return { hit: true, dist: t, surface: 'wall' };
       }
       if (dy < 0) {
+        // Descending onto the column's top face. The hit must lie within this
+        // ray's reach — without the maxDist bound, a lobbed projectile inside
+        // a tall cell's airspace "hits" the top from any height above it and
+        // reports a distance far beyond the actual step.
         const tTop = (h - oy) / dy;
-        if (tTop >= t && tTop <= tExit) {
+        if (tTop >= t && tTop <= tExit && tTop <= maxDist) {
           return { hit: true, dist: tTop, surface: 'wall' };
         }
       }

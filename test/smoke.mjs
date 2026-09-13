@@ -346,6 +346,61 @@ function testBotClimb() {
   );
 }
 
+function testHazardOnPlatform() {
+  console.log('\nprojectile hazards on raised ground');
+
+  // Drop a poop projectile onto the Dust Bowl central platform and confirm the
+  // pool lands ON the platform surface, burns whoever stands up there, and
+  // leaves players on the ground below untouched.
+  const scenario = (targetY) => {
+    const match = new Match({ code: 'HAZRD' }, { mode: GAME_MODE.DEATHMATCH, mapId: 'dust_bowl' });
+    match.addPlayer('s', 'Shooter', null);
+    const target = match.addPlayer('t', 'Target', null);
+    match.beginMatch();
+    for (let i = 0; i < 600 && match.state !== MATCH_STATE.LIVE; i++) match.update();
+
+    const platform = cellCenter(5, 5, 12);
+    match.projectiles.push({
+      id: 999, owner: 's', weapon: WEAPONS.poopgun, damage: WEAPONS.poopgun.damage,
+      x: platform.x + 0.8, y: HIGH_H + 3, z: platform.z + 0.8,
+      vx: 0, vy: -2, vz: 0, age: 0,
+    });
+
+    target.health = 1000;
+    let poolY = null;
+    for (let t = 0; t < 60 * 4; t++) {
+      target.x = platform.x;
+      target.z = platform.z;
+      target.y = targetY;
+      target.vx = target.vy = target.vz = 0;
+      target.alive = true;
+      target.spawnProtectUntil = 0;
+      match.update();
+      if (poolY === null && match.hazards.length) poolY = match.hazards[0].y;
+    }
+    return { poolY, damage: 1000 - target.health };
+  };
+
+  const onPlatform = scenario(HIGH_H);
+  check(
+    'poop pool settles on the platform surface',
+    onPlatform.poolY !== null && Math.abs(onPlatform.poolY - HIGH_H) < 0.01,
+    `pool y=${onPlatform.poolY}`,
+  );
+  check(
+    'pool damages a player standing on the platform',
+    onPlatform.damage > 20,
+    `damage=${onPlatform.damage.toFixed(1)}`,
+  );
+
+  const belowPlatform = scenario(0);
+  check(
+    'platform pool spares a player on the ground beneath it',
+    belowPlatform.damage === 0,
+    `damage=${belowPlatform.damage.toFixed(1)}`,
+  );
+}
+
 function testWeaponRandomisation() {
   console.log('\nweapon randomisation');
   const counts = Object.fromEntries(WEAPON_IDS.map((id) => [id, 0]));
@@ -953,6 +1008,7 @@ testArenas();
 testStaticMaps();
 testClimbPhysics();
 testBotClimb();
+testHazardOnPlatform();
 testWeaponRandomisation();
 testGunGameRules();
 testLagComp();

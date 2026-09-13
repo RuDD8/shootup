@@ -24,7 +24,7 @@ import {
   playerHeadHeight,
 } from '../shared/constants.js';
 import { interpolateHistory, lagCompTicks, historyCapacity } from '../shared/lagcomp.js';
-import { serializeArena, cellCenter, pickSafeSpawn } from '../shared/arena.js';
+import { serializeArena, cellCenter, pickSafeSpawn, solidHeightAt } from '../shared/arena.js';
 import { loadArena, MAP_RANDOM, normalizeMapId, mapName } from '../shared/maps/index.js';
 import { stepPlayer, raycastWorld, rayCylinder } from '../shared/physics.js';
 import {
@@ -1315,6 +1315,25 @@ export class Match {
     }
   }
 
+  // A lingering damage pool (poop puddle) resting on the surface at poolY.
+  spawnHazard(proj, x, poolY, z) {
+    this.hazards.push({
+      x,
+      y: poolY,
+      z,
+      radius: proj.weapon.hazardRadius,
+      dps: proj.weapon.hazardDps || 8,
+      owner: proj.owner,
+      remainingTicks: Math.round((proj.weapon.hazardDuration || 5) * TICK_RATE),
+    });
+    this.events.push({
+      k: 'hazardSpawn',
+      x, y: poolY, z,
+      r: proj.weapon.hazardRadius,
+      dur: proj.weapon.hazardDuration || 5,
+    });
+  }
+
   tickProjectiles() {
     const toRemove = [];
     for (let i = 0; i < this.projectiles.length; i++) {
@@ -1326,19 +1345,22 @@ export class Match {
       const ny = proj.y + proj.vy * TICK_DT;
       const nz = proj.z + proj.vz * TICK_DT;
 
-      // World collision
-      const world = raycastWorld(
-        this.arena.grid, proj.x, proj.y, proj.z,
-        proj.vx * TICK_DT, proj.vy * TICK_DT, proj.vz * TICK_DT,
-        Math.hypot(proj.vx, proj.vy, proj.vz) * TICK_DT,
-      );
+      // World collision. Direction must be normalized so the raycast's
+      // distances are in meters and bounded by this tick's actual travel.
+      const speed = Math.hypot(proj.vx, proj.vy, proj.vz);
+      const stepLen = speed * TICK_DT;
+      const world = speed > 0
+        ? raycastWorld(
+            this.arena.grid, proj.x, proj.y, proj.z,
+            proj.vx / speed, proj.vy / speed, proj.vz / speed,
+            stepLen,
+          )
+        : { hit: false };
 
-      let hitWorld = false;
       if (world.hit || ny <= 0) {
-        hitWorld = true;
-        const hx = ny <= 0 ? nx : proj.x + (world.dist / Math.hypot(proj.vx, proj.vy, proj.vz) / TICK_DT) * proj.vx * TICK_DT;
-        const hy = ny <= 0 ? 0 : proj.y + (world.dist / Math.hypot(proj.vx, proj.vy, proj.vz) / TICK_DT) * proj.vy * TICK_DT;
-        const hz = ny <= 0 ? nz : proj.z + (world.dist / Math.hypot(proj.vx, proj.vy, proj.vz) / TICK_DT) * proj.vz * TICK_DT;
+        const hx = ny <= 0 && !world.hit ? nx : proj.x + (proj.vx / speed) * world.dist;
+        const hy = ny <= 0 && !world.hit ? 0 : proj.y + (proj.vy / speed) * world.dist;
+        const hz = ny <= 0 && !world.hit ? nz : proj.z + (proj.vz / speed) * world.dist;
 
         this.events.push({
           k: 'projImpact',
@@ -1350,21 +1372,15 @@ export class Match {
         this.explodeProjectile(proj, hx, Math.max(0, hy), hz);
 
         if (proj.weapon.hazardRadius) {
-          this.hazards.push({
-            x: hx,
-            y: 0,
-            z: hz,
-            radius: proj.weapon.hazardRadius,
-            dps: proj.weapon.hazardDps || 8,
-            owner: proj.owner,
-            remainingTicks: Math.round((proj.weapon.hazardDuration || 5) * TICK_RATE),
-          });
-          this.events.push({
-            k: 'hazardSpawn',
-            x: hx, y: 0, z: hz,
-            r: proj.weapon.hazardRadius,
-            dur: proj.weapon.hazardDuration || 5,
-          });
+          // The pool settles on whatever surface is under the impact. Sample a
+          // hair back along the flight path so a side-of-wall hit reads the
+          // column the projectile came from, not the wall it splattered on.
+          const poolY = solidHeightAt(
+            this.arena.grid,
+            hx - (proj.vx / speed) * 0.05,
+            hz - (proj.vz / speed) * 0.05,
+          );
+          this.spawnHazard(proj, hx, poolY, hz);
         }
         toRemove.push(i);
         continue;
@@ -1397,19 +1413,9 @@ export class Match {
           }
         }
         if (proj.weapon.hazardRadius) {
-          this.hazards.push({
-            x: nx, y: 0, z: nz,
-            radius: proj.weapon.hazardRadius,
-            dps: proj.weapon.hazardDps || 8,
-            owner: proj.owner,
-            remainingTicks: Math.round((proj.weapon.hazardDuration || 5) * TICK_RATE),
-          });
-          this.events.push({
-            k: 'hazardSpawn',
-            x: nx, y: 0, z: nz,
-            r: proj.weapon.hazardRadius,
-            dur: proj.weapon.hazardDuration || 5,
-          });
+          // Direct hit on a player: the pool lands on the surface they stand
+          // over, which on a platform is the platform top, not the ground.
+          this.spawnHazard(proj, nx, solidHeightAt(this.arena.grid, nx, nz), nz);
         }
         this.events.push({
           k: 'projImpact',
@@ -1453,6 +1459,11 @@ export class Match {
         const dx = player.x - hz.x;
         const dz = player.z - hz.z;
         if (Math.hypot(dx, dz) >= hz.radius + HIT_RADIUS) continue;
+        // Same level only: a pool on a platform must not burn players on the
+        // ground beneath it, and vice versa. Feet near the pool surface count
+        // (a jump apex is 1.53, so hopping through still stings).
+        const dy = player.y - hz.y;
+        if (dy < -0.9 || dy > 1.9) continue;
 
         const dmg = Math.round(dmgPerTick * 100) / 100;
         player.health -= dmg;
