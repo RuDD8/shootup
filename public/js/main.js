@@ -1947,13 +1947,21 @@ function weaponTag(w) {
 // Square-root scaling keeps low-stat bars visible while the outliers
 // (knife damage, laser fire rate, minigun mag) still read as maxed.
 function statBars(w) {
-  const dmg = Math.min(1, Math.sqrt((w.damage * w.pellets) / 200));
-  const rate = Math.min(1, Math.sqrt(w.rpm / 1800));
-  const mag = Math.min(1, Math.sqrt(Math.min(w.magazine, 150) / 150));
+  const shot = w.damage * w.pellets;
   return [
-    ['DMG', dmg],
-    ['ROF', rate],
-    ['MAG', mag],
+    [
+      'DMG',
+      Math.min(1, Math.sqrt(shot / 200)),
+      w.pellets > 1
+        ? `Damage: ${w.damage} × ${w.pellets} pellets = ${shot} per shot`
+        : `Damage: ${w.damage} per shot`,
+    ],
+    ['ROF', Math.min(1, Math.sqrt(w.rpm / 1800)), `Fire rate: ${w.rpm} rpm`],
+    [
+      'MAG',
+      Math.min(1, Math.sqrt(Math.min(w.magazine, 150) / 150)),
+      `Magazine: ${w.magazine > 900 ? 'infinite' : w.magazine} rounds`,
+    ],
   ];
 }
 
@@ -1992,11 +2000,16 @@ const pickGrid = $('pick-grid');
 
       const bars = document.createElement('span');
       bars.className = 'pick-bars';
-      for (const [statLabel, v] of statBars(w)) {
+      for (const [statLabel, v, tip] of statBars(w)) {
+        const row = document.createElement('span');
+        row.className = 'pick-bar';
+        row.title = tip;
+        const label = document.createElement('b');
+        label.textContent = statLabel;
         const bar = document.createElement('i');
-        bar.title = statLabel;
         bar.style.setProperty('--v', v.toFixed(2));
-        bars.appendChild(bar);
+        row.append(label, bar);
+        bars.appendChild(row);
       }
 
       btn.append(name, tag, bars);

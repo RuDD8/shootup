@@ -1110,15 +1110,36 @@ button.secondary:hover {
   color: rgba(186, 230, 253, 0.8);
 }
 
-/* Three mini stat bars: damage, rate of fire, magazine. --v is 0..1. */
+/* Labeled mini stat rows: damage, rate of fire, magazine. --v is 0..1. */
 .pick-bars {
   display: flex;
+  flex-direction: column;
   gap: 3px;
   width: 100%;
-  margin-top: 2px;
+  margin-top: 3px;
 }
 
-.pick-bars i {
+.pick-bar {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.pick-bar b {
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: 0.8px;
+  line-height: 1;
+  color: var(--dim);
+  width: 24px;
+  flex-shrink: 0;
+}
+
+.pick-btn.selected .pick-bar b {
+  color: rgba(186, 230, 253, 0.75);
+}
+
+.pick-bar i {
   flex: 1;
   height: 3px;
   border-radius: 2px;
@@ -1130,7 +1151,7 @@ button.secondary:hover {
     );
 }
 
-.pick-btn.selected .pick-bars i {
+.pick-btn.selected .pick-bar i {
   background:
     linear-gradient(
       to right,
