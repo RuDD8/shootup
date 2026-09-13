@@ -1317,11 +1317,32 @@ export class Match {
 
   // A lingering damage pool (poop puddle) resting on the surface at poolY.
   spawnHazard(proj, x, poolY, z) {
+    let radius = proj.weapon.hazardRadius;
+    if (poolY > 0.01) {
+      // A full-size pool (2.5m radius) is wider than a 4m crate top, and the
+      // decal is a flat disc — any overhang floats in mid-air past the edge.
+      // Shrink the pool to fit its perch: sample outward in 8 directions and
+      // stop where the supporting surface changes height. Ground pools stay
+      // full size; walls and crate bases hide their overlap naturally.
+      let fit = radius;
+      for (let a = 0; a < 8; a++) {
+        const ux = Math.cos((a * Math.PI) / 4);
+        const uz = Math.sin((a * Math.PI) / 4);
+        let d = 0.3;
+        while (d < radius) {
+          const h = solidHeightAt(this.arena.grid, x + ux * d, z + uz * d);
+          if (Math.abs(h - poolY) > 0.01) break;
+          d += 0.25;
+        }
+        fit = Math.min(fit, d);
+      }
+      radius = Math.max(0.7, Math.min(radius, fit));
+    }
     this.hazards.push({
       x,
       y: poolY,
       z,
-      radius: proj.weapon.hazardRadius,
+      radius,
       dps: proj.weapon.hazardDps || 8,
       owner: proj.owner,
       remainingTicks: Math.round((proj.weapon.hazardDuration || 5) * TICK_RATE),
@@ -1329,7 +1350,7 @@ export class Match {
     this.events.push({
       k: 'hazardSpawn',
       x, y: poolY, z,
-      r: proj.weapon.hazardRadius,
+      r: radius,
       dur: proj.weapon.hazardDuration || 5,
     });
   }
