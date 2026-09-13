@@ -142,6 +142,48 @@ export function mountFahhGun(parent, options = {}) {
   });
 }
 
+/** The banana gun's banana — also the flying projectile. */
+export function mountBanana(parent, options = {}) {
+  return mountWeaponModel(parent, {
+    url: '/models/banana.glb',
+    name: 'Blender_Banana',
+    targetLength: 0.4,
+    ...options,
+  });
+}
+
+/** A splayed banana peel lying on the floor; targetLength = footprint width. */
+export function mountBananaPeel(parent, options = {}) {
+  return mountWeaponModel(parent, {
+    url: '/models/banana_peel.glb',
+    name: 'Blender_Banana_Peel',
+    targetLength: 0.85,
+    yaw: 0,
+    ...options,
+  });
+}
+
+/** La Chancla: the flying slipper of maternal justice. */
+export function mountChancla(parent, options = {}) {
+  return mountWeaponModel(parent, {
+    url: '/models/chancla.glb',
+    name: 'Blender_Chancla',
+    targetLength: 0.42,
+    ...options,
+  });
+}
+
+/** A six-sided die with proper pips; targetLength = cube edge. */
+export function mountDice(parent, options = {}) {
+  return mountWeaponModel(parent, {
+    url: '/models/dice.glb',
+    name: 'Blender_Dice',
+    targetLength: 0.2,
+    yaw: 0,
+    ...options,
+  });
+}
+
 /** Blender-authored airhorn: red can + chrome bell; targetLength = height. */
 export function mountAirhorn(parent, options = {}) {
   return mountWeaponModel(parent, {

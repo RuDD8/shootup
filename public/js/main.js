@@ -569,7 +569,7 @@ function fireLocal({ chargeFrac = 1, beam = false, melee = false, projectile = f
     // No locally predicted projectile: the server-broadcast projSpawn event is
     // the single visual source, otherwise the thrower sees two poops.
     state.shake = Math.min(2.4, state.shake + w.shake * 0.5);
-    if (w.id === 'poopgun') {
+    if (w.id === 'poopgun' || w.id === 'chancla' || w.id === 'dice') {
       viewModel.playThrow();
     } else {
       viewModel.addRecoil(w.recoil * 0.32);
@@ -1049,6 +1049,14 @@ function onSnapshot(msg) {
   state.snapshots.push({ time: performance.now(), ps: msg.ps });
   if (state.snapshots.length > 24) state.snapshots.shift();
 
+  // Nudge dead-reckoned projectiles toward the server's truth. Matters for
+  // the homing chancla, whose steering the spawn velocity can't predict.
+  if (msg.projs) {
+    for (const pr of msg.projs) {
+      effects.syncProjectile(pr.id, pr.x, pr.y, pr.z, pr.vx, pr.vy, pr.vz);
+    }
+  }
+
   for (const entry of msg.ps) {
     let player = state.players.get(entry.i);
     if (!player && entry.i !== state.myId) {
@@ -1345,9 +1353,9 @@ function handleEvents(events) {
         if (attacker?.avatar) attacker.avatar.playSwing();
       }
     } else if (ev.k === 'shove') {
-      // Airhorn launch. Adopt the server's shove velocity into local
-      // prediction so we fly the same arc instead of rubber-banding through
-      // the position correction. Remote victims just follow snapshots.
+      // Airhorn launch or banana slip. Adopt the server's shove velocity into
+      // local prediction so we fly the same arc instead of rubber-banding
+      // through the position correction. Remote victims just follow snapshots.
       if (ev.p === state.myId) {
         state.local.vx = ev.vx;
         state.local.vy = ev.vy;
@@ -1356,6 +1364,24 @@ function handleEvents(events) {
         state.local.sliding = false;
         state.shake = Math.min(2.4, state.shake + 1.2);
       }
+      if (ev.slip) {
+        // Everyone nearby hears the slide whistle; the victim hears it loudest.
+        if (ev.p === state.myId) audio.slip(1);
+        else audio.slip(1, { x: ev.x, y: ev.y, z: ev.z });
+      }
+    } else if (ev.k === 'roll') {
+      // Dice gun: the shooter learns their damage the moment the die leaves
+      // the hand. Jackpots ring, gutter rolls womp, mid rolls just show.
+      if (ev.p === state.myId) {
+        audio.diceResult(ev.v);
+        if (ev.v >= 90) hud.banner(`ROLLED ${ev.v}`, 'JACKPOT!', 1.4);
+        else if (ev.v <= 10) hud.banner(`ROLLED ${ev.v}`, 'womp womp', 1.2);
+        else hud.banner(`ROLLED ${ev.v}`, '', 0.8);
+      }
+    } else if (ev.k === 'peelSpawn') {
+      effects.spawnPeel(ev.id, ev.x, ev.y, ev.z);
+    } else if (ev.k === 'peelExpire') {
+      effects.removePeel(ev.id, !!ev.used);
     } else if (ev.k === 'projSpawn') {
       const kind = ev.w || 'poopgun';
       effects.spawnProjectile(ev.id, ev.x, ev.y, ev.z, ev.vx, ev.vy, ev.vz, kind);
@@ -1409,6 +1435,10 @@ function handleEvents(events) {
         if (dist < ev.boom * 2.5) {
           state.shake = Math.min(3, state.shake + Math.max(0.4, 1.8 - dist * 0.15));
         }
+      } else if (ev.w === 'chancla') {
+        // The SLAP. Full volume on flesh, a duller thwack on walls.
+        audio.slap(ev.direct ? 1.2 : 0.55, { x: ev.x, y: ev.y, z: ev.z });
+        effects.spark(ev.x, ev.y, ev.z, ev.direct ? 'player' : 'wall', ev.direct ? 10 : 5, 2);
       } else {
         effects.spark(ev.x, ev.y, ev.z, 'wall', 8, 2);
       }
@@ -1965,7 +1995,7 @@ const WEAPON_CATEGORIES = [
   ['Marksman', ['dmr', 'leveraction', 'scout', 'sniper', 'awp', 'crossbow', 'bow']],
   ['Heavy', ['lmg', 'minigun', 'laser']],
   ['Sidearms', ['revolver', 'deagle']],
-  ['Memes', ['sneeze', 'poopgun', 'pee', 'fahgun', 'airhorn']],
+  ['Memes', ['sneeze', 'poopgun', 'pee', 'fahgun', 'airhorn', 'banana', 'chancla', 'dice']],
   ['Melee', ['knife']],
 ];
 

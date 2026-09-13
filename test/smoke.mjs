@@ -482,6 +482,183 @@ function testAirhornKnockback() {
   );
 }
 
+// Shared harness for the meme projectile guns: a live DM match on dust_bowl
+// with all broadcast events captured (events flush every tick, so tests that
+// span updates can't read match.events directly).
+function memeMatchSetup() {
+  const match = new Match({ code: 'MEME' }, { mode: GAME_MODE.DEATHMATCH, mapId: 'dust_bowl' });
+  const shooter = match.addPlayer('s', 'Shooter', null);
+  const target = match.addPlayer('t', 'Target', null);
+  match.beginMatch();
+  for (let i = 0; i < 600 && match.state !== MATCH_STATE.LIVE; i++) match.update();
+  const seen = [];
+  match.broadcast = (msg) => {
+    const parsed = typeof msg === 'string' ? JSON.parse(msg) : msg;
+    if (parsed.ev) seen.push(...parsed.ev);
+  };
+  return { match, shooter, target, seen };
+}
+
+// A column of `len` open ground tiles, or null.
+function openColumn(grid, len) {
+  const size = gridSize(grid);
+  for (let r = 1; r < size - len; r++) {
+    for (let c = 1; c < size - 1; c++) {
+      let open = true;
+      for (let k = 0; k < len && open; k++) {
+        if (tileHeight(tileAt(grid, c, r + k)) !== 0) open = false;
+      }
+      if (open) return { c, r, size };
+    }
+  }
+  return null;
+}
+
+function testBananaPeel() {
+  console.log('\nbanana peel');
+
+  const { match, shooter, target, seen } = memeMatchSetup();
+  const spot = openColumn(match.arena.grid, 3);
+  check('found an open corridor for the peel test', spot !== null);
+  if (!spot) return;
+
+  // Park the victim well away so the banana can't hit them in flight.
+  target.x = 2;
+  target.z = 2;
+  target.alive = true;
+  target.health = 1000;
+
+  // Lob a banana at the open floor a couple of tiles ahead.
+  const back = cellCenter(spot.c, spot.r + 2, spot.size);
+  shooter.x = back.x;
+  shooter.z = back.z;
+  shooter.y = 0;
+  shooter.yaw = 0;
+  shooter.pitch = -0.55; // aimed down at the floor ahead
+  shooter.alive = true;
+  match.fire(shooter, WEAPONS.banana);
+
+  let peel = null;
+  for (let i = 0; i < 90 && !peel; i++) {
+    match.update();
+    peel = seen.find((e) => e.k === 'peelSpawn') || null;
+  }
+  check('banana impact drops a peel', peel !== null);
+  if (!peel) return;
+
+  // March the victim across the peel at walking speed.
+  target.x = peel.x;
+  target.z = peel.z + 0.3;
+  target.y = peel.y;
+  target.vx = 0;
+  target.vy = 0;
+  target.vz = -6;
+  target.spawnProtectUntil = 0;
+  // Two ticks: the slip triggers on the first, the snapshot flush that carries
+  // the event out only runs on alternating ticks.
+  match.update();
+  match.update();
+
+  const slip = seen.find((e) => e.k === 'shove' && e.slip && e.p === 't');
+  check('walking over the peel slips the victim', Boolean(slip));
+  if (slip) {
+    check(
+      'slip launches along the walk direction',
+      slip.vz < -10 && Math.abs(slip.vx) < 2,
+      `vx=${slip.vx.toFixed(1)} vz=${slip.vz.toFixed(1)}`,
+    );
+    check('slip pops the victim off the ground', slip.vy > 3, `vy=${slip.vy.toFixed(1)}`);
+  }
+  check(
+    'the used peel is consumed',
+    seen.some((e) => e.k === 'peelExpire' && e.id === peel.id && e.used),
+  );
+}
+
+function testChanclaHoming() {
+  console.log('\nla chancla homing');
+
+  const { match, shooter, target, seen } = memeMatchSetup();
+  const spot = openColumn(match.arena.grid, 4);
+  check('found an open corridor for the chancla test', spot !== null);
+  if (!spot) return;
+
+  // Victim three tiles ahead but shifted off the aim line: a straight throw
+  // sails past, so a hit proves the slipper steered.
+  const front = cellCenter(spot.c, spot.r, spot.size);
+  const back = cellCenter(spot.c, spot.r + 3, spot.size);
+  target.x = front.x + 1.1;
+  target.z = front.z;
+  target.y = 0;
+  target.vx = target.vy = target.vz = 0;
+  target.health = 1000;
+  target.spawnProtectUntil = 0;
+  target.alive = true;
+  shooter.x = back.x;
+  shooter.z = back.z;
+  shooter.y = 0;
+  shooter.yaw = 0; // dead ahead along -z, NOT at the offset victim
+  shooter.pitch = 0;
+  shooter.alive = true;
+
+  match.fire(shooter, WEAPONS.chancla);
+  let hurt = null;
+  for (let i = 0; i < 120 && !hurt; i++) {
+    match.update();
+    hurt = seen.find((e) => e.k === 'hurt' && e.p === 't') || null;
+  }
+  check('chancla curves into the off-axis victim', hurt !== null);
+  if (hurt) {
+    check('chancla slap deals full damage', hurt.dmg === WEAPONS.chancla.damage, `dmg=${hurt.dmg}`);
+  }
+  check(
+    'chancla impact reports its weapon id',
+    seen.some((e) => e.k === 'projImpact' && e.w === 'chancla'),
+  );
+}
+
+function testDiceRoll() {
+  console.log('\ndice gun');
+
+  const { match, shooter, target, seen } = memeMatchSetup();
+  const spot = openColumn(match.arena.grid, 3);
+  check('found an open corridor for the dice test', spot !== null);
+  if (!spot) return;
+
+  const front = cellCenter(spot.c, spot.r + 1, spot.size);
+  const back = cellCenter(spot.c, spot.r + 2, spot.size);
+  target.x = front.x;
+  target.z = front.z;
+  target.y = 0;
+  target.vx = target.vy = target.vz = 0;
+  target.health = 1000;
+  target.spawnProtectUntil = 0;
+  target.alive = true;
+  shooter.x = back.x;
+  shooter.z = back.z;
+  shooter.y = 0;
+  shooter.yaw = 0;
+  shooter.pitch = 0;
+  shooter.alive = true;
+
+  match.events.length = 0;
+  match.fire(shooter, WEAPONS.dice);
+  const roll = match.events.find((e) => e.k === 'roll' && e.p === 's');
+  check('firing announces the roll to the shooter', Boolean(roll));
+  if (!roll) return;
+  check('roll is within 1-100', roll.v >= 1 && roll.v <= 100, `v=${roll.v}`);
+
+  let hurt = null;
+  for (let i = 0; i < 60 && !hurt; i++) {
+    match.update();
+    hurt = seen.find((e) => e.k === 'hurt' && e.p === 't') || null;
+  }
+  check('the die hits the point-blank victim', hurt !== null);
+  if (hurt) {
+    check('damage equals the roll', hurt.dmg === roll.v, `dmg=${hurt.dmg} roll=${roll.v}`);
+  }
+}
+
 function testWeaponRandomisation() {
   console.log('\nweapon randomisation');
   const counts = Object.fromEntries(WEAPON_IDS.map((id) => [id, 0]));
@@ -787,6 +964,22 @@ async function testServer() {
       airhornSample.ok &&
         airhornSample.headers.get('content-type') === 'audio/mpeg' &&
         Number(airhornSample.headers.get('content-length')) > 1000,
+    );
+    for (const name of ['banana', 'banana_peel', 'chancla', 'dice']) {
+      const memeAsset = await fetch(`http://127.0.0.1:${PORT}/models/${name}.glb`);
+      check(
+        `Blender ${name} is served as a GLB asset`,
+        memeAsset.ok &&
+          memeAsset.headers.get('content-type') === 'model/gltf-binary' &&
+          Number(memeAsset.headers.get('content-length')) > 1000,
+      );
+    }
+    const slapSample = await fetch(`http://127.0.0.1:${PORT}/sounds/slap.mp3`);
+    check(
+      'slap sample is served as an MP3 asset',
+      slapSample.ok &&
+        slapSample.headers.get('content-type') === 'audio/mpeg' &&
+        Number(slapSample.headers.get('content-length')) > 1000,
     );
     for (const name of ['sneeze1', 'sneeze2', 'sneeze3', 'sneeze4']) {
       const sneezeSample = await fetch(`http://127.0.0.1:${PORT}/sounds/${name}.mp3`);
@@ -1105,6 +1298,9 @@ testClimbPhysics();
 testBotClimb();
 testHazardOnPlatform();
 testAirhornKnockback();
+testBananaPeel();
+testChanclaHoming();
+testDiceRoll();
 testWeaponRandomisation();
 testGunGameRules();
 testLagComp();

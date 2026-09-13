@@ -119,6 +119,8 @@ export class Match {
     this.lastRoundResult = null;
     this.projectiles = [];
     this.hazards = [];
+    this.peels = [];
+    this.peelSeq = 0;
     this.gunGameOrder = [];
   }
 
@@ -364,6 +366,7 @@ export class Match {
     this.lastRoundResult = null;
     this.projectiles = [];
     this.hazards = [];
+    this.peels = [];
 
     for (const p of this.players) {
       p.gunGameLevel = 0;
@@ -646,6 +649,7 @@ export class Match {
     if (this.state === MATCH_STATE.LIVE || this.state === MATCH_STATE.COUNTDOWN) {
       this.tickProjectiles();
       this.tickHazards();
+      this.tickPeels();
     }
 
     switch (this.state) {
@@ -1243,6 +1247,13 @@ export class Match {
     const chargeFrac = weapon.charge ? (player.chargeFrac ?? 1) : 1;
     const speed = weapon.projSpeed * (weapon.charge ? 0.35 + 0.65 * chargeFrac : 1);
 
+    // Dice gun: the damage is decided the moment the die leaves the barrel,
+    // and the shooter is told their roll immediately — sweat while it flies.
+    const roll = weapon.roll ? 1 + Math.floor(Math.random() * (weapon.rollMax || 100)) : null;
+    if (roll !== null) {
+      this.events.push({ k: 'roll', p: player.id, v: roll });
+    }
+
     const proj = {
       id: `proj_${this.tick}_${player.id}`,
       owner: player.id,
@@ -1253,7 +1264,7 @@ export class Match {
       vx: dx * speed,
       vy: dy * speed + (weapon.projArc ?? 3),
       vz: dz * speed,
-      damage: Math.round(
+      damage: roll ?? Math.round(
         weapon.damage * (weapon.charge ? chargeDamageMult(weapon, chargeFrac) : 1),
       ),
       age: 0,
@@ -1380,11 +1391,51 @@ export class Match {
     });
   }
 
+  // La Chancla: rotate the velocity toward the best target ahead of the
+  // flight path, capped at homingTurn rad/s. Speed is preserved so the
+  // slipper chases without accelerating into a hitscan.
+  steerHoming(proj) {
+    const weapon = proj.weapon;
+    const speed = Math.hypot(proj.vx, proj.vy, proj.vz);
+    if (speed < 0.5) return;
+    const owner = this.players.find((p) => p.id === proj.owner);
+    const targets = this.opponentsOf(owner || this.players[0]);
+
+    let best = null;
+    let bestAngle = weapon.homingCone || 0.85;
+    for (const target of targets) {
+      if (!target.alive) continue;
+      const tx = target.x - proj.x;
+      const ty = target.y + playerHeight(target.crouching) * 0.6 - proj.y;
+      const tz = target.z - proj.z;
+      const dist = Math.hypot(tx, ty, tz);
+      if (dist > (weapon.homingRange || 28) || dist < 0.2) continue;
+      const dot = (proj.vx * tx + proj.vy * ty + proj.vz * tz) / (speed * dist);
+      const angle = Math.acos(Math.max(-1, Math.min(1, dot)));
+      if (angle < bestAngle) {
+        bestAngle = angle;
+        best = { tx: tx / dist, ty: ty / dist, tz: tz / dist, angle };
+      }
+    }
+    if (!best) return;
+
+    const maxTurn = (weapon.homingTurn || 3) * TICK_DT;
+    const t = Math.min(1, best.angle > 1e-4 ? maxTurn / best.angle : 1);
+    let nvx = proj.vx / speed + (best.tx - proj.vx / speed) * t;
+    let nvy = proj.vy / speed + (best.ty - proj.vy / speed) * t;
+    let nvz = proj.vz / speed + (best.tz - proj.vz / speed) * t;
+    const nlen = Math.hypot(nvx, nvy, nvz) || 1;
+    proj.vx = (nvx / nlen) * speed;
+    proj.vy = (nvy / nlen) * speed;
+    proj.vz = (nvz / nlen) * speed;
+  }
+
   tickProjectiles() {
     const toRemove = [];
     for (let i = 0; i < this.projectiles.length; i++) {
       const proj = this.projectiles[i];
       proj.age += 1;
+      if (proj.weapon.homing) this.steerHoming(proj);
       const gravity = proj.weapon.projGravity || 15;
       proj.vy -= gravity * TICK_DT;
       const nx = proj.x + proj.vx * TICK_DT;
@@ -1411,6 +1462,7 @@ export class Match {
         this.events.push({
           k: 'projImpact',
           id: proj.id,
+          w: proj.weapon.id,
           x: hx, y: Math.max(0, hy), z: hz,
           direct: false,
           boom: proj.weapon.explodeRadius || 0,
@@ -1427,6 +1479,14 @@ export class Match {
             hz - (proj.vz / speed) * 0.05,
           );
           this.spawnHazard(proj, hx, poolY, hz);
+        }
+        if (proj.weapon.peelDuration) {
+          const peelY = solidHeightAt(
+            this.arena.grid,
+            hx - (proj.vx / speed) * 0.05,
+            hz - (proj.vz / speed) * 0.05,
+          );
+          this.spawnPeel(proj, hx, peelY, hz);
         }
         toRemove.push(i);
         continue;
@@ -1463,9 +1523,13 @@ export class Match {
           // over, which on a platform is the platform top, not the ground.
           this.spawnHazard(proj, nx, solidHeightAt(this.arena.grid, nx, nz), nz);
         }
+        if (proj.weapon.peelDuration) {
+          this.spawnPeel(proj, nx, solidHeightAt(this.arena.grid, nx, nz), nz);
+        }
         this.events.push({
           k: 'projImpact',
           id: proj.id,
+          w: proj.weapon.id,
           x: nx, y: ny, z: nz,
           direct: true,
           boom: proj.weapon.explodeRadius || 0,
@@ -1483,6 +1547,91 @@ export class Match {
     }
     for (let i = toRemove.length - 1; i >= 0; i--) {
       this.projectiles.splice(toRemove[i], 1);
+    }
+  }
+
+  // A banana peel lying on the surface at y. Unlike hazard pools it deals no
+  // damage: stepping on one while moving launches you along your own momentum.
+  spawnPeel(proj, x, y, z) {
+    this.peelSeq += 1;
+    const peel = {
+      id: `peel_${this.peelSeq}`,
+      x,
+      y,
+      z,
+      owner: proj.owner,
+      radius: proj.weapon.peelRadius || 0.55,
+      slip: proj.weapon.peelSlip || 12,
+      slipUp: proj.weapon.peelSlipUp || 4.5,
+      remainingTicks: Math.round((proj.weapon.peelDuration || 15) * TICK_RATE),
+    };
+    this.peels.push(peel);
+    this.events.push({ k: 'peelSpawn', id: peel.id, x, y, z });
+
+    // Cap litter per shooter: the oldest peel quietly rots away.
+    const mine = this.peels.filter((p) => p.owner === proj.owner);
+    if (mine.length > 4) {
+      const oldest = mine[0];
+      const idx = this.peels.indexOf(oldest);
+      if (idx !== -1) {
+        this.peels.splice(idx, 1);
+        this.events.push({ k: 'peelExpire', id: oldest.id });
+      }
+    }
+  }
+
+  tickPeels() {
+    if (!this.peels.length) return;
+    const toRemove = [];
+    for (let i = 0; i < this.peels.length; i++) {
+      const peel = this.peels[i];
+      peel.remainingTicks -= 1;
+      if (peel.remainingTicks <= 0) {
+        toRemove.push(i);
+        this.events.push({ k: 'peelExpire', id: peel.id });
+        continue;
+      }
+      if (this.state !== MATCH_STATE.LIVE) continue;
+
+      for (const player of this.players) {
+        if (!player.alive) continue;
+        if (this.tick < (player.slipImmuneUntil || 0)) continue;
+        const hSpeed = Math.hypot(player.vx, player.vz);
+        // Standing on a peel is safe; walking over it is not. Also same-level
+        // only, so a peel on a crate can't trip someone underneath.
+        if (hSpeed < 2) continue;
+        if (Math.hypot(player.x - peel.x, player.z - peel.z) >= peel.radius + 0.25) continue;
+        const dy = player.y - peel.y;
+        if (dy < -0.5 || dy > 1.2) continue;
+
+        // The slip: your own momentum, amplified way past run speed, plus a
+        // little hop. The over-speed decay in stepPlayer bleeds it off, and
+        // the shove event lets the victim's client predict the same launch.
+        const push = Math.max(peel.slip, hSpeed * 1.5);
+        player.vx = (player.vx / hSpeed) * push;
+        player.vz = (player.vz / hSpeed) * push;
+        player.vy = Math.max(player.vy, peel.slipUp);
+        player.onGround = false;
+        player.sliding = false;
+        player.slipImmuneUntil = this.tick + TICK_RATE;
+        this.events.push({
+          k: 'shove',
+          p: player.id,
+          vx: player.vx,
+          vy: player.vy,
+          vz: player.vz,
+          slip: true,
+          x: peel.x,
+          y: peel.y,
+          z: peel.z,
+        });
+        this.events.push({ k: 'peelExpire', id: peel.id, used: true });
+        toRemove.push(i);
+        break;
+      }
+    }
+    for (let i = toRemove.length - 1; i >= 0; i--) {
+      this.peels.splice(toRemove[i], 1);
     }
   }
 
@@ -1674,8 +1823,11 @@ export class Match {
     };
 
     if (this.projectiles.length || this.hazards.length) {
+      // Velocity rides along so clients can re-aim their dead-reckoned copy:
+      // the homing chancla curves server-side in ways spawn velocity can't predict.
       payload.projs = this.projectiles.map((pr) => ({
         id: pr.id, x: round(pr.x), y: round(pr.y), z: round(pr.z),
+        vx: round(pr.vx), vy: round(pr.vy), vz: round(pr.vz),
       }));
       payload.hazards = this.hazards.map((hz) => ({
         x: round(hz.x), y: round(hz.y), z: round(hz.z),

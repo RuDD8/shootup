@@ -1,5 +1,13 @@
 import * as THREE from '/vendor/three.module.js';
-import { mountArrow, mountPoopModel, mountFahhText } from './model-assets.js';
+import {
+  mountArrow,
+  mountPoopModel,
+  mountFahhText,
+  mountBanana,
+  mountBananaPeel,
+  mountChancla,
+  mountDice,
+} from './model-assets.js';
 
 // Every visual is drawn from a fixed pool. Nothing is allocated during a
 // firefight, so there are no GC hitches mid-duel.
@@ -20,6 +28,7 @@ const SPARK_COLORS = {
   air: 0x9fc4ef,
   pee: 0xe9c93b,
   snot: 0x8fbf3a,
+  peel: 0xf2d24a,
 };
 
 export class Effects {
@@ -166,10 +175,43 @@ export class Effects {
       arrowHost.visible = false;
       group.add(arrowHost);
 
+      // Flying banana for the banana gun.
+      const bananaHost = new THREE.Group();
+      const bananaFallbackMat = new THREE.MeshStandardMaterial({ color: 0xeac81a, roughness: 0.5 });
+      const bananaFallback = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.09, 0.36), bananaFallbackMat);
+      bananaHost.add(bananaFallback);
+      mountBanana(bananaHost, { targetLength: 0.42, castShadow: true }).then((mounted) => {
+        if (mounted) bananaFallback.visible = false;
+      });
+      bananaHost.visible = false;
+      group.add(bananaHost);
+
+      // Flying chancla — mom's slipper spins flat while it hunts.
+      const chanclaHost = new THREE.Group();
+      const chanclaFallbackMat = new THREE.MeshStandardMaterial({ color: 0x2444a0, roughness: 0.8 });
+      const chanclaFallback = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.05, 0.42), chanclaFallbackMat);
+      chanclaHost.add(chanclaFallback);
+      mountChancla(chanclaHost, { targetLength: 0.46, castShadow: true }).then((mounted) => {
+        if (mounted) chanclaFallback.visible = false;
+      });
+      chanclaHost.visible = false;
+      group.add(chanclaHost);
+
+      // Tumbling die for the dice gun.
+      const diceHost = new THREE.Group();
+      const diceFallbackMat = new THREE.MeshStandardMaterial({ color: 0xf2f2ee, roughness: 0.35 });
+      const diceFallback = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 0.2), diceFallbackMat);
+      diceHost.add(diceFallback);
+      mountDice(diceHost, { targetLength: 0.22, castShadow: true }).then((mounted) => {
+        if (mounted) diceFallback.visible = false;
+      });
+      diceHost.visible = false;
+      group.add(diceHost);
+
       group.visible = false;
       scene.add(group);
       this.projectilePool.push({
-        mesh: group, mat: bodyMat, poopHost, fahhHost, arrowHost,
+        mesh: group, mat: bodyMat, poopHost, fahhHost, arrowHost, bananaHost, chanclaHost, diceHost,
         id: null, kind: 'poopgun', gravity: 15,
         x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0,
         active: false, spin: Math.random() * Math.PI * 2,
@@ -215,6 +257,9 @@ export class Effects {
       this.hazardPool.push({ mesh: group, baseMat, life: 0, maxLife: 5 });
     }
     this.hazardCursor = 0;
+
+    // Banana peels are created per-spawn (few, long-lived) rather than pooled.
+    this.peels = new Map();
   }
 
   tracer(from, to, width = 0.022) {
@@ -327,10 +372,21 @@ export class Effects {
     this.projCursor = (this.projCursor + 1) % PROJECTILE_COUNT;
     slot.id = id;
     slot.kind = kind;
-    slot.gravity = kind === 'fahgun' ? 4 : kind === 'bow' ? 9 : 15;
-    slot.poopHost.visible = kind !== 'fahgun' && kind !== 'bow';
+    slot.gravity =
+      kind === 'fahgun' ? 4
+      : kind === 'bow' ? 9
+      : kind === 'banana' ? 12
+      : kind === 'chancla' ? 2
+      : kind === 'dice' ? 6
+      : 15;
+    const special = kind === 'fahgun' || kind === 'bow' || kind === 'banana'
+      || kind === 'chancla' || kind === 'dice';
+    slot.poopHost.visible = !special;
     slot.fahhHost.visible = kind === 'fahgun';
     slot.arrowHost.visible = kind === 'bow';
+    slot.bananaHost.visible = kind === 'banana';
+    slot.chanclaHost.visible = kind === 'chancla';
+    slot.diceHost.visible = kind === 'dice';
     slot.x = x;
     slot.y = y;
     slot.z = z;
@@ -361,6 +417,65 @@ export class Effects {
         break;
       }
     }
+  }
+
+  /**
+   * Adopt the server's authoritative projectile state. The client dead-reckons
+   * from the spawn velocity, which is blind to server-side steering — the
+   * homing chancla would fly straight without these corrections.
+   */
+  syncProjectile(id, x, y, z, vx, vy, vz) {
+    for (const slot of this.projectilePool) {
+      if (!slot.active || slot.id !== id) continue;
+      // Blend position (kills drift without popping), adopt velocity outright.
+      slot.x += (x - slot.x) * 0.45;
+      slot.y += (y - slot.y) * 0.45;
+      slot.z += (z - slot.z) * 0.45;
+      if (vx !== undefined) {
+        slot.vx = vx;
+        slot.vy = vy;
+        slot.vz = vz;
+      }
+      return;
+    }
+  }
+
+  /** A banana peel resting on the ground, waiting for a victim. */
+  spawnPeel(id, x, y, z) {
+    if (this.peels.has(id)) return;
+    const group = new THREE.Group();
+    group.position.set(x, y + (y > 0.01 ? 0.09 : 0.01), z);
+    group.rotation.y = Math.random() * Math.PI * 2;
+    const fallbackMat = new THREE.MeshStandardMaterial({ color: 0xeac81a, roughness: 0.6 });
+    const fallback = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.36, 0.05, 6), fallbackMat);
+    fallback.position.y = 0.03;
+    group.add(fallback);
+    mountBananaPeel(group, { targetLength: 0.85 }).then((mounted) => {
+      if (mounted) fallback.visible = false;
+    });
+    this.scene.add(group);
+    this.peels.set(id, group);
+  }
+
+  removePeel(id, used = false) {
+    const group = this.peels.get(id);
+    if (!group) return;
+    if (used) {
+      this.spark(group.position.x, group.position.y + 0.15, group.position.z, 'peel', 8, 2.5);
+    }
+    this.scene.remove(group);
+    group.traverse((child) => {
+      if (child.isMesh) {
+        child.geometry.dispose();
+        const mats = Array.isArray(child.material) ? child.material : [child.material];
+        for (const m of mats) m.dispose();
+      }
+    });
+    this.peels.delete(id);
+  }
+
+  clearPeels() {
+    for (const id of [...this.peels.keys()]) this.removePeel(id);
   }
 
   spawnHazard(x, y, z, radius, duration) {
@@ -456,6 +571,12 @@ export class Effects {
         // Arrows fly tip-first along their velocity instead of tumbling.
         // lookAt aims the group's +Z, and the arrow's tip points to -Z.
         slot.mesh.lookAt(slot.x - slot.vx, slot.y - slot.vy, slot.z - slot.vz);
+      } else if (slot.kind === 'chancla') {
+        // The slipper spins flat like a thrown frisbee of discipline.
+        slot.mesh.rotation.set(0.25, slot.spin * 2.2, 0.1);
+      } else if (slot.kind === 'dice') {
+        // Dice tumble hard — the roll must look random.
+        slot.mesh.rotation.set(slot.spin * 1.6, slot.spin * 1.1, slot.spin * 0.8);
       } else {
         slot.mesh.rotation.set(slot.spin, slot.spin * 0.7, 0);
       }
@@ -509,5 +630,6 @@ export class Effects {
         if (child.isMesh) child.material.opacity = 0;
       });
     }
+    this.clearPeels();
   }
 }

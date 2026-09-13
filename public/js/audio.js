@@ -54,6 +54,9 @@ const SHOT_PROFILES = {
   poopgun: { dur: 0.25, cutoff: 800,  thump: 50,  gain: 0.48, q: 0.4 },
   fahgun:  { dur: 0.40, cutoff: 1400, thump: 70,  gain: 0.70, q: 1.0 },
   knife:   { dur: 0.08, cutoff: 4500, thump: 500, gain: 0.25, q: 1.6 },
+  banana:  { dur: 0.18, cutoff: 900,  thump: 90,  gain: 0.45, q: 0.5 },
+  chancla: { dur: 0.25, cutoff: 1800, thump: 300, gain: 0.28, q: 0.5 },
+  dice:    { dur: 0.08, cutoff: 3200, thump: 350, gain: 0.30, q: 1.0 },
 };
 
 export class Audio {
@@ -84,6 +87,7 @@ export class Audio {
     for (const key of SNEEZE_KEYS) this.loadSample(key, `/sounds/${key}.mp3`);
     this.loadSample('noseblow', '/sounds/noseblow.mp3');
     this.loadSample('airhorn', '/sounds/airhorn.mp3');
+    this.loadSample('slap', '/sounds/slap.mp3');
   }
 
   loadSample(key, url) {
@@ -363,6 +367,96 @@ export class Audio {
       osc.connect(g).connect(body);
       osc.start(t);
       osc.stop(t + dur + 0.05);
+    }
+  }
+
+  // La Chancla connecting: a fat recorded SLAP (myinstants). Pass `at` to
+  // place a remote hit in the world. A noise crack covers the decode window.
+  slap(gain = 1, at = null) {
+    if (!this.ctx) return;
+    const out = at ? this.spatial(at.x, at.y, at.z, 55) : this.master;
+    if (this.playSample('slap', 1.1 * gain, out, 0.04)) return;
+    this.loadSample('slap', '/sounds/slap.mp3');
+
+    // Fallback: a hard noise crack through a palm-on-skin bandpass.
+    const t = this.now;
+    const src = this.ctx.createBufferSource();
+    src.buffer = this.noise;
+    const body = this.ctx.createBiquadFilter();
+    body.type = 'bandpass';
+    body.frequency.value = 1400;
+    body.Q.value = 1.2;
+    const env = this.ctx.createGain();
+    env.gain.setValueAtTime(0.9 * gain, t);
+    env.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
+    src.connect(body).connect(env).connect(out);
+    src.start(t);
+    src.stop(t + 0.15);
+  }
+
+  // Banana peel slip: a falling slide whistle with a wobble, the universal
+  // sound of feet leaving the earth. Pass `at` for remote victims.
+  slip(gain = 1, at = null) {
+    if (!this.ctx) return;
+    const out = at ? this.spatial(at.x, at.y, at.z, 40) : this.master;
+    const t = this.now;
+    const osc = this.ctx.createOscillator();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(1400, t);
+    osc.frequency.exponentialRampToValueAtTime(320, t + 0.5);
+    const vib = this.ctx.createOscillator();
+    vib.frequency.value = 22;
+    const vibGain = this.ctx.createGain();
+    vibGain.gain.value = 45;
+    vib.connect(vibGain).connect(osc.frequency);
+    const env = this.ctx.createGain();
+    env.gain.setValueAtTime(0.0001, t);
+    env.gain.exponentialRampToValueAtTime(0.5 * gain, t + 0.03);
+    env.gain.exponentialRampToValueAtTime(0.0001, t + 0.55);
+    osc.connect(env).connect(out);
+    osc.start(t);
+    osc.stop(t + 0.6);
+    vib.start(t);
+    vib.stop(t + 0.6);
+  }
+
+  // Dice gun verdicts, shooter-side only: a slot-machine ding-ding-ding for
+  // 90+, a deflated womp-womp for 10 and under. Mid rolls stay silent.
+  diceResult(v) {
+    if (!this.ctx) return;
+    const t = this.now;
+    if (v >= 90) {
+      for (let i = 0; i < 3; i++) {
+        const osc = this.ctx.createOscillator();
+        osc.type = 'sine';
+        osc.frequency.value = 1320 + i * 220;
+        const env = this.ctx.createGain();
+        const at = t + i * 0.09;
+        env.gain.setValueAtTime(0, at);
+        env.gain.linearRampToValueAtTime(0.38, at + 0.01);
+        env.gain.exponentialRampToValueAtTime(0.0001, at + 0.5);
+        osc.connect(env).connect(this.master);
+        osc.start(at);
+        osc.stop(at + 0.55);
+      }
+    } else if (v <= 10) {
+      for (let i = 0; i < 2; i++) {
+        const osc = this.ctx.createOscillator();
+        osc.type = 'sawtooth';
+        const at = t + i * 0.22;
+        osc.frequency.setValueAtTime(200 - i * 45, at);
+        osc.frequency.exponentialRampToValueAtTime(140 - i * 40, at + 0.2);
+        const flt = this.ctx.createBiquadFilter();
+        flt.type = 'lowpass';
+        flt.frequency.value = 700;
+        const env = this.ctx.createGain();
+        env.gain.setValueAtTime(0, at);
+        env.gain.linearRampToValueAtTime(0.3, at + 0.02);
+        env.gain.exponentialRampToValueAtTime(0.0001, at + 0.3);
+        osc.connect(flt).connect(env).connect(this.master);
+        osc.start(at);
+        osc.stop(at + 0.35);
+      }
     }
   }
 
