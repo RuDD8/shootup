@@ -139,6 +139,9 @@ const state = {
 };
 
 let selectedMode = GAME_MODE.DUEL;
+// The primary the player last picked by hand; re-applied on every DM join so
+// a favourite loadout survives page reloads.
+let preferredPrimary = null;
 const SETTINGS_KEY = 'shootup.preferences.v1';
 
 const localGun = {
@@ -182,6 +185,12 @@ function savePreferences() {
         volume: Number($('volume').value),
         resolution: Number($('resolution').value),
         autoRes: $('auto-res').checked,
+        name: $('name-input').value.trim().slice(0, 20),
+        mode: selectedMode,
+        mapId: $('map-select').value,
+        dmMinutes: Number($('dm-minutes').value),
+        pub: $('public-room').checked,
+        primary: preferredPrimary,
       }),
     );
   } catch {
@@ -215,6 +224,22 @@ function loadPreferences() {
     if (Number.isFinite(saved.volume)) $('volume').value = saved.volume;
     if (Number.isFinite(saved.resolution)) $('resolution').value = saved.resolution;
     if (typeof saved.autoRes === 'boolean') $('auto-res').checked = saved.autoRes;
+    if (typeof saved.name === 'string' && saved.name) {
+      $('name-input').value = saved.name.slice(0, 20);
+    }
+    if (Object.values(GAME_MODE).includes(saved.mode)) setMode(saved.mode);
+    if (
+      typeof saved.mapId === 'string' &&
+      Array.from($('map-select').options).some((o) => o.value === saved.mapId)
+    ) {
+      $('map-select').value = saved.mapId;
+    }
+    if (Number.isFinite(saved.dmMinutes)) {
+      $('dm-minutes').value = saved.dmMinutes;
+      $('dm-minutes-val').textContent = $('dm-minutes').value;
+    }
+    if (typeof saved.pub === 'boolean') $('public-room').checked = saved.pub;
+    if (PRIMARY_WEAPON_IDS.includes(saved.primary)) preferredPrimary = saved.primary;
   } catch {
     // Ignore malformed or unavailable local storage.
   }
@@ -427,6 +452,11 @@ function sendPrimaryPick(id) {
     viewModel.setWeapon(id);
   }
   updateWeaponPickUI();
+  // Remember the choice so the next session starts with the same primary.
+  if (preferredPrimary !== id) {
+    preferredPrimary = id;
+    savePreferences();
+  }
   updateLoadoutUI();
   if (state.matchState === MATCH_STATE.COUNTDOWN) {
     state.weaponPickDismissed = true;
@@ -885,6 +915,12 @@ net.on('round', (msg) => {
   localGun.chargeStartAt = 0;
   localGun.chargeFrac = 0;
   if (!isDM()) localGun.ammo = weapon().magazine;
+
+  // Restore the player's saved favourite as the round-start primary; they can
+  // still switch from the picker at any time.
+  if (isDM() && preferredPrimary && preferredPrimary !== state.primaryWeaponId) {
+    sendPrimaryPick(preferredPrimary);
+  }
 
   viewModel.setWeapon(state.weaponId);
   hud.setGameMode(state.mode);
@@ -1886,30 +1922,106 @@ function beginPlay() {
 
 // --------------------------------------------------------------------- wiring
 
-// Build weapon-pick buttons dynamically from PRIMARY_WEAPON_IDS
+// Weapon picker: category sections of stat cards instead of a wall of names.
+// Purely a menu concern, so the grouping lives here rather than in shared/.
+const WEAPON_CATEGORIES = [
+  ['Rifles', ['assault', 'battlerifle', 'carbine', 'burstrifle']],
+  ['SMGs', ['smg', 'machinepistol', 'p90', 'vector']],
+  ['Shotguns', ['shotgun', 'autoshotgun', 'slugshotgun', 'doublebarrel', 'sawedoff']],
+  ['Marksman', ['dmr', 'leveraction', 'scout', 'sniper', 'awp', 'crossbow', 'bow']],
+  ['Heavy', ['lmg', 'minigun', 'laser']],
+  ['Sidearms', ['revolver', 'deagle']],
+  ['Memes', ['sneeze', 'poopgun', 'pee', 'fahgun']],
+  ['Melee', ['knife']],
+];
+
+function weaponTag(w) {
+  if (w.melee) return 'MELEE';
+  if (w.charge) return 'CHARGE';
+  if (w.overheat) return 'BEAM';
+  if (w.burst) return 'BURST';
+  if (w.auto) return 'AUTO';
+  return 'SEMI';
+}
+
+// Square-root scaling keeps low-stat bars visible while the outliers
+// (knife damage, laser fire rate, minigun mag) still read as maxed.
+function statBars(w) {
+  const dmg = Math.min(1, Math.sqrt((w.damage * w.pellets) / 200));
+  const rate = Math.min(1, Math.sqrt(w.rpm / 1800));
+  const mag = Math.min(1, Math.sqrt(Math.min(w.magazine, 150) / 150));
+  return [
+    ['DMG', dmg],
+    ['ROF', rate],
+    ['MAG', mag],
+  ];
+}
+
 const pickGrid = $('pick-grid');
-for (const wid of PRIMARY_WEAPON_IDS) {
-  const w = WEAPONS[wid];
-  if (!w) continue;
-  const btn = document.createElement('button');
-  btn.type = 'button';
-  btn.className = 'pick-btn';
-  btn.dataset.pw = wid;
-  btn.textContent = w.name;
-  btn.addEventListener('click', () => sendPrimaryPick(wid));
-  pickGrid.appendChild(btn);
+{
+  const categorized = new Set(WEAPON_CATEGORIES.flatMap(([, ids]) => ids));
+  const leftovers = PRIMARY_WEAPON_IDS.filter((id) => !categorized.has(id));
+  const sections = leftovers.length
+    ? [...WEAPON_CATEGORIES, ['Other', leftovers]]
+    : WEAPON_CATEGORIES;
+
+  for (const [label, ids] of sections) {
+    const wids = ids.filter((id) => PRIMARY_WEAPON_IDS.includes(id) && WEAPONS[id]);
+    if (!wids.length) continue;
+    const section = document.createElement('div');
+    section.className = 'pick-cat';
+    const heading = document.createElement('span');
+    heading.className = 'pick-cat-name';
+    heading.textContent = label;
+    const row = document.createElement('div');
+    row.className = 'pick-row';
+    for (const wid of wids) {
+      const w = WEAPONS[wid];
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'pick-btn';
+      btn.dataset.pw = wid;
+
+      const name = document.createElement('span');
+      name.className = 'pick-name';
+      name.textContent = w.name;
+
+      const tag = document.createElement('span');
+      tag.className = 'pick-tag';
+      tag.textContent = `${weaponTag(w)} · ${w.magazine > 900 ? '∞' : w.magazine}`;
+
+      const bars = document.createElement('span');
+      bars.className = 'pick-bars';
+      for (const [statLabel, v] of statBars(w)) {
+        const bar = document.createElement('i');
+        bar.title = statLabel;
+        bar.style.setProperty('--v', v.toFixed(2));
+        bars.appendChild(bar);
+      }
+
+      btn.append(name, tag, bars);
+      btn.addEventListener('click', () => sendPrimaryPick(wid));
+      row.appendChild(btn);
+    }
+    section.append(heading, row);
+    pickGrid.appendChild(section);
+  }
+}
+
+function setMode(mode) {
+  selectedMode = mode;
+  document.querySelectorAll('.mode-btn').forEach((b) => {
+    const active = b.dataset.mode === mode;
+    b.classList.toggle('active', active);
+    b.setAttribute('aria-pressed', String(active));
+  });
+  $('dm-options').classList.toggle('hidden', mode !== 'deathmatch' && mode !== 'gungame');
 }
 
 for (const btn of document.querySelectorAll('.mode-btn')) {
   btn.addEventListener('click', () => {
-    document.querySelectorAll('.mode-btn').forEach((b) => {
-      b.classList.remove('active');
-      b.setAttribute('aria-pressed', 'false');
-    });
-    btn.classList.add('active');
-    btn.setAttribute('aria-pressed', 'true');
-    selectedMode = btn.dataset.mode;
-    $('dm-options').classList.toggle('hidden', selectedMode !== 'deathmatch' && selectedMode !== 'gungame');
+    setMode(btn.dataset.mode);
+    savePreferences();
   });
 }
 
@@ -1927,7 +2039,13 @@ $('auto-res').addEventListener('change', () => {
 
 $('dm-minutes').addEventListener('input', () => {
   $('dm-minutes-val').textContent = $('dm-minutes').value;
+  savePreferences();
 });
+
+// Remember who the player is and how they like to play across reloads.
+$('name-input').addEventListener('input', savePreferences);
+$('map-select').addEventListener('change', savePreferences);
+$('public-room').addEventListener('change', savePreferences);
 
 $('btn-create').addEventListener('click', () => {
   state.myName = $('name-input').value.trim() || 'Player';

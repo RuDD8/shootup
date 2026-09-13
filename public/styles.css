@@ -1014,8 +1014,8 @@ button.secondary:hover {
   text-align: center;
   backdrop-filter: blur(8px);
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
-  max-width: 520px;
-  max-height: 340px;
+  width: min(640px, 92vw);
+  max-height: min(52vh, 460px);
   display: flex;
   flex-direction: column;
 }
@@ -1038,36 +1038,105 @@ button.secondary:hover {
 
 .pick-grid {
   display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-  justify-content: center;
+  flex-direction: column;
+  gap: 10px;
   overflow-y: auto;
-  max-height: 240px;
-  padding: 4px 2px;
+  padding: 4px 6px 4px 2px;
+}
+
+.pick-cat {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  text-align: left;
+}
+
+.pick-cat-name {
+  font-size: 10px;
+  letter-spacing: 2.4px;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.pick-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+  gap: 6px;
 }
 
 .pick-btn {
   font: inherit;
   cursor: pointer;
-  padding: 5px 10px;
-  border-radius: 5px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 7px 9px 8px;
+  border-radius: 6px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(255, 255, 255, 0.04);
   color: var(--text);
-  font-size: 12px;
-  letter-spacing: 0.4px;
-  transition: border-color 0.15s, background 0.15s;
+  text-align: left;
+  transition: border-color 0.15s, background 0.15s, transform 0.1s;
 }
 
 .pick-btn:hover {
   border-color: rgba(56, 189, 248, 0.5);
   background: rgba(56, 189, 248, 0.1);
+  transform: translateY(-1px);
 }
 
 .pick-btn.selected {
   border-color: var(--cyan);
   background: rgba(56, 189, 248, 0.18);
   color: #e0f2fe;
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.25) inset;
+}
+
+.pick-name {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  line-height: 1.15;
+}
+
+.pick-tag {
+  font-size: 9px;
+  letter-spacing: 1.4px;
+  color: var(--dim);
+}
+
+.pick-btn.selected .pick-tag {
+  color: rgba(186, 230, 253, 0.8);
+}
+
+/* Three mini stat bars: damage, rate of fire, magazine. --v is 0..1. */
+.pick-bars {
+  display: flex;
+  gap: 3px;
+  width: 100%;
+  margin-top: 2px;
+}
+
+.pick-bars i {
+  flex: 1;
+  height: 3px;
+  border-radius: 2px;
+  background:
+    linear-gradient(
+      to right,
+      rgba(56, 189, 248, 0.85) calc(var(--v, 0) * 100%),
+      rgba(255, 255, 255, 0.1) calc(var(--v, 0) * 100%)
+    );
+}
+
+.pick-btn.selected .pick-bars i {
+  background:
+    linear-gradient(
+      to right,
+      #7dd3fc calc(var(--v, 0) * 100%),
+      rgba(255, 255, 255, 0.14) calc(var(--v, 0) * 100%)
+    );
 }
 
 .pick-grid::-webkit-scrollbar {
