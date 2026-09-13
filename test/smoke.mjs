@@ -774,6 +774,20 @@ async function testServer() {
         peeSample.headers.get('content-type') === 'audio/mpeg' &&
         Number(peeSample.headers.get('content-length')) > 1000,
     );
+    const airhornAsset = await fetch(`http://127.0.0.1:${PORT}/models/airhorn.glb`);
+    check(
+      'Blender airhorn is served as a GLB asset',
+      airhornAsset.ok &&
+        airhornAsset.headers.get('content-type') === 'model/gltf-binary' &&
+        Number(airhornAsset.headers.get('content-length')) > 1000,
+    );
+    const airhornSample = await fetch(`http://127.0.0.1:${PORT}/sounds/airhorn.mp3`);
+    check(
+      'airhorn sample is served as an MP3 asset',
+      airhornSample.ok &&
+        airhornSample.headers.get('content-type') === 'audio/mpeg' &&
+        Number(airhornSample.headers.get('content-length')) > 1000,
+    );
     for (const name of ['sneeze1', 'sneeze2', 'sneeze3', 'sneeze4']) {
       const sneezeSample = await fetch(`http://127.0.0.1:${PORT}/sounds/${name}.mp3`);
       check(

@@ -142,6 +142,16 @@ export function mountFahhGun(parent, options = {}) {
   });
 }
 
+/** Blender-authored airhorn: red can + chrome bell; targetLength = height. */
+export function mountAirhorn(parent, options = {}) {
+  return mountWeaponModel(parent, {
+    url: '/models/airhorn.glb',
+    name: 'Blender_Airhorn',
+    targetLength: 0.2,
+    ...options,
+  });
+}
+
 export function mountPistol(parent, options = {}) {
   return mountWeaponModel(parent, {
     url: '/models/pistol.glb',

@@ -1,5 +1,6 @@
 import * as THREE from '/vendor/three.module.js';
 import {
+  mountAirhorn,
   mountArrow,
   mountAssaultRifle,
   mountAutoshotgun,
@@ -1851,35 +1852,60 @@ const BUILDERS = {
   airhorn() {
     const g = new THREE.Group();
     const t = THEMES.airhorn();
+    const fallback = new THREE.Group();
+    const modelHost = new THREE.Group();
+    // GLB origin is the can's base; drop it so the can center sits mid-frame.
+    modelHost.position.set(0, -0.11, 0.01);
+    fallback.position.copy(modelHost.position);
+    g.add(fallback, modelHost);
 
-    // Compressed-air can held upright with the chrome trumpet aimed forward.
-    // No GLB — the whole thing is primitive geometry, like the pistol fallback.
-    const can = new THREE.Group();
-    can.position.set(0, -0.02, 0.01);
-    can.add(cyl(0.048, 0.15, t.can, 0, 0, 0));
-    can.add(cyl(0.05, 0.05, t.label, 0, 0.01, 0));
-    can.add(cyl(0.044, 0.012, t.cap, 0, 0.078, 0));
-    can.add(cyl(0.044, 0.012, t.cap, 0, -0.078, 0));
-    can.add(cyl(0.028, 0.035, t.cap, 0, 0.095, 0));
-    can.add(box(0.03, 0.012, 0.035, t.button, 0, 0.118, 0.005));
-    // Horn: stem plus a flaring bell built from stacked cylinder segments.
-    can.add(cyl(0.012, 0.05, t.bell, 0, 0.095, -0.045, 'z'));
-    can.add(cyl(0.02, 0.035, t.bell, 0, 0.095, -0.085, 'z'));
-    can.add(cyl(0.03, 0.03, t.bell, 0, 0.095, -0.115, 'z'));
-    can.add(cyl(0.043, 0.028, t.bell, 0, 0.095, -0.142, 'z'));
-    can.add(cyl(0.047, 0.01, t.cap, 0, 0.095, -0.158, 'z'));
-    g.add(can);
+    // Rough placeholder matching the GLB footprint while it loads.
+    fallback.add(cyl(0.04, 0.13, t.can, 0, 0.065, 0));
+    fallback.add(cyl(0.041, 0.045, t.label, 0, 0.07, 0));
+    fallback.add(cyl(0.019, 0.035, t.cap, 0, 0.16, 0));
+    fallback.add(cyl(0.009, 0.035, t.bell, 0, 0.175, -0.035, 'z'));
+    fallback.add(cyl(0.028, 0.05, t.bell, 0, 0.175, -0.08, 'z'));
 
-    // Vertical-grip right hand wrapping the can, thumb over the button.
-    g.add(triggerHand({
-      x: 0, y: -0.1, z: 0.02,
-      verticalGrip: true,
-      armPitch: 0.85,
-      armYaw: 0.3,
-      armLength: 0.34,
-    }));
+    mountAirhorn(modelHost, { targetLength: 0.24 }).then((loaded) => {
+      if (loaded) fallback.visible = false;
+    });
 
-    addMuzzle(g, 0, 0.075, -0.19, 0.35);
+    // Hand actually wrapped around the can: palm hugging the right flank,
+    // four fingers curling across the front face, thumb riding up beside the
+    // actuator. (The shared vertical-grip hand put its fingers inside the can.)
+    const gloveMat = GLOVE();
+    const fingerMat = FINGER();
+    const cuffMat = CUFF();
+    const hand = new THREE.Group();
+    hand.position.set(0, -0.035, 0.01);
+    // Slight yaw so the fingers hug the can's curve instead of poking straight
+    // past its left edge as a stack of flat slabs.
+    hand.rotation.y = -0.3;
+    // Palm slab against the can's right side (can radius ≈ 0.045 at this scale).
+    hand.add(box(0.032, 0.105, 0.085, gloveMat, 0.06, 0, 0.005));
+    for (let i = 0; i < 4; i++) {
+      const fy = 0.036 - i * 0.024;
+      // Knuckle segment leaving the palm toward the front face…
+      hand.add(box(0.03, 0.02, 0.028, fingerMat, 0.042, fy, -0.042));
+      // …then the finger crossing the front of the can…
+      hand.add(box(0.07, 0.02, 0.024, fingerMat, 0, fy, -0.05));
+      // …and a short fingertip tucking around the left edge.
+      hand.add(box(0.02, 0.02, 0.024, fingerMat, -0.038, fy, -0.038));
+    }
+    // Thumb leaning up the back-right shoulder toward the button.
+    const thumb = box(0.024, 0.05, 0.026, fingerMat, 0.042, 0.065, 0.02);
+    thumb.rotation.x = -0.2;
+    thumb.rotation.z = 0.3;
+    hand.add(thumb);
+    // Cuff + forearm dropping toward the bottom-right corner of the frame.
+    hand.add(box(0.095, 0.075, 0.06, cuffMat, 0.055, -0.095, 0.045));
+    const wrist = new THREE.Group();
+    wrist.position.set(0.055, -0.115, 0.06);
+    wrist.add(forearm(1.05, 0.42, 0.42));
+    hand.add(wrist);
+    g.add(hand);
+
+    addMuzzle(g, 0, 0.075, -0.15, 0.35);
     return g;
   },
 
@@ -2576,13 +2602,19 @@ export const AVATAR_GUN_BUILDERS = {
   airhorn() {
     const g = new THREE.Group();
     const t = THEMES.airhorn();
-    g.add(cyl(0.035, 0.11, t.can, 0, -0.01, 0));
-    g.add(cyl(0.037, 0.035, t.label, 0, 0, 0));
-    g.add(cyl(0.02, 0.025, t.cap, 0, 0.06, 0));
-    g.add(cyl(0.009, 0.04, t.bell, 0, 0.07, -0.035, 'z'));
-    g.add(cyl(0.022, 0.03, t.bell, 0, 0.07, -0.07, 'z'));
-    g.add(cyl(0.032, 0.022, t.bell, 0, 0.07, -0.094, 'z'));
-    g.userData.length = 0.16;
+    const fallback = new THREE.Group();
+    const modelHost = new THREE.Group();
+    // Lower so the can's base sits in the avatar's fist rather than on it.
+    modelHost.position.y = -0.06;
+    fallback.position.y = -0.06;
+    g.add(fallback, modelHost);
+    fallback.add(cyl(0.03, 0.1, t.can, 0, 0.05, 0));
+    fallback.add(cyl(0.017, 0.025, t.cap, 0, 0.115, 0));
+    fallback.add(cyl(0.02, 0.05, t.bell, 0, 0.13, -0.05, 'z'));
+    mountAirhorn(modelHost, { targetLength: 0.17, castShadow: true }).then((loaded) => {
+      if (loaded) fallback.visible = false;
+    });
+    g.userData.length = 0.17;
     return g;
   },
   pee() {

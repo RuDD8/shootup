@@ -83,6 +83,7 @@ export class Audio {
     this.loadSample('pee', '/sounds/pee.mp3');
     for (const key of SNEEZE_KEYS) this.loadSample(key, `/sounds/${key}.mp3`);
     this.loadSample('noseblow', '/sounds/noseblow.mp3');
+    this.loadSample('airhorn', '/sounds/airhorn.mp3');
   }
 
   loadSample(key, url) {
@@ -330,44 +331,38 @@ export class Audio {
     setTimeout(retry, 120);
   }
 
-  // MLG airhorn honk for the airhorn weapon: stacked detuned saws on the
-  // classic two-tone chord with a quick pitch scoop at the onset, so it reads
-  // BWAAAMP instead of a flat organ chord. Pass `at` ({x, y, z}) to place a
-  // remote honk in the world; the reach is huge on purpose — the whole point
-  // of an airhorn is that everyone hears it.
+  // The real MLG airhorn recording (myinstants, like the sneezes). Pass `at`
+  // ({x, y, z}) to place a remote honk in the world; the reach is huge on
+  // purpose — the whole point of an airhorn is that everyone hears it. A thin
+  // synth honk covers only the moment before the sample finishes decoding.
   airhorn(gain = 1, at = null) {
     if (!this.ctx) return;
-    const t = this.now;
     const out = at ? this.spatial(at.x, at.y, at.z, 70) : this.master;
-    const dur = 0.55;
+    if (this.playSample('airhorn', 0.9 * gain, out, 0.03)) return;
+    this.loadSample('airhorn', '/sounds/airhorn.mp3');
 
-    // Shared horn "bell" formant + envelope for all partials.
+    // Fallback while decoding: short two-tone saw chord through a horn formant.
+    const t = this.now;
+    const dur = 0.45;
     const body = this.ctx.createBiquadFilter();
     body.type = 'bandpass';
     body.frequency.value = 950;
     body.Q.value = 0.7;
     const env = this.ctx.createGain();
     env.gain.setValueAtTime(0, t);
-    env.gain.linearRampToValueAtTime(0.5 * gain, t + 0.02);
-    env.gain.setValueAtTime(0.5 * gain, t + dur - 0.12);
+    env.gain.linearRampToValueAtTime(0.4 * gain, t + 0.02);
     env.gain.exponentialRampToValueAtTime(0.0001, t + dur);
     body.connect(env).connect(out);
-
-    // Two horn tones a fourth apart, each doubled with slight detune so the
-    // pair beats like real mismatched air trumpets.
     for (const base of [415, 554]) {
-      for (const det of [-6, 5]) {
-        const osc = this.ctx.createOscillator();
-        osc.type = 'sawtooth';
-        osc.frequency.setValueAtTime(base * 0.82, t);
-        osc.frequency.exponentialRampToValueAtTime(base, t + 0.05);
-        osc.detune.value = det;
-        const g = this.ctx.createGain();
-        g.gain.value = 0.25;
-        osc.connect(g).connect(body);
-        osc.start(t);
-        osc.stop(t + dur + 0.05);
-      }
+      const osc = this.ctx.createOscillator();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(base * 0.82, t);
+      osc.frequency.exponentialRampToValueAtTime(base, t + 0.05);
+      const g = this.ctx.createGain();
+      g.gain.value = 0.4;
+      osc.connect(g).connect(body);
+      osc.start(t);
+      osc.stop(t + dur + 0.05);
     }
   }
 
