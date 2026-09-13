@@ -33,6 +33,8 @@ import {
   DECK_H,
   TICK_DT,
   CELL,
+  MOVE_SPEED,
+  RUN_SPEED_MULT,
 } from '../shared/constants.js';
 import { WEAPONS, WEAPON_IDS, randomWeaponId, shotSpread, GUNGAME_POOL } from '../shared/weapons.js';
 import { Match } from '../server/match.js';
@@ -479,6 +481,77 @@ function testAirhornKnockback() {
     'shove carries the victim instead of being clamped away',
     z0 - target.z > 2,
     `travel=${(z0 - target.z).toFixed(2)}m`,
+  );
+}
+
+// Sprinting diagonally into a wall must never exceed sprint speed. The wall
+// zeroes one velocity axis each tick, which shrinks the wish-direction
+// projection that accelerate() sees — without a hard cap on self-generated
+// speed, that overshoot compounds and players skate along walls way past the
+// run cap (the over-speed decay path exists only for knockback launches).
+function testWallRubSpeedCap() {
+  console.log('\nwall rub speed cap');
+
+  const { match } = memeMatchSetup();
+  const grid = match.arena.grid;
+  const size = gridSize(grid);
+
+  // Two adjacent open cells with something solid along their -z side; the
+  // player starts on the +x cell and skates toward -x along the obstacle.
+  let spot = null;
+  for (let r = 1; r < size - 1 && !spot; r++) {
+    for (let c = 1; c < size - 2 && !spot; c++) {
+      let ok = true;
+      for (let k = 0; k < 2 && ok; k++) {
+        if (tileHeight(tileAt(grid, c + k, r)) !== 0) ok = false;
+        if (tileHeight(tileAt(grid, c + k, r - 1)) < 1.5) ok = false;
+      }
+      if (ok) spot = { c: c + 1, r };
+    }
+  }
+  check('found a wall to rub against', spot !== null);
+  if (!spot) return;
+
+  const pos = cellCenter(spot.c, spot.r, size);
+  const p = {
+    x: pos.x, y: 0, z: pos.z,
+    vx: 0, vy: 0, vz: 0,
+    onGround: true, crouching: false, sliding: false,
+    prevCrouch: false, slideTime: 0,
+  };
+  // yaw 45°: forward pushes into the wall (-z) while sliding along it (-x).
+  const input = { yaw: Math.PI / 4, forward: true, run: true };
+  const cap = MOVE_SPEED * RUN_SPEED_MULT;
+  let top = 0;
+  for (let i = 0; i < 90; i++) {
+    stepPlayer(grid, p, input, TICK_DT, 1);
+    top = Math.max(top, Math.hypot(p.vx, p.vz));
+  }
+  check(
+    'rubbing along a wall never exceeds sprint speed',
+    top <= cap + 0.05,
+    `max=${top.toFixed(2)} cap=${cap.toFixed(2)}`,
+  );
+
+  // Open-field steering: sprint while swinging the aim in circles. Velocity
+  // lags the wish direction, so accelerate() sees a small projection every
+  // tick — the classic overshoot recipe.
+  const mid = cellCenter(Math.floor(size / 2), Math.floor(size / 2), size);
+  const q = {
+    x: mid.x, y: 5, z: mid.z,
+    vx: 0, vy: 0, vz: 0,
+    onGround: true, crouching: false, sliding: false,
+    prevCrouch: false, slideTime: 0,
+  };
+  let topSpin = 0;
+  for (let i = 0; i < 90; i++) {
+    stepPlayer(grid, q, { yaw: i * 0.35, forward: true, run: true }, TICK_DT, 1);
+    topSpin = Math.max(topSpin, Math.hypot(q.vx, q.vz));
+  }
+  check(
+    'spinning while sprinting never exceeds sprint speed',
+    topSpin <= cap + 0.05,
+    `max=${topSpin.toFixed(2)} cap=${cap.toFixed(2)}`,
   );
 }
 
@@ -1289,6 +1362,7 @@ testClimbPhysics();
 testBotClimb();
 testHazardOnPlatform();
 testAirhornKnockback();
+testWallRubSpeedCap();
 testBananaPeel();
 testChanclaHoming();
 testWeaponRandomisation();

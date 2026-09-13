@@ -185,25 +185,24 @@ export function stepPlayer(grid, p, input, dt, speedMult = 1) {
     const maxSpeed = MOVE_SPEED * moveMult;
     const accel = p.onGround ? ACCEL : AIR_ACCEL;
 
+    // Speed measured BEFORE this tick's acceleration. Only externally-set
+    // velocity (airhorn shoves, banana slips) may sit above the cap, and that
+    // excess bleeds off at KNOCKBACK_DECAY instead of being clamped away in
+    // one tick. Player input can never raise speed past the cap: accelerate()
+    // works off the wish-direction projection, so whenever velocity points
+    // elsewhere (turning hard, or a wall/box zeroing one axis) it overshoots
+    // the cap — uncapped, that compounds into skating along walls at way past
+    // sprint speed. Stateless (velocity only), so client prediction replays
+    // it identically after adopting the server's velocity.
+    const preSpeed = Math.hypot(p.vx, p.vz);
+
     if (p.onGround && wishLen === 0) {
       applyFriction(p, dt, FRICTION);
     } else if (wishLen > 0) {
       accelerate(p, wishX, wishZ, maxSpeed, accel, dt);
     }
 
-    // Over-speed decay: an airhorn shove launches players well past run
-    // speed, and the hard clamp would erase the launch within one tick.
-    // Anything above the cap bleeds off smoothly instead. This is computed
-    // from velocity alone (no timer state), so client-side prediction replays
-    // it identically after adopting the server's velocity on reconciliation.
-    const hSpeed = Math.hypot(p.vx, p.vz);
-    if (hSpeed > maxSpeed + 0.01) {
-      const decayed = Math.max(maxSpeed, hSpeed - KNOCKBACK_DECAY * dt);
-      p.vx *= decayed / hSpeed;
-      p.vz *= decayed / hSpeed;
-    } else {
-      clampHorizontalSpeed(p, maxSpeed);
-    }
+    clampHorizontalSpeed(p, Math.max(maxSpeed, preSpeed - KNOCKBACK_DECAY * dt));
   }
 
   if (input.jump && p.onGround && !p.crouching && !p.sliding) {
