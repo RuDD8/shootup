@@ -1926,26 +1926,48 @@ const BUILDERS = {
   banana() {
     const g = new THREE.Group();
     const t = THEMES.banana();
+    const payloadHost = new THREE.Group();
     const fallback = new THREE.Group();
-    const modelHost = new THREE.Group();
-    modelHost.position.set(0, 0, -0.04);
-    fallback.position.copy(modelHost.position);
-    g.add(fallback, modelHost);
 
     // Bent yellow placeholder while the GLB loads.
-    const seg1 = box(0.065, 0.065, 0.17, t.skin, 0, 0.01, 0.08);
-    seg1.rotation.x = 0.22;
-    const seg2 = box(0.065, 0.065, 0.17, t.skin, 0, 0.03, -0.08);
-    seg2.rotation.x = -0.22;
+    const seg1 = box(0.05, 0.05, 0.13, t.skin, 0, 0.01, 0.06);
+    seg1.rotation.x = 0.18;
+    const seg2 = box(0.05, 0.05, 0.13, t.skin, 0, 0.025, -0.06);
+    seg2.rotation.x = -0.18;
     fallback.add(seg1, seg2);
-    fallback.add(box(0.03, 0.03, 0.04, t.tip, 0, 0.065, -0.185));
+    fallback.add(box(0.024, 0.024, 0.035, t.tip, 0, 0.055, -0.14));
+    payloadHost.add(fallback);
 
-    mountBanana(modelHost, { targetLength: 0.34 }).then((loaded) => {
+    // Lying across the open palm, yawed so the curl shows its full profile
+    // and the tip rises toward the enemy.
+    payloadHost.position.set(-0.015, 0.1, -0.08);
+    payloadHost.rotation.set(0.2, 0.7, 0.15);
+    g.add(payloadHost);
+    mountBanana(payloadHost, { targetLength: 0.3 }).then((loaded) => {
       if (loaded) fallback.visible = false;
     });
 
-    g.add(triggerHand({ x: 0, y: -0.08, z: 0.07 }));
-    addMuzzle(g, 0, 0.06, -0.22, 0.3);
+    // Same cupping hand as the other throwables: palm under, fingers behind.
+    const gloveMat = GLOVE();
+    const fingerMat = FINGER();
+    const cuffMat = CUFF();
+    const hand = new THREE.Group();
+    hand.position.set(-0.015, 0.045, -0.07);
+    hand.add(box(0.115, 0.035, 0.115, gloveMat, 0, 0, 0.01));
+    for (let i = 0; i < 4; i++) {
+      const fx = -0.034 + i * 0.0225;
+      hand.add(box(0.026, 0.06, 0.028, fingerMat, fx, 0.028, -0.058));
+      hand.add(box(0.026, 0.028, 0.034, fingerMat, fx, 0.06, -0.044));
+    }
+    hand.add(box(0.032, 0.05, 0.03, fingerMat, 0.066, 0.022, 0.028));
+    hand.add(box(0.105, 0.07, 0.05, cuffMat, 0.012, -0.045, 0.075));
+    const wrist = new THREE.Group();
+    wrist.position.set(0.012, -0.05, 0.085);
+    wrist.add(forearm(0.7, 0.35, 0.34));
+    hand.add(wrist);
+    g.add(hand);
+
+    addMuzzle(g, -0.015, 0.12, -0.2, 0.3);
     return g;
   },
 
