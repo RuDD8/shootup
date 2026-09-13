@@ -584,9 +584,10 @@ function fireLocal({ chargeFrac = 1, beam = false, melee = false, projectile = f
 
   const isPee = w.id === 'pee';
   const isSneeze = w.id === 'sneeze';
+  const isAirhorn = w.id === 'airhorn';
 
   if (!beam && !isPee && !isSneeze) {
-    effects.flash(tmpMuzzle.x, tmpMuzzle.y, tmpMuzzle.z, w.id === 'shotgun' ? 1.5 : 1.1);
+    effects.flash(tmpMuzzle.x, tmpMuzzle.y, tmpMuzzle.z, isAirhorn || w.id === 'shotgun' ? 1.5 : 1.1);
   }
 
   if (isSneeze) {
@@ -619,7 +620,7 @@ function fireLocal({ chargeFrac = 1, beam = false, melee = false, projectile = f
     const { dist, kind } = localTrace(ox, oy, oz, tmpDir);
     tmpEnd.set(ox, oy, oz).addScaledVector(tmpDir, dist);
 
-    if (!beam && !isSneeze) {
+    if (!beam && !isSneeze && !isAirhorn) {
       effects.tracer(tmpMuzzle, tmpEnd, w.id === 'sniper' ? 0.03 : 0.02);
     }
     if (kind !== 'air') {
@@ -649,6 +650,8 @@ function fireLocal({ chargeFrac = 1, beam = false, melee = false, projectile = f
     setTimeout(() => {
       effects.snotSpray(sx, sy, sz, dx, dy, dz, 16, 17);
     }, 80);
+  } else if (isAirhorn) {
+    audio.airhorn(1);
   } else if (beam) {
     // One shared hum for the whole burst. Starting a new beamLoop per shot
     // (60/s at laser RPM) leaked unstoppable oscillators that droned forever.
@@ -1303,6 +1306,18 @@ function handleEvents(events) {
         }
         continue;
       }
+      if (w.id === 'airhorn') {
+        // Spatial honk with a long reach — the whole point of the airhorn is
+        // that the entire arena hears the BWAAAMP. No tracers: it's air.
+        audio.airhorn(1, { x: ox, y: oy, z: oz });
+        effects.flash(ox, oy, oz, 1.5);
+        for (const hit of ev.hits) {
+          if (hit.s !== 'air') {
+            effects.spark(hit.x, hit.y, hit.z, hit.s, hit.s === 'player' ? 6 : 4);
+          }
+        }
+        continue;
+      }
       if (ev.k !== 'beam') {
         effects.flash(ox, oy, oz, w.id === 'shotgun' ? 1.5 : 1.1);
       }
@@ -1327,6 +1342,18 @@ function handleEvents(events) {
         audio.shot('knife', 0.6);
         const attacker = state.players.get(ev.p);
         if (attacker?.avatar) attacker.avatar.playSwing();
+      }
+    } else if (ev.k === 'shove') {
+      // Airhorn launch. Adopt the server's shove velocity into local
+      // prediction so we fly the same arc instead of rubber-banding through
+      // the position correction. Remote victims just follow snapshots.
+      if (ev.p === state.myId) {
+        state.local.vx = ev.vx;
+        state.local.vy = ev.vy;
+        state.local.vz = ev.vz;
+        state.local.onGround = false;
+        state.local.sliding = false;
+        state.shake = Math.min(2.4, state.shake + 1.2);
       }
     } else if (ev.k === 'projSpawn') {
       const kind = ev.w || 'poopgun';
@@ -1937,7 +1964,7 @@ const WEAPON_CATEGORIES = [
   ['Marksman', ['dmr', 'leveraction', 'scout', 'sniper', 'awp', 'crossbow', 'bow']],
   ['Heavy', ['lmg', 'minigun', 'laser']],
   ['Sidearms', ['revolver', 'deagle']],
-  ['Memes', ['sneeze', 'poopgun', 'pee', 'fahgun']],
+  ['Memes', ['sneeze', 'poopgun', 'pee', 'fahgun', 'airhorn']],
   ['Melee', ['knife']],
 ];
 

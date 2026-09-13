@@ -5,7 +5,15 @@
 //   node test/smoke.mjs
 
 import { spawn } from 'node:child_process';
-import { cellCenter, generateArena, mulberry32, pickSafeSpawn, tileHeight } from '../shared/arena.js';
+import {
+  cellCenter,
+  generateArena,
+  gridSize,
+  mulberry32,
+  pickSafeSpawn,
+  tileAt,
+  tileHeight,
+} from '../shared/arena.js';
 import { stepPlayer } from '../shared/physics.js';
 import { loadArena, MAP_FY_SNOW } from '../shared/maps/index.js';
 import { FY_SNOW_SPAWNS } from '../shared/maps/fy_snow.js';
@@ -401,6 +409,76 @@ function testHazardOnPlatform() {
     'platform pool spares a player on the ground beneath it',
     belowPlatform.damage === 0,
     `damage=${belowPlatform.damage.toFixed(1)}`,
+  );
+}
+
+function testAirhornKnockback() {
+  console.log('\nairhorn knockback');
+
+  const match = new Match({ code: 'HONK' }, { mode: GAME_MODE.DEATHMATCH, mapId: 'dust_bowl' });
+  const shooter = match.addPlayer('s', 'Shooter', null);
+  const target = match.addPlayer('t', 'Target', null);
+  match.beginMatch();
+  for (let i = 0; i < 600 && match.state !== MATCH_STATE.LIVE; i++) match.update();
+
+  // Find a column of four open ground tiles: shooter at the +z end, target one
+  // cell ahead, and two more open cells beyond so the launch has a clear
+  // runway instead of slamming the victim into the next wall.
+  const grid = match.arena.grid;
+  const size = gridSize(grid);
+  let spot = null;
+  for (let r = 1; r < size - 4 && !spot; r++) {
+    for (let c = 1; c < size - 1 && !spot; c++) {
+      let open = true;
+      for (let k = 0; k < 4 && open; k++) {
+        if (tileHeight(tileAt(grid, c, r + k)) !== 0) open = false;
+      }
+      if (open) spot = { c, r };
+    }
+  }
+  check('found an open corridor for the honk test', spot !== null);
+  if (!spot) return;
+
+  const front = cellCenter(spot.c, spot.r + 2, size);
+  const back = cellCenter(spot.c, spot.r + 3, size);
+  target.x = front.x;
+  target.z = front.z;
+  target.y = 0;
+  target.vx = target.vy = target.vz = 0;
+  target.health = 1000;
+  target.spawnProtectUntil = 0;
+  target.alive = true;
+  shooter.x = back.x;
+  shooter.z = back.z;
+  shooter.y = 0;
+  shooter.yaw = 0; // faces -z, straight at the target one cell ahead
+  shooter.pitch = 0;
+  shooter.alive = true;
+
+  match.events.length = 0;
+  match.fire(shooter, WEAPONS.airhorn);
+
+  const launched = Math.hypot(target.vx, target.vz);
+  check('airhorn blast damages the victim', target.health < 1000, `health=${target.health}`);
+  check(
+    'victim is launched away from the shooter',
+    launched > 6 && target.vz < 0,
+    `speed=${launched.toFixed(1)} vz=${target.vz.toFixed(1)}`,
+  );
+  check('victim is lifted off the ground', target.vy > 2, `vy=${target.vy.toFixed(1)}`);
+  check(
+    'shove event is emitted for the victim',
+    match.events.some((e) => e.k === 'shove' && e.p === 't'),
+  );
+
+  // The launch must survive the per-tick speed clamp: after half a second of
+  // idle inputs the victim should have carried well past one cell of travel.
+  const z0 = target.z;
+  for (let t = 0; t < 30; t++) match.update();
+  check(
+    'shove carries the victim instead of being clamped away',
+    z0 - target.z > 2,
+    `travel=${(z0 - target.z).toFixed(2)}m`,
   );
 }
 
@@ -1012,6 +1090,7 @@ testStaticMaps();
 testClimbPhysics();
 testBotClimb();
 testHazardOnPlatform();
+testAirhornKnockback();
 testWeaponRandomisation();
 testGunGameRules();
 testLagComp();

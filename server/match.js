@@ -1061,8 +1061,9 @@ export class Match {
         let dmg = damageAtRange(weapon, hitDist);
         if (weapon.charge) dmg *= chargeDamageMult(weapon, chargeFrac);
         if (isHead) dmg *= HEADSHOT_MULT;
-        const damage = damageByTarget.get(hitTarget) || { total: 0, head: 0 };
+        const damage = damageByTarget.get(hitTarget) || { total: 0, head: 0, hits: 0 };
         damage.total += dmg;
+        damage.hits += 1;
         if (isHead) damage.head += dmg;
         damageByTarget.set(hitTarget, damage);
         impacts.push({ x: px, y: py, z: pz, s: 'player' });
@@ -1088,6 +1089,30 @@ export class Match {
       const headshot = damage.head > 0;
       target.health -= dmg;
       this.events.push({ k: 'hurt', p: target.id, by: player.id, dmg, head: headshot });
+
+      if (weapon.knockback && target.health > 0) {
+        // Airhorn shove: launch the victim away from the shooter, scaled by
+        // how much of the pellet cone connected. Velocity is SET (not added)
+        // and echoed in the event so the victim's client can predict the same
+        // launch instead of rubber-banding through the correction.
+        const frac = Math.min(1, damage.hits / weapon.pellets);
+        const ax = target.x - player.x;
+        const az = target.z - player.z;
+        const len = Math.hypot(ax, az) || 1;
+        const push = weapon.knockback * (0.35 + 0.65 * frac);
+        target.vx = (ax / len) * push;
+        target.vz = (az / len) * push;
+        target.vy = Math.max(target.vy, (weapon.knockbackUp || 0) * (0.5 + 0.5 * frac));
+        target.onGround = false;
+        target.sliding = false;
+        this.events.push({
+          k: 'shove',
+          p: target.id,
+          vx: target.vx,
+          vy: target.vy,
+          vz: target.vz,
+        });
+      }
 
       if (target.health <= 0) {
         this.handleKill(player, target, headshot);

@@ -20,6 +20,10 @@ import {
 } from './constants.js';
 import { tileAt, tileHeight, gridSize } from './arena.js';
 
+// How fast over-cap horizontal speed (an airhorn shove) bleeds back down to
+// run speed, in m/s². 15 m/s decays to ~7 m/s in roughly 0.8 s of flight.
+const KNOCKBACK_DECAY = 10;
+
 // Arenas come in different sizes, so the world half-extent is a property of
 // the grid rather than a global constant.
 const halfWorld = (grid) => (gridSize(grid) * CELL) / 2;
@@ -187,7 +191,19 @@ export function stepPlayer(grid, p, input, dt, speedMult = 1) {
       accelerate(p, wishX, wishZ, maxSpeed, accel, dt);
     }
 
-    clampHorizontalSpeed(p, maxSpeed);
+    // Over-speed decay: an airhorn shove launches players well past run
+    // speed, and the hard clamp would erase the launch within one tick.
+    // Anything above the cap bleeds off smoothly instead. This is computed
+    // from velocity alone (no timer state), so client-side prediction replays
+    // it identically after adopting the server's velocity on reconciliation.
+    const hSpeed = Math.hypot(p.vx, p.vz);
+    if (hSpeed > maxSpeed + 0.01) {
+      const decayed = Math.max(maxSpeed, hSpeed - KNOCKBACK_DECAY * dt);
+      p.vx *= decayed / hSpeed;
+      p.vz *= decayed / hSpeed;
+    } else {
+      clampHorizontalSpeed(p, maxSpeed);
+    }
   }
 
   if (input.jump && p.onGround && !p.crouching && !p.sliding) {

@@ -327,6 +327,13 @@ const THEMES = {
     steel: mat(0x848d99, { roughness: 0.35, metalness: 0.5 }),
     glow: mat(0x0b1220, { emissive: 0xff7a1f, emissiveIntensity: 1.6, roughness: 0.4 }),
   }),
+  airhorn: () => ({
+    can: mat(0xd0342c, { roughness: 0.35, metalness: 0.25 }),
+    label: mat(0xf5efe4, { roughness: 0.55, metalness: 0.05 }),
+    cap: mat(0x1c2026, { roughness: 0.6, metalness: 0.15 }),
+    bell: mat(0xc8ced6, { roughness: 0.18, metalness: 0.75 }),
+    button: mat(0xffd23f, { roughness: 0.5, metalness: 0.1 }),
+  }),
   knife: () => ({
     blade: mat(0x4a5060, { roughness: 0.2, metalness: 0.7 }),
     edge: mat(0xc0c8d0, { roughness: 0.15, metalness: 0.75 }),
@@ -1841,6 +1848,41 @@ const BUILDERS = {
     return g;
   },
 
+  airhorn() {
+    const g = new THREE.Group();
+    const t = THEMES.airhorn();
+
+    // Compressed-air can held upright with the chrome trumpet aimed forward.
+    // No GLB — the whole thing is primitive geometry, like the pistol fallback.
+    const can = new THREE.Group();
+    can.position.set(0, -0.02, 0.01);
+    can.add(cyl(0.048, 0.15, t.can, 0, 0, 0));
+    can.add(cyl(0.05, 0.05, t.label, 0, 0.01, 0));
+    can.add(cyl(0.044, 0.012, t.cap, 0, 0.078, 0));
+    can.add(cyl(0.044, 0.012, t.cap, 0, -0.078, 0));
+    can.add(cyl(0.028, 0.035, t.cap, 0, 0.095, 0));
+    can.add(box(0.03, 0.012, 0.035, t.button, 0, 0.118, 0.005));
+    // Horn: stem plus a flaring bell built from stacked cylinder segments.
+    can.add(cyl(0.012, 0.05, t.bell, 0, 0.095, -0.045, 'z'));
+    can.add(cyl(0.02, 0.035, t.bell, 0, 0.095, -0.085, 'z'));
+    can.add(cyl(0.03, 0.03, t.bell, 0, 0.095, -0.115, 'z'));
+    can.add(cyl(0.043, 0.028, t.bell, 0, 0.095, -0.142, 'z'));
+    can.add(cyl(0.047, 0.01, t.cap, 0, 0.095, -0.158, 'z'));
+    g.add(can);
+
+    // Vertical-grip right hand wrapping the can, thumb over the button.
+    g.add(triggerHand({
+      x: 0, y: -0.1, z: 0.02,
+      verticalGrip: true,
+      armPitch: 0.85,
+      armYaw: 0.3,
+      armLength: 0.34,
+    }));
+
+    addMuzzle(g, 0, 0.075, -0.19, 0.35);
+    return g;
+  },
+
   sneeze() {
     const g = new THREE.Group();
     const gloveMat = GLOVE();
@@ -2531,6 +2573,18 @@ export const AVATAR_GUN_BUILDERS = {
     g.userData.length = 1.0;
     return g;
   },
+  airhorn() {
+    const g = new THREE.Group();
+    const t = THEMES.airhorn();
+    g.add(cyl(0.035, 0.11, t.can, 0, -0.01, 0));
+    g.add(cyl(0.037, 0.035, t.label, 0, 0, 0));
+    g.add(cyl(0.02, 0.025, t.cap, 0, 0.06, 0));
+    g.add(cyl(0.009, 0.04, t.bell, 0, 0.07, -0.035, 'z'));
+    g.add(cyl(0.022, 0.03, t.bell, 0, 0.07, -0.07, 'z'));
+    g.add(cyl(0.032, 0.022, t.bell, 0, 0.07, -0.094, 'z'));
+    g.userData.length = 0.16;
+    return g;
+  },
   pee() {
     // Nothing to hold: the "weapon" is the player. The stream and splashes
     // are drawn from the beam events, so the hands just go to the waist.
@@ -2872,6 +2926,9 @@ export class ViewModel {
       // Slight archer cant; the bow stays near the screen centre so the
       // vertical limbs and the drawn arrow both read.
       this.weapon.rotation.set(0, 0.1, 0.1);
+    } else if (id === 'airhorn') {
+      // The can stays upright — a canted airhorn reads like it's spilling.
+      this.weapon.rotation.set(0, 0.06, 0.02);
     } else {
       // Yawed and canted like a real FPS viewmodel: the buttstock swings off
       // the right edge instead of into frame.
