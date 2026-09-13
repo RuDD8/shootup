@@ -1892,11 +1892,14 @@ const BUILDERS = {
       // …and a short fingertip tucking around the left edge.
       hand.add(box(0.02, 0.02, 0.024, fingerMat, -0.038, fy, -0.038));
     }
-    // Thumb leaning up the back-right shoulder toward the button.
+    // Thumb hovering over the button; update() slams it down on every honk.
     const thumb = box(0.024, 0.05, 0.026, fingerMat, 0.042, 0.065, 0.02);
     thumb.rotation.x = -0.2;
     thumb.rotation.z = 0.3;
     hand.add(thumb);
+    g.userData.hornThumb = thumb;
+    g.userData.hornCan = modelHost;
+    g.userData.hornCanFallback = fallback;
     // Cuff + forearm dropping toward the bottom-right corner of the frame.
     hand.add(box(0.095, 0.075, 0.06, cuffMat, 0.055, -0.095, 0.045));
     const wrist = new THREE.Group();
@@ -2931,6 +2934,7 @@ export class ViewModel {
     this.throwPhase = 0;
     this.bowPhase = 0;
     this.sneezePhase = 0;
+    this.honkPhase = 0;
     this.hidden = false;
   }
 
@@ -2971,6 +2975,7 @@ export class ViewModel {
     this.throwPhase = 0;
     this.bowPhase = 0;
     this.sneezePhase = 0;
+    this.honkPhase = 0;
     this.holder.add(this.weapon);
   }
 
@@ -2990,6 +2995,7 @@ export class ViewModel {
     this.swing = 0;
     this.throwPhase = 0;
     this.sneezePhase = 0;
+    this.honkPhase = 0;
   }
 
   get barrelLength() {
@@ -3025,6 +3031,11 @@ export class ViewModel {
     this.sneezePhase = 1;
   }
 
+  /** Airhorn honk: thumb slams the button, holds through the blast, eases off. */
+  playHonk() {
+    this.honkPhase = 1;
+  }
+
   look(dYaw, dPitch) {
     this.swayTarget.set(
       THREE.MathUtils.clamp(dYaw * 6, -0.09, 0.09),
@@ -3048,6 +3059,7 @@ export class ViewModel {
     if (this.swing > 0) this.swing = Math.max(0, this.swing - dt * 2.5);
     if (this.throwPhase > 0) this.throwPhase = Math.max(0, this.throwPhase - dt * 2.8);
     if (this.sneezePhase > 0) this.sneezePhase = Math.max(0, this.sneezePhase - dt * 1.15);
+    if (this.honkPhase > 0) this.honkPhase = Math.max(0, this.honkPhase - dt * 2.4);
 
     if (moving && onGround && !sliding) this.bobTime += dt * 9.5;
     else this.bobTime += dt * 1.6;
@@ -3261,6 +3273,41 @@ export class ViewModel {
         bowRig.nockGroup.position.set(rest.x, rest.y, rest.z + pull);
         bowRig.nockGroup.rotation.set(0, 0, 0);
         bowRig.arrowHost.visible = !(typeof ammo === 'number' && ammo <= 0);
+      }
+    }
+
+    // Airhorn: the thumb slams the button on fire, stays pressed through the
+    // honk, then eases back up. The can dips a touch under the push.
+    const hornThumb = this.weaponId === 'airhorn' ? this.weapon.userData.hornThumb : null;
+    if (hornThumb) {
+      if (!hornThumb.userData.pressRest) {
+        hornThumb.userData.pressRest = {
+          position: hornThumb.position.clone(),
+          rotation: hornThumb.rotation.clone(),
+        };
+      }
+      const rest = hornThumb.userData.pressRest;
+      const t = 1 - this.honkPhase;
+      let press = 0;
+      if (this.honkPhase > 0) {
+        if (t < 0.15) press = smoothstep01(t / 0.15); // slam down
+        else if (t < 0.65) press = 1; // hold while it blares
+        else press = 1 - smoothstep01((t - 0.65) / 0.35); // ease off
+      }
+      hornThumb.position.set(
+        rest.position.x - press * 0.038,
+        rest.position.y - press * 0.02,
+        rest.position.z - press * 0.012,
+      );
+      hornThumb.rotation.set(
+        rest.rotation.x - press * 0.25,
+        rest.rotation.y,
+        rest.rotation.z + press * 0.5,
+      );
+      for (const can of [this.weapon.userData.hornCan, this.weapon.userData.hornCanFallback]) {
+        if (!can) continue;
+        if (can.userData.restY === undefined) can.userData.restY = can.position.y;
+        can.position.y = can.userData.restY - press * 0.006;
       }
     }
 

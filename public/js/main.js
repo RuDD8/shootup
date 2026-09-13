@@ -652,6 +652,7 @@ function fireLocal({ chargeFrac = 1, beam = false, melee = false, projectile = f
     }, 80);
   } else if (isAirhorn) {
     audio.airhorn(1);
+    viewModel.playHonk();
   } else if (beam) {
     // One shared hum for the whole burst. Starting a new beamLoop per shot
     // (60/s at laser RPM) leaked unstoppable oscillators that droned forever.
