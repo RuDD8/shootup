@@ -367,7 +367,10 @@ export class Effects {
     const slot = this.hazardPool[this.hazardCursor];
     this.hazardCursor = (this.hazardCursor + 1) % HAZARD_COUNT;
     slot.mesh.visible = true;
-    slot.mesh.position.set(x, y + 0.02, z);
+    // Crates, platforms and decks wear a decorative rim cap whose top face
+    // rises up to 7cm above the collision height, so elevated pools need
+    // extra clearance to sit on the lid instead of vanishing inside it.
+    slot.mesh.position.set(x, y + (y > 0.01 ? 0.09 : 0.02), z);
     slot.mesh.scale.setScalar(radius);
     slot.baseMat.opacity = 0.7;
     slot.mesh.traverse((child) => {
