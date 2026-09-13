@@ -760,6 +760,9 @@ net.on('hello', (msg) => {
     $('menu-error').textContent =
       'Server is running outdated code — restart it, then reload this page.';
   }
+  // Populate the public room browser right away rather than waiting for the
+  // next refresh interval.
+  net.send({ t: 'rooms' });
 });
 
 net.on('joined', (msg) => {
@@ -1935,6 +1938,20 @@ $('btn-create').addEventListener('click', () => {
     mode: selectedMode,
     dmMinutes: Number($('dm-minutes').value) || 5,
     mapId: $('map-select').value,
+    pub: $('public-room').checked,
+  });
+});
+
+$('btn-quick').addEventListener('click', () => {
+  state.myName = $('name-input').value.trim() || 'Player';
+  $('menu-error').textContent = '';
+  audio.unlock();
+  net.send({
+    t: 'quick',
+    name: state.myName,
+    mode: selectedMode,
+    dmMinutes: Number($('dm-minutes').value) || 5,
+    mapId: $('map-select').value,
   });
 });
 
@@ -1953,6 +1970,47 @@ $('btn-join').addEventListener('click', () => {
 $('code-input').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') $('btn-join').click();
 });
+
+// ------------------------------------------------------- public room browser
+
+const MODE_LABELS = { duel: '1v1 Duel', deathmatch: 'Deathmatch', gungame: 'Gun Game' };
+
+net.on('rooms', (msg) => {
+  const rooms = msg.rooms || [];
+  const list = $('room-list');
+  list.innerHTML = '';
+  for (const r of rooms) {
+    const li = document.createElement('li');
+    li.className = 'room-item';
+    const info = document.createElement('span');
+    info.className = 'room-info';
+    const bots = r.bots ? ` · ${r.bots} bot${r.bots > 1 ? 's' : ''}` : '';
+    info.textContent = `${MODE_LABELS[r.mode] || r.mode} · ${r.mapName || r.mapId}${bots}`;
+    const count = document.createElement('span');
+    count.className = 'room-count';
+    count.textContent = `${r.players}/${r.max}`;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = 'JOIN';
+    btn.addEventListener('click', () => {
+      state.myName = $('name-input').value.trim() || 'Player';
+      $('menu-error').textContent = '';
+      audio.unlock();
+      net.send({ t: 'join', code: r.code, name: state.myName });
+    });
+    li.append(info, count, btn);
+    list.appendChild(li);
+  }
+  $('room-browser').classList.toggle('hidden', rooms.length === 0);
+});
+
+// Keep the browser fresh while the main menu is on screen.
+setInterval(() => {
+  if (!net.ready) return;
+  if ($('menu').classList.contains('hidden')) return;
+  if ($('menu-main').classList.contains('hidden')) return;
+  net.send({ t: 'rooms' });
+}, 4000);
 
 $('name-input').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') $('btn-create').click();

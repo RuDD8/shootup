@@ -24,7 +24,7 @@ export class RoomManager {
     throw new Error('room code space exhausted');
   }
 
-  create({ mode = GAME_MODE.DUEL, dmMinutes = 5, mapId = MAP_RANDOM } = {}) {
+  create({ mode = GAME_MODE.DUEL, dmMinutes = 5, mapId = MAP_RANDOM, isPublic = false } = {}) {
     if (this.rooms.size >= MAX_ROOMS) return null;
     const code = this.makeCode();
     const room = {
@@ -34,10 +34,49 @@ export class RoomManager {
       mode: mode === GAME_MODE.DEATHMATCH ? GAME_MODE.DEATHMATCH : mode === GAME_MODE.GUNGAME ? GAME_MODE.GUNGAME : GAME_MODE.DUEL,
       dmMinutes: clampDmMinutes(dmMinutes),
       mapId: normalizeMapId(mapId),
+      isPublic: Boolean(isPublic),
     };
     room.match = new Match(room, { mode: room.mode, dmMinutes: room.dmMinutes, mapId: room.mapId });
     this.rooms.set(code, room);
     return room;
+  }
+
+  /** Joinable public rooms for the menu browser, fullest first. */
+  publicRooms() {
+    const list = [];
+    for (const room of this.rooms.values()) {
+      if (!room.isPublic) continue;
+      if (room.match.state !== MATCH_STATE.WAITING) continue;
+      if (room.match.players.length >= room.match.maxPlayers) continue;
+      list.push({
+        code: room.code,
+        mode: room.mode,
+        mapId: room.mapId,
+        players: room.match.players.length,
+        bots: room.match.players.filter((p) => p.isBot).length,
+        max: room.match.maxPlayers,
+      });
+    }
+    list.sort((a, b) => b.players - a.players);
+    return list.slice(0, 20);
+  }
+
+  /**
+   * Join the fullest open public room of the requested mode, or open a fresh
+   * public room with the requested settings when none exists.
+   */
+  quickMatch({ mode, dmMinutes, mapId }, name, conn) {
+    let best = null;
+    for (const room of this.rooms.values()) {
+      if (!room.isPublic || room.mode !== mode) continue;
+      if (room.match.state !== MATCH_STATE.WAITING) continue;
+      if (room.match.players.length >= room.match.maxPlayers) continue;
+      if (!best || room.match.players.length > best.match.players.length) best = room;
+    }
+    if (best) return this.seat(best, name, conn);
+    const room = this.create({ mode, dmMinutes, mapId, isPublic: true });
+    if (!room) return { error: 'Server is at room capacity. Try again shortly.' };
+    return this.seat(room, name, conn);
   }
 
   get(code) {

@@ -169,32 +169,43 @@ const connections = attachWebSocket(server, (conn) => {
     }
     if (!msg || typeof msg.t !== 'string') return;
 
+    const seatSession = (room, player) => {
+      session.room = room;
+      session.playerId = player.id;
+      const roster = rooms.roster(room);
+      conn.sendJSON({
+        t: 'joined',
+        code: room.code,
+        id: player.id,
+        slot: player.slot,
+        mode: room.mode,
+        dmMinutes: room.dmMinutes,
+        mapId: room.mapId,
+        mapName: mapName(room.mapId),
+        isHost: player.id === room.match.hostId,
+        maxPlayers: room.match.maxPlayers,
+        color: playerColor(player.slot),
+        players: roster,
+      });
+      room.match.broadcast({ t: 'peers', players: roster });
+    };
+
     switch (msg.t) {
       case 'create': {
         if (session.room) return;
         const mode = msg.mode === 'deathmatch' ? 'deathmatch' : msg.mode === 'gungame' ? 'gungame' : 'duel';
-        const room = rooms.create({ mode, dmMinutes: msg.dmMinutes, mapId: msg.mapId });
+        const room = rooms.create({
+          mode,
+          dmMinutes: msg.dmMinutes,
+          mapId: msg.mapId,
+          isPublic: Boolean(msg.pub),
+        });
         if (!room) {
           conn.sendJSON({ t: 'error', msg: 'Server is at room capacity. Try again shortly.' });
           return;
         }
         const { player } = rooms.seat(room, cleanName(msg.name), conn);
-        session.room = room;
-        session.playerId = player.id;
-        conn.sendJSON({
-          t: 'joined',
-          code: room.code,
-          id: player.id,
-          slot: player.slot,
-          mode: room.mode,
-          dmMinutes: room.dmMinutes,
-          mapId: room.mapId,
-          mapName: mapName(room.mapId),
-          isHost: true,
-          maxPlayers: room.match.maxPlayers,
-          color: playerColor(player.slot),
-          players: rooms.roster(room),
-        });
+        seatSession(room, player);
         break;
       }
 
@@ -210,24 +221,33 @@ const connections = attachWebSocket(server, (conn) => {
           conn.sendJSON({ t: 'error', msg: result.error });
           return;
         }
-        session.room = result.room;
-        session.playerId = result.player.id;
-        const roster = rooms.roster(result.room);
+        seatSession(result.room, result.player);
+        break;
+      }
+
+      // One-click matchmaking: join the fullest open public room of the
+      // selected mode, or open a fresh public room when none is waiting.
+      case 'quick': {
+        if (session.room) return;
+        const mode = msg.mode === 'deathmatch' ? 'deathmatch' : msg.mode === 'gungame' ? 'gungame' : 'duel';
+        const result = rooms.quickMatch(
+          { mode, dmMinutes: msg.dmMinutes, mapId: msg.mapId },
+          cleanName(msg.name),
+          conn,
+        );
+        if (result.error) {
+          conn.sendJSON({ t: 'error', msg: result.error });
+          return;
+        }
+        seatSession(result.room, result.player);
+        break;
+      }
+
+      case 'rooms': {
         conn.sendJSON({
-          t: 'joined',
-          code: result.room.code,
-          id: result.player.id,
-          slot: result.player.slot,
-          mode: result.room.mode,
-          dmMinutes: result.room.dmMinutes,
-          mapId: result.room.mapId,
-          mapName: mapName(result.room.mapId),
-          isHost: result.player.id === result.room.match.hostId,
-          maxPlayers: result.room.match.maxPlayers,
-          color: playerColor(result.player.slot),
-          players: roster,
+          t: 'rooms',
+          rooms: rooms.publicRooms().map((r) => ({ ...r, mapName: mapName(r.mapId) })),
         });
-        result.room.match.broadcast({ t: 'peers', players: roster });
         break;
       }
 

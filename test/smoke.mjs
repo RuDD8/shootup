@@ -771,6 +771,47 @@ async function testServer() {
 
     a.socket.close();
     await sleep(200);
+
+    // ---------------------------------------------------- public matchmaking
+    const host = openClient('Host');
+    await host.ready;
+    host.send({ t: 'create', name: 'Hosty', mode: 'deathmatch', pub: true, mapId: 'harbor' });
+    const hosted = await host.waitFor((m) => m.t === 'joined');
+
+    const browser = openClient('Browser');
+    await browser.ready;
+    browser.send({ t: 'rooms' });
+    const listing = await browser.waitFor((m) => m.t === 'rooms');
+    const seen = (listing.rooms || []).find((r) => r.code === hosted.code);
+    check(
+      'public room appears in the browser with mode, map and player count',
+      Boolean(seen) && seen.mode === 'deathmatch' && seen.mapId === 'harbor' && seen.players === 1,
+      JSON.stringify(listing.rooms),
+    );
+    check(
+      'the earlier private duel never appeared in a room listing',
+      !(listing.rooms || []).some((r) => r.code === joinedA.code),
+    );
+
+    // Quick match with a matching mode lands in the waiting public room.
+    browser.send({ t: 'quick', name: 'Quinn', mode: 'deathmatch' });
+    const quickJoin = await browser.waitFor((m) => m.t === 'joined');
+    check('quick match joins the open public room', quickJoin.code === hosted.code);
+
+    // Quick match with a different mode opens a fresh public room instead.
+    const loner = openClient('Loner');
+    await loner.ready;
+    loner.send({ t: 'quick', name: 'Solo', mode: 'duel', mapId: 'dust_bowl' });
+    const soloJoin = await loner.waitFor((m) => m.t === 'joined');
+    check(
+      'quick match creates a public room when no matching room waits',
+      soloJoin.code !== hosted.code && soloJoin.isHost === true && soloJoin.mapId === 'dust_bowl',
+    );
+
+    host.socket.close();
+    browser.socket.close();
+    loner.socket.close();
+    await sleep(200);
   } catch (err) {
     failures++;
     console.log(`  FAIL  server test threw — ${err.message}`);
@@ -827,7 +868,9 @@ async function testBots() {
     check('solo host can create a duel room', joined.isHost);
 
     host.send({ t: 'addbot' });
-    const peers = await host.waitFor((m) => m.t === 'peers');
+    // Creation itself broadcasts a one-player roster; wait for the update
+    // that actually contains the bot.
+    const peers = await host.waitFor((m) => m.t === 'peers' && m.players.length === 2);
     check('addbot updates the lobby roster', peers.players.length === 2);
     check('added player is marked as a bot', peers.players.some((p) => p.bot));
 
