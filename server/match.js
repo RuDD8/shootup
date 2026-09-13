@@ -483,7 +483,7 @@ export class Match {
 
   placeAtSpawn(player, slotIndex) {
     const spawn = this.arena.spawns[slotIndex % this.arena.spawns.length];
-    const { x, z } = cellCenter(spawn.c, spawn.r);
+    const { x, z } = cellCenter(spawn.c, spawn.r, this.arena.size);
     player.x = x;
     player.y = 0;
     player.z = z;

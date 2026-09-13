@@ -1,5 +1,4 @@
 import {
-  GRID_SIZE,
   CELL,
   PLAYER_RADIUS,
   MOVE_SPEED,
@@ -19,17 +18,20 @@ import {
   SLIDE_MAX_TIME,
   SLIDE_STEER_MULT,
 } from './constants.js';
-import { tileAt, tileHeight } from './arena.js';
+import { tileAt, tileHeight, gridSize } from './arena.js';
 
-const HALF_WORLD = (GRID_SIZE * CELL) / 2;
+// Arenas come in different sizes, so the world half-extent is a property of
+// the grid rather than a global constant.
+const halfWorld = (grid) => (gridSize(grid) * CELL) / 2;
 
-const cellIndex = (w) => Math.floor((w + HALF_WORLD) / CELL);
+const cellIndex = (w, half) => Math.floor((w + half) / CELL);
 
 function collides(grid, x, y, z) {
-  const c0 = cellIndex(x - PLAYER_RADIUS);
-  const c1 = cellIndex(x + PLAYER_RADIUS);
-  const r0 = cellIndex(z - PLAYER_RADIUS);
-  const r1 = cellIndex(z + PLAYER_RADIUS);
+  const half = halfWorld(grid);
+  const c0 = cellIndex(x - PLAYER_RADIUS, half);
+  const c1 = cellIndex(x + PLAYER_RADIUS, half);
+  const r0 = cellIndex(z - PLAYER_RADIUS, half);
+  const r1 = cellIndex(z + PLAYER_RADIUS, half);
   for (let c = c0; c <= c1; c++) {
     for (let r = r0; r <= r1; r++) {
       if (tileHeight(tileAt(grid, c, r)) > y + STEP_UP) return true;
@@ -39,10 +41,11 @@ function collides(grid, x, y, z) {
 }
 
 function groundHeight(grid, x, y, z) {
-  const c0 = cellIndex(x - PLAYER_RADIUS);
-  const c1 = cellIndex(x + PLAYER_RADIUS);
-  const r0 = cellIndex(z - PLAYER_RADIUS);
-  const r1 = cellIndex(z + PLAYER_RADIUS);
+  const half = halfWorld(grid);
+  const c0 = cellIndex(x - PLAYER_RADIUS, half);
+  const c1 = cellIndex(x + PLAYER_RADIUS, half);
+  const r0 = cellIndex(z - PLAYER_RADIUS, half);
+  const r1 = cellIndex(z + PLAYER_RADIUS, half);
   let ground = 0;
   for (let c = c0; c <= c1; c++) {
     for (let r = r0; r <= r1; r++) {
@@ -226,16 +229,18 @@ export function stepPlayer(grid, p, input, dt, speedMult = 1) {
 }
 
 export function raycastWorld(grid, ox, oy, oz, dx, dy, dz, maxDist) {
-  let c = cellIndex(ox);
-  let r = cellIndex(oz);
+  const size = gridSize(grid);
+  const half = halfWorld(grid);
+  let c = cellIndex(ox, half);
+  let r = cellIndex(oz, half);
 
   const stepC = dx > 0 ? 1 : -1;
   const stepR = dz > 0 ? 1 : -1;
   const tDeltaX = dx !== 0 ? Math.abs(CELL / dx) : Infinity;
   const tDeltaZ = dz !== 0 ? Math.abs(CELL / dz) : Infinity;
 
-  const cellMinX = c * CELL - HALF_WORLD;
-  const cellMinZ = r * CELL - HALF_WORLD;
+  const cellMinX = c * CELL - half;
+  const cellMinZ = r * CELL - half;
   let tMaxX =
     dx !== 0 ? (dx > 0 ? cellMinX + CELL - ox : ox - cellMinX) / Math.abs(dx) : Infinity;
   let tMaxZ =
@@ -245,7 +250,7 @@ export function raycastWorld(grid, ox, oy, oz, dx, dy, dz, maxDist) {
   let t = 0;
 
   for (let guard = 0; guard < 1024; guard++) {
-    if (c < 0 || r < 0 || c >= GRID_SIZE || r >= GRID_SIZE) break;
+    if (c < 0 || r < 0 || c >= size || r >= size) break;
 
     const tExit = Math.min(tMaxX, tMaxZ);
     const h = tileHeight(tileAt(grid, c, r));

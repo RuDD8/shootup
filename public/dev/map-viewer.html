@@ -1,0 +1,86 @@
+<!doctype html>
+<!--
+  Dev map viewer: renders any arena with its theme and skyline props from a
+  slow-orbiting bird's-eye camera. Not linked from the game UI.
+
+    http://localhost:8080/dev/map-viewer.html?map=dust_bowl
+    ?map=<id>        map id (default: fy_snow)
+    &angle=<deg>     fix the orbit at this angle instead of animating
+    &height=<mult>   camera height multiplier (default 1)
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Map Viewer</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #000;
+      }
+      canvas {
+        display: block;
+      }
+      #label {
+        position: fixed;
+        left: 12px;
+        top: 10px;
+        color: #fff;
+        font: 600 14px system-ui;
+        text-shadow: 0 1px 4px #000;
+      }
+    </style>
+    <script type="importmap">
+      { "imports": { "three": "/vendor/three.module.js" } }
+    </script>
+  </head>
+  <body>
+    <canvas id="scene"></canvas>
+    <div id="label"></div>
+    <script type="module">
+      import { loadArena, normalizeMapId, mapName } from '/shared/maps/index.js';
+      import { CELL } from '/shared/constants.js';
+      import * as THREE from '/vendor/three.module.js';
+      import { createRenderer, createScene, buildArena, applyMapTheme } from '/js/world.js';
+
+      const params = new URLSearchParams(location.search);
+      const mapId = normalizeMapId(params.get('map') || 'fy_snow');
+      const fixedAngle = params.has('angle') ? Number(params.get('angle')) : null;
+      const heightMult = Number(params.get('height') || 1);
+
+      const arena = loadArena(mapId, 1337);
+      document.getElementById('label').textContent = `${mapName(mapId)} — ${arena.size}×${arena.size}`;
+
+      const renderer = createRenderer(document.getElementById('scene'));
+      const scene = createScene();
+      applyMapTheme(scene, mapId);
+      buildArena(scene, arena, mapId);
+
+      const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 600);
+      const extent = arena.size * CELL;
+
+      function place(angleDeg) {
+        const a = (angleDeg * Math.PI) / 180;
+        const radius = extent * 0.85;
+        camera.position.set(Math.sin(a) * radius, extent * 0.75 * heightMult, Math.cos(a) * radius);
+        camera.lookAt(0, 0, 0);
+      }
+
+      addEventListener('resize', () => {
+        renderer.setSize(innerWidth, innerHeight);
+        camera.aspect = innerWidth / innerHeight;
+        camera.updateProjectionMatrix();
+      });
+
+      let angle = fixedAngle ?? 0;
+      renderer.setAnimationLoop(() => {
+        if (fixedAngle === null) angle += 0.08;
+        place(angle);
+        renderer.clear();
+        renderer.render(scene, camera);
+      });
+    </script>
+  </body>
+</html>

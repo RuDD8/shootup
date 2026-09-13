@@ -16,6 +16,42 @@ const SHARED_DIR = path.join(ROOT, 'shared');
 
 const PORT = Number(process.env.PORT) || 8787;
 
+// Newest source mtime is the build fingerprint. A server process left running
+// across a code edit keeps simulating with the rules it loaded at boot while
+// serving the new files from disk — physics and rendering silently disagree
+// and it looks like broken hitboxes. Re-checking the fingerprint per
+// connection lets such a server warn every joining client to restart it.
+function scanBuild() {
+  let newest = 0;
+  const walk = (dir) => {
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const target = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(target);
+      } else {
+        try {
+          const t = fs.statSync(target).mtimeMs;
+          if (t > newest) newest = t;
+        } catch {
+          // A file vanishing mid-scan is fine; the next scan settles it.
+        }
+      }
+    }
+  };
+  walk(PUBLIC_DIR);
+  walk(SHARED_DIR);
+  walk(__dirname);
+  return Math.round(newest);
+}
+
+const BUILD_AT_START = scanBuild();
+
 const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
@@ -55,6 +91,8 @@ const server = http.createServer((req, res) => {
     const body = JSON.stringify({
       ok: true,
       uptime: Math.floor(process.uptime()),
+      build: BUILD_AT_START,
+      stale: scanBuild() > BUILD_AT_START,
       ...rooms.stats(),
     });
     res.writeHead(200, {
@@ -109,7 +147,7 @@ const connections = attachWebSocket(server, (conn) => {
     failedJoins: 0,
   };
 
-  conn.sendJSON({ t: 'hello' });
+  conn.sendJSON({ t: 'hello', build: BUILD_AT_START, stale: scanBuild() > BUILD_AT_START });
 
   conn.on('message', (raw) => {
     const now = Date.now();

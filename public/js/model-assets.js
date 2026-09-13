@@ -73,6 +73,33 @@ async function mountWeaponModel(
   }
 }
 
+/**
+ * Mount a Blender-authored skyline prop into an arena group. Props are
+ * decorative set dressing placed outside the playable border, so they carry
+ * no collision. Scaled by height (glTF is Y-up) and grounded at y = 0.
+ */
+export async function mountArenaProp(parent, { url, height = 10, x = 0, z = 0, yaw = 0 }) {
+  try {
+    const template = await loadTemplate(url);
+    if (parent.userData.disposed) return false;
+
+    const model = cloneTemplate(template, false);
+    model.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(model);
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    const scale = height / Math.max(size.y, 0.001);
+    model.scale.setScalar(scale);
+    model.rotation.y = yaw;
+    model.position.set(x, -box.min.y * scale, z);
+    parent.add(model);
+    return true;
+  } catch (error) {
+    console.error(`Could not load arena prop ${url}:`, error);
+    return false;
+  }
+}
+
 export function mountAssaultRifle(parent, options = {}) {
   return mountWeaponModel(parent, {
     url: '/models/assault_rifle.glb',

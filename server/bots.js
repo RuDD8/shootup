@@ -1,12 +1,11 @@
 import {
   EYE_HEIGHT,
-  GRID_SIZE,
   MAX_PITCH,
   MATCH_STATE,
   TICK_DT,
   TILE_OPEN,
 } from '../shared/constants.js';
-import { cellCenter, cellOf, listSpawnCells } from '../shared/arena.js';
+import { cellCenter, cellOf, gridSize, listSpawnCells } from '../shared/arena.js';
 import { raycastWorld } from '../shared/physics.js';
 import { PRIMARY_WEAPON_IDS } from '../shared/weapons.js';
 
@@ -108,14 +107,15 @@ function aimError(yaw, pitch, dx, dy, dz, horiz) {
 
 /** Return the first open cell on a shortest path, or null when no path exists. */
 function nextPathCell(grid, start, goal) {
-  const index = (c, r) => r * GRID_SIZE + c;
+  const size = gridSize(grid);
+  const index = (c, r) => r * size + c;
   const startIndex = index(start.c, start.r);
   const goalIndex = index(goal.c, goal.r);
   if (startIndex === goalIndex) return goal;
 
-  const previous = new Int16Array(GRID_SIZE * GRID_SIZE);
+  const previous = new Int16Array(size * size);
   previous.fill(-1);
-  const queue = new Int16Array(GRID_SIZE * GRID_SIZE);
+  const queue = new Int16Array(size * size);
   let read = 0;
   let write = 0;
   queue[write++] = startIndex;
@@ -123,12 +123,12 @@ function nextPathCell(grid, start, goal) {
 
   while (read < write && previous[goalIndex] === -1) {
     const current = queue[read++];
-    const c = current % GRID_SIZE;
-    const r = Math.floor(current / GRID_SIZE);
+    const c = current % size;
+    const r = Math.floor(current / size);
     for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
       const nc = c + dc;
       const nr = r + dr;
-      if (nc < 0 || nr < 0 || nc >= GRID_SIZE || nr >= GRID_SIZE) continue;
+      if (nc < 0 || nr < 0 || nc >= size || nr >= size) continue;
       const next = index(nc, nr);
       if (previous[next] !== -1 || grid[next] !== TILE_OPEN) continue;
       previous[next] = current;
@@ -139,7 +139,7 @@ function nextPathCell(grid, start, goal) {
   if (previous[goalIndex] === -1) return null;
   let step = goalIndex;
   while (previous[step] !== startIndex) step = previous[step];
-  return { c: step % GRID_SIZE, r: Math.floor(step / GRID_SIZE) };
+  return { c: step % size, r: Math.floor(step / size) };
 }
 
 function randomPatrolCell(match) {
@@ -220,7 +220,8 @@ function computeBotInput(match, player) {
   // position. Once memory expires, patrol instead of staring into a wall.
   let navigating = false;
   if (!canSee) {
-    const currentCell = cellOf(player.x, player.z);
+    const arenaSize = gridSize(match.arena.grid);
+    const currentCell = cellOf(player.x, player.z, arenaSize);
     const reachedPatrol =
       bs.patrolCell &&
       currentCell.c === bs.patrolCell.c &&
@@ -228,13 +229,13 @@ function computeBotInput(match, player) {
     if (!hasMemory && (!bs.patrolCell || reachedPatrol)) {
       bs.patrolCell = randomPatrolCell(match);
     }
-    const goal = hasMemory ? cellOf(bs.lastSeen.x, bs.lastSeen.z) : bs.patrolCell;
+    const goal = hasMemory ? cellOf(bs.lastSeen.x, bs.lastSeen.z, arenaSize) : bs.patrolCell;
     if (goal && match.tick >= bs.nextPathTick) {
       bs.nextPathTick = match.tick + REPATH_TICKS;
       bs.waypoint = nextPathCell(match.arena.grid, currentCell, goal);
     }
     if (bs.waypoint) {
-      const point = cellCenter(bs.waypoint.c, bs.waypoint.r);
+      const point = cellCenter(bs.waypoint.c, bs.waypoint.r, arenaSize);
       const navDx = point.x - player.x;
       const navDz = point.z - player.z;
       if (Math.hypot(navDx, navDz) > 0.35) {

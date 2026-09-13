@@ -731,7 +731,16 @@ function updateLocalGun(mask) {
 
 // ------------------------------------------------------------------ net flow
 
-net.on('hello', () => {});
+net.on('hello', (msg) => {
+  // The server re-checks its source fingerprint per connection; `stale` means
+  // the process predates the files it is serving, so its physics and this
+  // client's rendering can silently disagree (invisible walls, eaten shots).
+  if (msg.stale) {
+    console.warn('Game server is running outdated code — restart it (`npm run dev` auto-restarts).');
+    $('menu-error').textContent =
+      'Server is running outdated code — restart it, then reload this page.';
+  }
+});
 
 net.on('joined', (msg) => {
   state.myId = msg.id;

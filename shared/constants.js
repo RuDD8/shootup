@@ -8,17 +8,33 @@ export const TICK_DT = 1 / TICK_RATE;
 // Snapshots go out every other tick (30 Hz); inputs arrive at the full 60 Hz.
 export const SNAPSHOT_INTERVAL = 2;
 
-// World is a grid of 4m columns. 0 = open, 1 = full wall, 2 = waist-high cover
-// you can shoot over, jump onto, but not walk through.
+// World is a grid of 4m columns. Every tile is a solid column of some height;
+// anything below the jump ceiling is standable ground, which is what gives
+// maps Krunker-style verticality out of five simple digits:
+//   0 open ground        1 full wall (blocks sight and movement)
+//   2 crate (1.5)        jump onto from the ground, shoot over
+//   3 low step (0.8)     hop up; stair piece toward crates
+//   4 platform (2.6)     high ground; reachable by jumping from a crate
+//   5 deck (3.4)         sniper perch; reachable by hopping from a platform
+// The climb ladder is ground -> 3 -> 2 -> 4 -> 5 (every gap is under the
+// 1.53 jump apex + 0.35 step-up). Walls are tall enough that even a deck
+// jumper (3.4 + 1.53 + 0.35 = 5.28) can never mount a wall top, and deck
+// eyes (3.4 + 1.62 = 5.02) never see over the map border.
 export const GRID_SIZE = 16;
 export const CELL = 4;
 export const WORLD_SIZE = GRID_SIZE * CELL;
-export const WALL_H = 4;
+export const WALL_H = 5.4;
 export const COVER_H = 1.5;
+export const LOW_H = 0.8;
+export const HIGH_H = 2.6;
+export const DECK_H = 3.4;
 
 export const TILE_OPEN = 0;
 export const TILE_WALL = 1;
 export const TILE_COVER = 2;
+export const TILE_LOW = 3;
+export const TILE_HIGH = 4;
+export const TILE_DECK = 5;
 
 // Player is a vertical cylinder; the camera sits at EYE_HEIGHT above its feet.
 export const PLAYER_RADIUS = 0.4;

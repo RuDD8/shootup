@@ -3,9 +3,15 @@ import {
   CELL,
   WALL_H,
   COVER_H,
+  LOW_H,
+  HIGH_H,
+  DECK_H,
   TILE_OPEN,
   TILE_WALL,
   TILE_COVER,
+  TILE_LOW,
+  TILE_HIGH,
+  TILE_DECK,
 } from './constants.js';
 
 // Deterministic PRNG so an arena can be reproduced from its seed alone, which
@@ -23,38 +29,54 @@ export function mulberry32(seed) {
 
 const idx = (c, r) => r * GRID_SIZE + c;
 
+/**
+ * Grids know their own size: the side length is the square root of the cell
+ * count, cached on the array. The procedural generator always emits 16×16,
+ * but hand-authored maps can be smaller (tight duel pits) or larger (big
+ * deathmatch yards) and every physics/path helper picks that up for free.
+ */
+export function gridSize(grid) {
+  if (!grid._size) grid._size = Math.round(Math.sqrt(grid.length));
+  return grid._size;
+}
+
 // Spawns sit on the two ends of the main diagonal so the 180 degree rotation
 // maps one onto the other exactly.
 const SPAWN_A = { c: 2, r: 2 };
 const SPAWN_B = { c: GRID_SIZE - 3, r: GRID_SIZE - 3 };
 
 export function tileAt(grid, c, r) {
-  if (c < 0 || r < 0 || c >= GRID_SIZE || r >= GRID_SIZE) return TILE_WALL;
-  return grid[idx(c, r)];
+  const size = gridSize(grid);
+  if (c < 0 || r < 0 || c >= size || r >= size) return TILE_WALL;
+  return grid[r * size + c];
 }
 
 export function tileHeight(tile) {
   if (tile === TILE_WALL) return WALL_H;
   if (tile === TILE_COVER) return COVER_H;
+  if (tile === TILE_LOW) return LOW_H;
+  if (tile === TILE_HIGH) return HIGH_H;
+  if (tile === TILE_DECK) return DECK_H;
   return 0;
 }
 
 // Height of whatever occupies the column containing this world position.
 export function solidHeightAt(grid, x, z) {
-  const c = Math.floor((x + GRID_SIZE * CELL * 0.5) / CELL);
-  const r = Math.floor((z + GRID_SIZE * CELL * 0.5) / CELL);
+  const half = gridSize(grid) * CELL * 0.5;
+  const c = Math.floor((x + half) / CELL);
+  const r = Math.floor((z + half) / CELL);
   return tileHeight(tileAt(grid, c, r));
 }
 
 // World-space centre of a cell. The grid is centred on the origin so the
 // camera and the meshes share a natural coordinate space.
-export function cellCenter(c, r) {
-  const half = GRID_SIZE * CELL * 0.5;
+export function cellCenter(c, r, size = GRID_SIZE) {
+  const half = size * CELL * 0.5;
   return { x: c * CELL - half + CELL / 2, z: r * CELL - half + CELL / 2 };
 }
 
-export function cellOf(x, z) {
-  const half = GRID_SIZE * CELL * 0.5;
+export function cellOf(x, z, size = GRID_SIZE) {
+  const half = size * CELL * 0.5;
   return { c: Math.floor((x + half) / CELL), r: Math.floor((z + half) / CELL) };
 }
 
@@ -181,7 +203,7 @@ export function generateArena(seed = (Math.random() * 0xffffffff) >>> 0) {
       }
     }
 
-    return { seed, grid, spawns: [{ ...SPAWN_A }, { ...SPAWN_B }] };
+    return { seed, grid, spawns: [{ ...SPAWN_A }, { ...SPAWN_B }], size: GRID_SIZE };
   }
 
   // Fallback: an empty box is dull but always playable.
@@ -192,7 +214,7 @@ export function generateArena(seed = (Math.random() * 0xffffffff) >>> 0) {
     grid[idx(0, c)] = TILE_WALL;
     grid[idx(GRID_SIZE - 1, c)] = TILE_WALL;
   }
-  return { seed, grid, spawns: [{ ...SPAWN_A }, { ...SPAWN_B }] };
+  return { seed, grid, spawns: [{ ...SPAWN_A }, { ...SPAWN_B }], size: GRID_SIZE };
 }
 
 export function serializeArena(arena) {
@@ -200,30 +222,35 @@ export function serializeArena(arena) {
 }
 
 export function deserializeArena(data) {
-  const grid = new Uint8Array(GRID_SIZE * GRID_SIZE);
+  // The side length travels implicitly in the cell string, so hand-authored
+  // maps of any size deserialize without a protocol change.
+  const size = Math.round(Math.sqrt(data.g.length));
+  const grid = new Uint8Array(size * size);
   for (let i = 0; i < grid.length; i++) grid[i] = Number(data.g[i]) || 0;
-  return { seed: data.seed, grid, spawns: data.spawns };
+  return { seed: data.seed, grid, spawns: data.spawns, size };
 }
 
 /** Every walkable interior cell — used for deathmatch respawns. */
 export function listSpawnCells(grid) {
+  const size = gridSize(grid);
   const cells = [];
-  for (let r = 2; r < GRID_SIZE - 2; r++) {
-    for (let c = 2; c < GRID_SIZE - 2; c++) {
-      if (grid[idx(c, r)] === TILE_OPEN) cells.push({ c, r });
+  for (let r = 2; r < size - 2; r++) {
+    for (let c = 2; c < size - 2; c++) {
+      if (grid[r * size + c] === TILE_OPEN) cells.push({ c, r });
     }
   }
   return cells;
 }
 
 export function pickRandomSpawn(grid, rand = Math.random) {
+  const size = gridSize(grid);
   const cells = listSpawnCells(grid);
   if (!cells.length) {
-    const { x, z } = cellCenter(SPAWN_A.c, SPAWN_A.r);
+    const { x, z } = cellCenter(SPAWN_A.c, SPAWN_A.r, size);
     return { x, z };
   }
   const cell = cells[Math.floor(rand() * cells.length)];
-  return cellCenter(cell.c, cell.r);
+  return cellCenter(cell.c, cell.r, size);
 }
 
 /**
@@ -233,19 +260,20 @@ export function pickRandomSpawn(grid, rand = Math.random) {
  * living threat.
  */
 export function pickSafeSpawn(grid, threats = [], rand = Math.random) {
+  const size = gridSize(grid);
   const cells = listSpawnCells(grid);
   if (!cells.length) {
-    const { x, z } = cellCenter(SPAWN_A.c, SPAWN_A.r);
+    const { x, z } = cellCenter(SPAWN_A.c, SPAWN_A.r, size);
     return { x, z };
   }
   if (!threats.length) {
     const cell = cells[Math.floor(rand() * cells.length)];
-    return cellCenter(cell.c, cell.r);
+    return cellCenter(cell.c, cell.r, size);
   }
 
   const ranked = cells
     .map((cell) => {
-      const point = cellCenter(cell.c, cell.r);
+      const point = cellCenter(cell.c, cell.r, size);
       let nearestSq = Infinity;
       for (const threat of threats) {
         const dx = point.x - threat.x;

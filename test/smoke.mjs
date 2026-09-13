@@ -5,10 +5,27 @@
 //   node test/smoke.mjs
 
 import { spawn } from 'node:child_process';
-import { generateArena, mulberry32, pickSafeSpawn } from '../shared/arena.js';
+import { generateArena, mulberry32, pickSafeSpawn, tileHeight } from '../shared/arena.js';
+import { stepPlayer } from '../shared/physics.js';
 import { loadArena, MAP_FY_SNOW } from '../shared/maps/index.js';
 import { FY_SNOW_SPAWNS } from '../shared/maps/fy_snow.js';
-import { GRID_SIZE, TILE_OPEN, TILE_WALL, MATCH_STATE, GAME_MODE } from '../shared/constants.js';
+import {
+  GRID_SIZE,
+  TILE_OPEN,
+  TILE_WALL,
+  MATCH_STATE,
+  GAME_MODE,
+  JUMP_SPEED,
+  GRAVITY,
+  STEP_UP,
+  WALL_H,
+  COVER_H,
+  LOW_H,
+  HIGH_H,
+  DECK_H,
+  TICK_DT,
+  CELL,
+} from '../shared/constants.js';
 import { WEAPONS, WEAPON_IDS, randomWeaponId, shotSpread, GUNGAME_POOL } from '../shared/weapons.js';
 import { Match } from '../server/match.js';
 import {
@@ -36,9 +53,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // ---------------------------------------------------------------- arena tests
 
 function floodFill(grid, start) {
+  const size = Math.round(Math.sqrt(grid.length));
   const seen = new Uint8Array(grid.length);
   const stack = [start];
-  seen[start.r * GRID_SIZE + start.c] = 1;
+  seen[start.r * size + start.c] = 1;
   let count = 0;
   while (stack.length) {
     const { c, r } = stack.pop();
@@ -49,8 +67,8 @@ function floodFill(grid, start) {
       { c, r: r + 1 },
       { c, r: r - 1 },
     ]) {
-      if (n.c < 0 || n.r < 0 || n.c >= GRID_SIZE || n.r >= GRID_SIZE) continue;
-      const i = n.r * GRID_SIZE + n.c;
+      if (n.c < 0 || n.r < 0 || n.c >= size || n.r >= size) continue;
+      const i = n.r * size + n.c;
       if (seen[i] || grid[i] !== TILE_OPEN) continue;
       seen[i] = 1;
       stack.push(n);
@@ -102,43 +120,177 @@ function testArenas() {
   check('safe respawn stays away from threats', safeDistance > 30, `distance ${safeDistance.toFixed(1)}m`);
 }
 
-function testStaticMaps() {
-  console.log('\nstatic maps');
-  const arena = loadArena(MAP_FY_SNOW);
-  const grid = arena.grid;
-  const at = (c, r) => grid[r * GRID_SIZE + c];
+// Expected side length per hand-authored map: two small, two medium, one big
+// plus the original FY Snow.
+const STATIC_MAP_SIZES = {
+  fy_snow: 16,
+  dust_bowl: 12,
+  neon_alley: 12,
+  temple: 16,
+  foundry: 16,
+  harbor: 24,
+};
 
-  check('fy_snow grid length', grid.length === GRID_SIZE * GRID_SIZE);
-  check('fy_snow has two spawns', arena.spawns.length === 2);
+// How high a player can mount from any surface: jump apex plus step-up
+// clearance. The whole vertical design hangs on this number.
+const MAX_MOUNT = (JUMP_SPEED * JUMP_SPEED) / (2 * GRAVITY) + STEP_UP;
 
-  // A gap in the border would let players walk straight out of the world.
-  let sealed = true;
-  for (let k = 0; k < GRID_SIZE; k++) {
-    if (at(k, 0) !== TILE_WALL || at(k, GRID_SIZE - 1) !== TILE_WALL) sealed = false;
-    if (at(0, k) !== TILE_WALL || at(GRID_SIZE - 1, k) !== TILE_WALL) sealed = false;
-  }
-  check('fy_snow border is sealed', sealed);
-
-  // 180 degree symmetry is what makes the two spawns equally good.
-  let rotational = true;
-  for (let r = 0; r < GRID_SIZE; r++) {
-    for (let c = 0; c < GRID_SIZE; c++) {
-      if (at(c, r) !== at(GRID_SIZE - 1 - c, GRID_SIZE - 1 - r)) rotational = false;
+// BFS over every non-wall column: you can move to a neighbour if its top is
+// within jump reach of where you stand (drops are always allowed). Proves
+// every catwalk, gallery, summit and sniper deck is genuinely climbable.
+function climbFill(grid, start) {
+  const size = Math.round(Math.sqrt(grid.length));
+  const seen = new Uint8Array(grid.length);
+  const stack = [start];
+  seen[start.r * size + start.c] = 1;
+  while (stack.length) {
+    const { c, r } = stack.pop();
+    const h = tileHeight(grid[r * size + c]);
+    for (const n of [
+      { c: c + 1, r },
+      { c: c - 1, r },
+      { c, r: r + 1 },
+      { c, r: r - 1 },
+    ]) {
+      if (n.c < 0 || n.r < 0 || n.c >= size || n.r >= size) continue;
+      const i = n.r * size + n.c;
+      if (seen[i] || grid[i] === TILE_WALL) continue;
+      if (tileHeight(grid[i]) - h > MAX_MOUNT) continue;
+      seen[i] = 1;
+      stack.push(n);
     }
   }
-  check('fy_snow is rotationally symmetric', rotational);
+  return seen;
+}
 
-  const [a, b] = arena.spawns;
-  check('fy_snow spawn A matches layout', a.c === FY_SNOW_SPAWNS[0].c && a.r === FY_SNOW_SPAWNS[0].r);
-  check('fy_snow spawns sit on open ground', at(a.c, a.r) === TILE_OPEN && at(b.c, b.r) === TILE_OPEN);
+function testStaticMaps() {
+  console.log('\nstatic maps');
 
-  const { seen, count } = floodFill(grid, a);
-  check('fy_snow connects spawns', Boolean(seen[b.r * GRID_SIZE + b.c]));
+  check(
+    'height ladder fits jump physics (ground->step->crate->platform->deck)',
+    LOW_H <= MAX_MOUNT &&
+      COVER_H <= MAX_MOUNT &&
+      HIGH_H - COVER_H <= MAX_MOUNT &&
+      DECK_H - HIGH_H <= MAX_MOUNT,
+    `max mount ${MAX_MOUNT.toFixed(2)}`,
+  );
+  check(
+    'wall tops are unreachable even from a sniper deck',
+    DECK_H + MAX_MOUNT < WALL_H,
+    `${(DECK_H + MAX_MOUNT).toFixed(2)} vs wall ${WALL_H}`,
+  );
 
-  let orphans = 0;
-  for (let i = 0; i < grid.length; i++) if (grid[i] === TILE_OPEN && !seen[i]) orphans++;
-  check('fy_snow has no orphan pockets', orphans === 0, `${orphans} unreachable open cells`);
-  check('fy_snow has room to fight', count >= 100, `reachable ${count}`);
+  const fySnow = loadArena(MAP_FY_SNOW);
+  check(
+    'fy_snow spawn A matches layout',
+    fySnow.spawns[0].c === FY_SNOW_SPAWNS[0].c && fySnow.spawns[0].r === FY_SNOW_SPAWNS[0].r,
+  );
+
+  for (const [mapId, expectedSize] of Object.entries(STATIC_MAP_SIZES)) {
+    const arena = loadArena(mapId);
+    const grid = arena.grid;
+    const size = arena.size;
+    const at = (c, r) => grid[r * size + c];
+
+    check(`${mapId} is ${expectedSize}x${expectedSize}`, size === expectedSize && grid.length === size * size);
+    check(`${mapId} has two spawns`, arena.spawns.length === 2);
+
+    // A gap in the border would let players walk straight out of the world.
+    let sealed = true;
+    for (let k = 0; k < size; k++) {
+      if (at(k, 0) !== TILE_WALL || at(k, size - 1) !== TILE_WALL) sealed = false;
+      if (at(0, k) !== TILE_WALL || at(size - 1, k) !== TILE_WALL) sealed = false;
+    }
+    check(`${mapId} border is sealed`, sealed);
+
+    // 180 degree symmetry is what makes the two spawns equally good.
+    let rotational = true;
+    for (let r = 0; r < size; r++) {
+      for (let c = 0; c < size; c++) {
+        if (at(c, r) !== at(size - 1 - c, size - 1 - r)) rotational = false;
+      }
+    }
+    check(`${mapId} is rotationally symmetric`, rotational);
+
+    const [a, b] = arena.spawns;
+    check(
+      `${mapId} spawns are rotational twins on open ground`,
+      at(a.c, a.r) === TILE_OPEN &&
+        at(b.c, b.r) === TILE_OPEN &&
+        b.c === size - 1 - a.c &&
+        b.r === size - 1 - a.r,
+    );
+
+    const { seen, count } = floodFill(grid, a);
+    check(`${mapId} connects spawns`, Boolean(seen[b.r * size + b.c]));
+
+    let orphans = 0;
+    for (let i = 0; i < grid.length; i++) if (grid[i] === TILE_OPEN && !seen[i]) orphans++;
+    check(`${mapId} has no orphan pockets`, orphans === 0, `${orphans} unreachable open cells`);
+
+    // Every standable surface — crates, steps, platforms, decks — must be
+    // reachable by actually jumping there from spawn, or the vertical routes
+    // are decoration instead of gameplay.
+    const climbable = climbFill(grid, a);
+    let stranded = 0;
+    for (let i = 0; i < grid.length; i++) if (grid[i] !== TILE_WALL && !climbable[i]) stranded++;
+    check(`${mapId} high ground is all climbable`, stranded === 0, `${stranded} unreachable columns`);
+
+    // Enough room relative to the map's own footprint (interior cells).
+    const interior = (size - 2) * (size - 2);
+    check(`${mapId} has room to fight`, count >= interior * 0.5, `reachable ${count}/${interior}`);
+  }
+}
+
+// Drive the real movement code up the full height ladder: an 8×8 arena with
+// a west-to-east staircase strip (open, open, step, crate, platform, deck).
+// If a bunny-hopping player can't summit, the vertical map routes are lies.
+function testClimbPhysics() {
+  console.log('\nclimb physics');
+
+  const rows = [
+    '11111111',
+    '10000001',
+    '10000001',
+    '10000001',
+    '10032451',
+    '10000001',
+    '10000001',
+    '11111111',
+  ];
+  const grid = [...rows.join('')].map(Number);
+  const centre = (cell) => (cell + 0.5) * CELL - (8 * CELL) / 2;
+
+  const p = {
+    x: centre(1),
+    y: 0,
+    z: centre(4),
+    vx: 0,
+    vy: 0,
+    vz: 0,
+    onGround: true,
+    crouching: false,
+    sliding: false,
+    slideTime: 0,
+    prevCrouch: false,
+  };
+  // Face east (+x) and hold forward + jump for eight simulated seconds, then
+  // release jump for one more second so the hopper settles on whatever he
+  // reached instead of being caught mid-air by the assertion.
+  const input = { yaw: -Math.PI / 2, forward: true, jump: true };
+  let peak = 0;
+  for (let tick = 0; tick < 9 * 60; tick++) {
+    if (tick === 8 * 60) input.jump = false;
+    stepPlayer(grid, p, input, TICK_DT);
+    peak = Math.max(peak, p.y);
+  }
+
+  check(
+    'player physically climbs step, crate and platform onto the deck',
+    p.onGround && p.y === DECK_H,
+    `ended at y=${p.y.toFixed(2)} x=${p.x.toFixed(1)} (deck is ${DECK_H})`,
+  );
+  check('climb never exceeds wall height', peak + 0.01 < WALL_H, `peak ${peak.toFixed(2)}`);
 }
 
 function testWeaponRandomisation() {
@@ -412,6 +564,15 @@ async function testServer() {
       const asset = await fetch(`http://127.0.0.1:${PORT}/models/${name}.glb`);
       check(
         `Blender ${name} is served as a GLB asset`,
+        asset.ok &&
+          asset.headers.get('content-type') === 'model/gltf-binary' &&
+          Number(asset.headers.get('content-length')) > 1000,
+      );
+    }
+    for (const name of ['pyramid', 'neon_tower', 'temple_gate', 'volcano', 'crane']) {
+      const asset = await fetch(`http://127.0.0.1:${PORT}/models/prop_${name}.glb`);
+      check(
+        `Blender ${name} map prop is served as a GLB asset`,
         asset.ok &&
           asset.headers.get('content-type') === 'model/gltf-binary' &&
           Number(asset.headers.get('content-length')) > 1000,
@@ -694,6 +855,7 @@ async function testDeathmatch() {
 console.log('Duel Arena smoke test');
 testArenas();
 testStaticMaps();
+testClimbPhysics();
 testWeaponRandomisation();
 testGunGameRules();
 testLagComp();
