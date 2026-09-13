@@ -1247,13 +1247,6 @@ export class Match {
     const chargeFrac = weapon.charge ? (player.chargeFrac ?? 1) : 1;
     const speed = weapon.projSpeed * (weapon.charge ? 0.35 + 0.65 * chargeFrac : 1);
 
-    // Dice gun: the damage is decided the moment the die leaves the barrel,
-    // and the shooter is told their roll immediately — sweat while it flies.
-    const roll = weapon.roll ? 1 + Math.floor(Math.random() * (weapon.rollMax || 100)) : null;
-    if (roll !== null) {
-      this.events.push({ k: 'roll', p: player.id, v: roll });
-    }
-
     const proj = {
       id: `proj_${this.tick}_${player.id}`,
       owner: player.id,
@@ -1264,7 +1257,7 @@ export class Match {
       vx: dx * speed,
       vy: dy * speed + (weapon.projArc ?? 3),
       vz: dz * speed,
-      damage: roll ?? Math.round(
+      damage: Math.round(
         weapon.damage * (weapon.charge ? chargeDamageMult(weapon, chargeFrac) : 1),
       ),
       age: 0,
@@ -1550,8 +1543,9 @@ export class Match {
     }
   }
 
-  // A banana peel lying on the surface at y. Unlike hazard pools it deals no
-  // damage: stepping on one while moving launches you along your own momentum.
+  // A banana peel lying on the surface at y. An enemy walking over it takes
+  // a chunk of damage and gets launched along their own momentum. The owner
+  // is immune to their own litter.
   spawnPeel(proj, x, y, z) {
     this.peelSeq += 1;
     const peel = {
@@ -1563,6 +1557,7 @@ export class Match {
       radius: proj.weapon.peelRadius || 0.55,
       slip: proj.weapon.peelSlip || 12,
       slipUp: proj.weapon.peelSlipUp || 4.5,
+      damage: proj.weapon.peelDamage || 0,
       remainingTicks: Math.round((proj.weapon.peelDuration || 15) * TICK_RATE),
     };
     this.peels.push(peel);
@@ -1595,6 +1590,8 @@ export class Match {
 
       for (const player of this.players) {
         if (!player.alive) continue;
+        if (player.id === peel.owner) continue; // your own litter is safe
+        if (this.tick < player.spawnProtectUntil) continue;
         if (this.tick < (player.slipImmuneUntil || 0)) continue;
         const hSpeed = Math.hypot(player.vx, player.vz);
         // Standing on a peel is safe; walking over it is not. Also same-level
@@ -1604,27 +1601,42 @@ export class Match {
         const dy = player.y - peel.y;
         if (dy < -0.5 || dy > 1.2) continue;
 
-        // The slip: your own momentum, amplified way past run speed, plus a
-        // little hop. The over-speed decay in stepPlayer bleeds it off, and
-        // the shove event lets the victim's client predict the same launch.
-        const push = Math.max(peel.slip, hSpeed * 1.5);
-        player.vx = (player.vx / hSpeed) * push;
-        player.vz = (player.vz / hSpeed) * push;
-        player.vy = Math.max(player.vy, peel.slipUp);
-        player.onGround = false;
-        player.sliding = false;
-        player.slipImmuneUntil = this.tick + TICK_RATE;
-        this.events.push({
-          k: 'shove',
-          p: player.id,
-          vx: player.vx,
-          vy: player.vy,
-          vz: player.vz,
-          slip: true,
-          x: peel.x,
-          y: peel.y,
-          z: peel.z,
-        });
+        // The bite: stepping on a peel costs real health, credited to the
+        // shooter through the normal kill pipeline.
+        if (peel.damage > 0) {
+          player.health -= peel.damage;
+          this.events.push({
+            k: 'hurt', p: player.id, by: peel.owner, dmg: peel.damage, head: false,
+          });
+        }
+
+        if (player.health <= 0) {
+          const killer = this.players.find((p) => p.id === peel.owner);
+          if (killer && killer.id !== player.id) this.handleKill(killer, player, false);
+          else this.handleEnvironmentalDeath(player);
+        } else {
+          // The slip: your own momentum, amplified way past run speed, plus a
+          // little hop. The over-speed decay in stepPlayer bleeds it off, and
+          // the shove event lets the victim's client predict the same launch.
+          const push = Math.max(peel.slip, hSpeed * 1.5);
+          player.vx = (player.vx / hSpeed) * push;
+          player.vz = (player.vz / hSpeed) * push;
+          player.vy = Math.max(player.vy, peel.slipUp);
+          player.onGround = false;
+          player.sliding = false;
+          player.slipImmuneUntil = this.tick + TICK_RATE;
+          this.events.push({
+            k: 'shove',
+            p: player.id,
+            vx: player.vx,
+            vy: player.vy,
+            vz: player.vz,
+            slip: true,
+            x: peel.x,
+            y: peel.y,
+            z: peel.z,
+          });
+        }
         this.events.push({ k: 'peelExpire', id: peel.id, used: true });
         toRemove.push(i);
         break;

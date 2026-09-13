@@ -56,7 +56,6 @@ const SHOT_PROFILES = {
   knife:   { dur: 0.08, cutoff: 4500, thump: 500, gain: 0.25, q: 1.6 },
   banana:  { dur: 0.18, cutoff: 900,  thump: 90,  gain: 0.45, q: 0.5 },
   chancla: { dur: 0.25, cutoff: 1800, thump: 300, gain: 0.28, q: 0.5 },
-  dice:    { dur: 0.08, cutoff: 3200, thump: 350, gain: 0.30, q: 1.0 },
 };
 
 export class Audio {
@@ -418,46 +417,6 @@ export class Audio {
     osc.stop(t + 0.6);
     vib.start(t);
     vib.stop(t + 0.6);
-  }
-
-  // Dice gun verdicts, shooter-side only: a slot-machine ding-ding-ding for
-  // 90+, a deflated womp-womp for 10 and under. Mid rolls stay silent.
-  diceResult(v) {
-    if (!this.ctx) return;
-    const t = this.now;
-    if (v >= 90) {
-      for (let i = 0; i < 3; i++) {
-        const osc = this.ctx.createOscillator();
-        osc.type = 'sine';
-        osc.frequency.value = 1320 + i * 220;
-        const env = this.ctx.createGain();
-        const at = t + i * 0.09;
-        env.gain.setValueAtTime(0, at);
-        env.gain.linearRampToValueAtTime(0.38, at + 0.01);
-        env.gain.exponentialRampToValueAtTime(0.0001, at + 0.5);
-        osc.connect(env).connect(this.master);
-        osc.start(at);
-        osc.stop(at + 0.55);
-      }
-    } else if (v <= 10) {
-      for (let i = 0; i < 2; i++) {
-        const osc = this.ctx.createOscillator();
-        osc.type = 'sawtooth';
-        const at = t + i * 0.22;
-        osc.frequency.setValueAtTime(200 - i * 45, at);
-        osc.frequency.exponentialRampToValueAtTime(140 - i * 40, at + 0.2);
-        const flt = this.ctx.createBiquadFilter();
-        flt.type = 'lowpass';
-        flt.frequency.value = 700;
-        const env = this.ctx.createGain();
-        env.gain.setValueAtTime(0, at);
-        env.gain.linearRampToValueAtTime(0.3, at + 0.02);
-        env.gain.exponentialRampToValueAtTime(0.0001, at + 0.3);
-        osc.connect(flt).connect(env).connect(this.master);
-        osc.start(at);
-        osc.stop(at + 0.35);
-      }
-    }
   }
 
   // Sneeze reload gag: a big recorded honk into the napkin. Like sneeze(),

@@ -173,17 +173,6 @@ export function mountChancla(parent, options = {}) {
   });
 }
 
-/** A six-sided die with proper pips; targetLength = cube edge. */
-export function mountDice(parent, options = {}) {
-  return mountWeaponModel(parent, {
-    url: '/models/dice.glb',
-    name: 'Blender_Dice',
-    targetLength: 0.2,
-    yaw: 0,
-    ...options,
-  });
-}
-
 /** Blender-authored airhorn: red can + chrome bell; targetLength = height. */
 export function mountAirhorn(parent, options = {}) {
   return mountWeaponModel(parent, {

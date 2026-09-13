@@ -5,7 +5,6 @@ import {
   mountAssaultRifle,
   mountBanana,
   mountChancla,
-  mountDice,
   mountAutoshotgun,
   mountAwp,
   mountBayonet,
@@ -346,10 +345,6 @@ const THEMES = {
     sole: mat(0x1f388c, { roughness: 0.85, metalness: 0 }),
     top: mat(0xe0dfd2, { roughness: 0.8, metalness: 0 }),
     strap: mat(0xbf1f1f, { roughness: 0.7, metalness: 0 }),
-  }),
-  dice: () => ({
-    body: mat(0xf2f2ee, { roughness: 0.35, metalness: 0.02 }),
-    pip: mat(0x080808, { roughness: 0.4, metalness: 0 }),
   }),
   knife: () => ({
     blade: mat(0x4a5060, { roughness: 0.2, metalness: 0.7 }),
@@ -2002,50 +1997,6 @@ const BUILDERS = {
     return g;
   },
 
-  dice() {
-    const g = new THREE.Group();
-    const t = THEMES.dice();
-    const throwPivot = new THREE.Group();
-    const payloadHost = new THREE.Group();
-    const fallback = new THREE.Group();
-
-    // Plain white cube placeholder while the pipped GLB loads.
-    fallback.add(box(0.08, 0.08, 0.08, t.body, 0, 0.04, 0));
-    payloadHost.add(fallback);
-    // Resting on the open palm, tilted like it's about to be flicked.
-    payloadHost.position.set(-0.015, 0.075, -0.09);
-    payloadHost.rotation.set(0.3, 0.5, 0.1);
-    throwPivot.add(payloadHost);
-    mountDice(payloadHost, { targetLength: 0.11 }).then((loaded) => {
-      if (loaded) fallback.visible = false;
-    });
-
-    const gloveMat = GLOVE();
-    const fingerMat = FINGER();
-    const cuffMat = CUFF();
-    const hand = new THREE.Group();
-    hand.position.set(-0.015, 0.03, -0.09);
-    hand.add(box(0.115, 0.035, 0.115, gloveMat, 0, 0, 0.01));
-    for (let i = 0; i < 4; i++) {
-      const fx = -0.034 + i * 0.0225;
-      hand.add(box(0.026, 0.055, 0.028, fingerMat, fx, 0.026, -0.058));
-    }
-    hand.add(box(0.032, 0.05, 0.03, fingerMat, 0.066, 0.022, 0.028));
-    hand.add(box(0.105, 0.07, 0.05, cuffMat, 0.012, -0.045, 0.075));
-    const wrist = new THREE.Group();
-    wrist.position.set(0.012, -0.05, 0.085);
-    wrist.add(forearm(0.7, 0.35, 0.34));
-    hand.add(wrist);
-    throwPivot.add(hand);
-    throwPivot.position.set(0, -0.01, 0.02);
-    g.add(throwPivot);
-    g.userData.throwPivot = throwPivot;
-    g.userData.throwPayload = payloadHost;
-
-    addMuzzle(g, -0.015, 0.11, -0.18, 0.3);
-    return g;
-  },
-
   sneeze() {
     const g = new THREE.Group();
     const gloveMat = GLOVE();
@@ -2780,19 +2731,6 @@ export const AVATAR_GUN_BUILDERS = {
     g.userData.length = 0.3;
     return g;
   },
-  dice() {
-    const g = new THREE.Group();
-    const t = THEMES.dice();
-    const fallback = new THREE.Group();
-    const modelHost = new THREE.Group();
-    g.add(fallback, modelHost);
-    fallback.add(box(0.09, 0.09, 0.09, t.body, 0, 0.05, 0));
-    mountDice(modelHost, { targetLength: 0.12, castShadow: true }).then((loaded) => {
-      if (loaded) fallback.visible = false;
-    });
-    g.userData.length = 0.12;
-    return g;
-  },
   pee() {
     // Nothing to hold: the "weapon" is the player. The stream and splashes
     // are drawn from the beam events, so the hands just go to the waist.
@@ -3306,7 +3244,7 @@ export class ViewModel {
     const holderSlash = knifeHold ? 0 : strike;
     const holderWind = knifeHold ? 0 : wind;
 
-    const throwPivot = (this.weaponId === 'poopgun' || this.weaponId === 'chancla' || this.weaponId === 'dice')
+    const throwPivot = (this.weaponId === 'poopgun' || this.weaponId === 'chancla')
       ? this.weapon.userData.throwPivot
       : null;
     if (throwPivot) {

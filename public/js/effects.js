@@ -6,7 +6,6 @@ import {
   mountBanana,
   mountBananaPeel,
   mountChancla,
-  mountDice,
 } from './model-assets.js';
 
 // Every visual is drawn from a fixed pool. Nothing is allocated during a
@@ -197,21 +196,10 @@ export class Effects {
       chanclaHost.visible = false;
       group.add(chanclaHost);
 
-      // Tumbling die for the dice gun.
-      const diceHost = new THREE.Group();
-      const diceFallbackMat = new THREE.MeshStandardMaterial({ color: 0xf2f2ee, roughness: 0.35 });
-      const diceFallback = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 0.2), diceFallbackMat);
-      diceHost.add(diceFallback);
-      mountDice(diceHost, { targetLength: 0.22, castShadow: true }).then((mounted) => {
-        if (mounted) diceFallback.visible = false;
-      });
-      diceHost.visible = false;
-      group.add(diceHost);
-
       group.visible = false;
       scene.add(group);
       this.projectilePool.push({
-        mesh: group, mat: bodyMat, poopHost, fahhHost, arrowHost, bananaHost, chanclaHost, diceHost,
+        mesh: group, mat: bodyMat, poopHost, fahhHost, arrowHost, bananaHost, chanclaHost,
         id: null, kind: 'poopgun', gravity: 15,
         x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0,
         active: false, spin: Math.random() * Math.PI * 2,
@@ -377,16 +365,14 @@ export class Effects {
       : kind === 'bow' ? 9
       : kind === 'banana' ? 12
       : kind === 'chancla' ? 2
-      : kind === 'dice' ? 6
       : 15;
     const special = kind === 'fahgun' || kind === 'bow' || kind === 'banana'
-      || kind === 'chancla' || kind === 'dice';
+      || kind === 'chancla';
     slot.poopHost.visible = !special;
     slot.fahhHost.visible = kind === 'fahgun';
     slot.arrowHost.visible = kind === 'bow';
     slot.bananaHost.visible = kind === 'banana';
     slot.chanclaHost.visible = kind === 'chancla';
-    slot.diceHost.visible = kind === 'dice';
     slot.x = x;
     slot.y = y;
     slot.z = z;
@@ -574,9 +560,6 @@ export class Effects {
       } else if (slot.kind === 'chancla') {
         // The slipper spins flat like a thrown frisbee of discipline.
         slot.mesh.rotation.set(0.25, slot.spin * 2.2, 0.1);
-      } else if (slot.kind === 'dice') {
-        // Dice tumble hard — the roll must look random.
-        slot.mesh.rotation.set(slot.spin * 1.6, slot.spin * 1.1, slot.spin * 0.8);
       } else {
         slot.mesh.rotation.set(slot.spin, slot.spin * 0.7, 0);
       }

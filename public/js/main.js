@@ -569,7 +569,7 @@ function fireLocal({ chargeFrac = 1, beam = false, melee = false, projectile = f
     // No locally predicted projectile: the server-broadcast projSpawn event is
     // the single visual source, otherwise the thrower sees two poops.
     state.shake = Math.min(2.4, state.shake + w.shake * 0.5);
-    if (w.id === 'poopgun' || w.id === 'chancla' || w.id === 'dice') {
+    if (w.id === 'poopgun' || w.id === 'chancla') {
       viewModel.playThrow();
     } else {
       viewModel.addRecoil(w.recoil * 0.32);
@@ -1369,15 +1369,6 @@ function handleEvents(events) {
         if (ev.p === state.myId) audio.slip(1);
         else audio.slip(1, { x: ev.x, y: ev.y, z: ev.z });
       }
-    } else if (ev.k === 'roll') {
-      // Dice gun: the shooter learns their damage the moment the die leaves
-      // the hand. Jackpots ring, gutter rolls womp, mid rolls just show.
-      if (ev.p === state.myId) {
-        audio.diceResult(ev.v);
-        if (ev.v >= 90) hud.banner(`ROLLED ${ev.v}`, 'JACKPOT!', 1.4);
-        else if (ev.v <= 10) hud.banner(`ROLLED ${ev.v}`, 'womp womp', 1.2);
-        else hud.banner(`ROLLED ${ev.v}`, '', 0.8);
-      }
     } else if (ev.k === 'peelSpawn') {
       effects.spawnPeel(ev.id, ev.x, ev.y, ev.z);
     } else if (ev.k === 'peelExpire') {
@@ -1995,7 +1986,7 @@ const WEAPON_CATEGORIES = [
   ['Marksman', ['dmr', 'leveraction', 'scout', 'sniper', 'awp', 'crossbow', 'bow']],
   ['Heavy', ['lmg', 'minigun', 'laser']],
   ['Sidearms', ['revolver', 'deagle']],
-  ['Memes', ['sneeze', 'poopgun', 'pee', 'fahgun', 'airhorn', 'banana', 'chancla', 'dice']],
+  ['Memes', ['sneeze', 'poopgun', 'pee', 'fahgun', 'airhorn', 'banana', 'chancla']],
   ['Melee', ['knife']],
 ];
 

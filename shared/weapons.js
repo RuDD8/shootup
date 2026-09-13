@@ -707,12 +707,13 @@ export const WEAPONS = {
     projectile: true,
     projSpeed: 26,
     projGravity: 12,
-    // Landed bananas become peels. Step on one while moving and you're
-    // skating: launched along your own momentum, way past run speed.
+    // Landed bananas become peels. An enemy stepping on one while moving
+    // takes a chunk of damage and gets launched along their own momentum.
     peelDuration: 18,
     peelRadius: 0.55,
     peelSlip: 12,
     peelSlipUp: 4.5,
+    peelDamage: 35,
   },
   chancla: {
     id: 'chancla',
@@ -744,34 +745,6 @@ export const WEAPONS = {
     homingTurn: 3.2,
     homingRange: 28,
     homingCone: 0.85,
-  },
-  dice: {
-    id: 'dice',
-    name: 'Dice Gun',
-    damage: 50, // nominal for the stat card; real damage is the roll
-    pellets: 1,
-    rpm: 100,
-    auto: false,
-    magazine: 5,
-    reload: 2.4,
-    spread: 0.008,
-    bloom: 0,
-    maxBloom: 0,
-    bloomDecay: 0,
-    moveMult: 1.0,
-    recoil: 1.2,
-    zoom: 1,
-    falloffStart: 100,
-    falloffEnd: 100,
-    falloffMin: 1,
-    shake: 0.8,
-    projectile: true,
-    projSpeed: 32,
-    projGravity: 6,
-    projArc: 0, // flat flick — the default up-bias lofts dice over heads
-    // Gambling: each throw rolls 1-100 damage. 100 deletes people.
-    roll: true,
-    rollMax: 100,
   },
   airhorn: {
     id: 'airhorn',

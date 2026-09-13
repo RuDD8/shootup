@@ -546,7 +546,30 @@ function testBananaPeel() {
   check('banana impact drops a peel', peel !== null);
   if (!peel) return;
 
-  // March the victim across the peel at walking speed.
+  // The shooter marching over their own peel must be ignored entirely.
+  shooter.x = peel.x;
+  shooter.z = peel.z + 0.3;
+  shooter.y = peel.y;
+  shooter.vx = 0;
+  shooter.vy = 0;
+  shooter.vz = -6;
+  shooter.spawnProtectUntil = 0;
+  match.update();
+  match.update();
+  check(
+    'the owner is immune to their own peel',
+    !seen.some((e) => (e.k === 'shove' && e.slip && e.p === 's') || (e.k === 'hurt' && e.p === 's')),
+  );
+  check(
+    'the peel survives the owner walking over it',
+    !seen.some((e) => e.k === 'peelExpire' && e.id === peel.id),
+  );
+
+  // Park the shooter out of the way, then march the victim across the peel
+  // at walking speed.
+  shooter.x = 2;
+  shooter.z = 2;
+  shooter.vz = 0;
   target.x = peel.x;
   target.z = peel.z + 0.3;
   target.y = peel.y;
@@ -558,6 +581,16 @@ function testBananaPeel() {
   // the event out only runs on alternating ticks.
   match.update();
   match.update();
+
+  const hurt = seen.find((e) => e.k === 'hurt' && e.p === 't');
+  check('stepping on the peel damages the victim', Boolean(hurt));
+  if (hurt) {
+    check(
+      'peel damage matches the weapon and credits the shooter',
+      hurt.dmg === WEAPONS.banana.peelDamage && hurt.by === 's',
+      `dmg=${hurt.dmg} by=${hurt.by}`,
+    );
+  }
 
   const slip = seen.find((e) => e.k === 'shove' && e.slip && e.p === 't');
   check('walking over the peel slips the victim', Boolean(slip));
@@ -615,48 +648,6 @@ function testChanclaHoming() {
     'chancla impact reports its weapon id',
     seen.some((e) => e.k === 'projImpact' && e.w === 'chancla'),
   );
-}
-
-function testDiceRoll() {
-  console.log('\ndice gun');
-
-  const { match, shooter, target, seen } = memeMatchSetup();
-  const spot = openColumn(match.arena.grid, 3);
-  check('found an open corridor for the dice test', spot !== null);
-  if (!spot) return;
-
-  const front = cellCenter(spot.c, spot.r + 1, spot.size);
-  const back = cellCenter(spot.c, spot.r + 2, spot.size);
-  target.x = front.x;
-  target.z = front.z;
-  target.y = 0;
-  target.vx = target.vy = target.vz = 0;
-  target.health = 1000;
-  target.spawnProtectUntil = 0;
-  target.alive = true;
-  shooter.x = back.x;
-  shooter.z = back.z;
-  shooter.y = 0;
-  shooter.yaw = 0;
-  shooter.pitch = 0;
-  shooter.alive = true;
-
-  match.events.length = 0;
-  match.fire(shooter, WEAPONS.dice);
-  const roll = match.events.find((e) => e.k === 'roll' && e.p === 's');
-  check('firing announces the roll to the shooter', Boolean(roll));
-  if (!roll) return;
-  check('roll is within 1-100', roll.v >= 1 && roll.v <= 100, `v=${roll.v}`);
-
-  let hurt = null;
-  for (let i = 0; i < 60 && !hurt; i++) {
-    match.update();
-    hurt = seen.find((e) => e.k === 'hurt' && e.p === 't') || null;
-  }
-  check('the die hits the point-blank victim', hurt !== null);
-  if (hurt) {
-    check('damage equals the roll', hurt.dmg === roll.v, `dmg=${hurt.dmg} roll=${roll.v}`);
-  }
 }
 
 function testWeaponRandomisation() {
@@ -965,7 +956,7 @@ async function testServer() {
         airhornSample.headers.get('content-type') === 'audio/mpeg' &&
         Number(airhornSample.headers.get('content-length')) > 1000,
     );
-    for (const name of ['banana', 'banana_peel', 'chancla', 'dice']) {
+    for (const name of ['banana', 'banana_peel', 'chancla']) {
       const memeAsset = await fetch(`http://127.0.0.1:${PORT}/models/${name}.glb`);
       check(
         `Blender ${name} is served as a GLB asset`,
@@ -1300,7 +1291,6 @@ testHazardOnPlatform();
 testAirhornKnockback();
 testBananaPeel();
 testChanclaHoming();
-testDiceRoll();
 testWeaponRandomisation();
 testGunGameRules();
 testLagComp();
