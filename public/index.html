@@ -108,79 +108,95 @@
         <p class="tagline">Browser FPS — 1v1 duels or free-for-all deathmatch.</p>
 
         <div id="menu-main">
-          <label class="field">
-            <span>Your name</span>
-            <input id="name-input" type="text" maxlength="14" placeholder="Player" autocomplete="off" />
-          </label>
+          <div class="menu-cols">
+            <section class="panel" id="panel-play">
+              <label class="field">
+                <span>Your name</span>
+                <input id="name-input" type="text" maxlength="14" placeholder="Player" autocomplete="off" />
+              </label>
 
-          <div class="field">
-            <span>Game mode</span>
-            <div id="mode-select" class="mode-select">
-              <button type="button" class="mode-btn active" data-mode="duel" aria-pressed="true">1 vs 1</button>
-              <button type="button" class="mode-btn" data-mode="deathmatch" aria-pressed="false">Deathmatch</button>
-              <button type="button" class="mode-btn" data-mode="gungame" aria-pressed="false">Gun Game</button>
-            </div>
-          </div>
+              <div class="field">
+                <span>Game mode</span>
+                <div id="mode-select" class="mode-select">
+                  <button type="button" class="mode-btn active" data-mode="duel" aria-pressed="true">
+                    <b>1 vs 1</b><small>First to 5 rounds</small>
+                  </button>
+                  <button type="button" class="mode-btn" data-mode="deathmatch" aria-pressed="false">
+                    <b>Deathmatch</b><small>Free-for-all frag race</small>
+                  </button>
+                  <button type="button" class="mode-btn" data-mode="gungame" aria-pressed="false">
+                    <b>Gun Game</b><small>New gun every kill</small>
+                  </button>
+                </div>
+              </div>
 
-          <div id="dm-options" class="field hidden">
-            <span>Match length — <strong id="dm-minutes-val">5</strong> min</span>
-            <input id="dm-minutes" type="range" min="3" max="20" value="5" step="1" />
-          </div>
+              <div id="dm-options" class="field hidden">
+                <span>Match length — <strong id="dm-minutes-val">5</strong> min</span>
+                <input id="dm-minutes" type="range" min="3" max="20" value="5" step="1" />
+              </div>
 
-          <label class="field">
-            <span>Map</span>
-            <select id="map-select" class="map-select">
-              <option value="random">Random Generated</option>
-              <option value="fy_snow">FY Snow</option>
-              <option value="dust_bowl">Dust Bowl &middot; small</option>
-              <option value="neon_alley">Neon Alley &middot; small</option>
-              <option value="temple">Mossy Temple &middot; medium</option>
-              <option value="foundry">Lava Foundry &middot; medium</option>
-              <option value="harbor">Harbor &middot; big</option>
-            </select>
-          </label>
+              <div class="field">
+                <span>Map</span>
+                <div id="map-grid"></div>
+                <select id="map-select" class="map-select" tabindex="-1" aria-hidden="true">
+                  <option value="random">Random Generated</option>
+                  <option value="fy_snow">FY Snow</option>
+                  <option value="dust_bowl">Dust Bowl &middot; small</option>
+                  <option value="neon_alley">Neon Alley &middot; small</option>
+                  <option value="temple">Mossy Temple &middot; medium</option>
+                  <option value="foundry">Lava Foundry &middot; medium</option>
+                  <option value="harbor">Harbor &middot; big</option>
+                </select>
+              </div>
 
-          <div class="field preferences">
-            <span>Preferences</span>
-            <label class="preference-row">
-              <span>Mouse sensitivity</span>
-              <input id="sensitivity" type="range" min="1" max="10" value="4" step="1" />
-              <output id="sensitivity-val" for="sensitivity">4</output>
-            </label>
-            <label class="preference-row">
-              <span>Sound volume</span>
-              <input id="volume" type="range" min="0" max="100" value="55" step="5" />
-              <output id="volume-val" for="volume">55%</output>
-            </label>
-            <label class="preference-row">
-              <span>Render resolution</span>
-              <input id="resolution" type="range" min="30" max="100" value="100" step="5" />
-              <output id="resolution-val" for="resolution">100%</output>
-            </label>
-            <label class="preference-row">
-              <span>Auto FPS boost</span>
-              <input id="auto-res" type="checkbox" checked />
-              <output id="auto-res-val" for="auto-res">On</output>
-            </label>
-          </div>
+              <button id="btn-quick" class="primary">QUICK MATCH</button>
+              <div class="host-row">
+                <button id="btn-create">CREATE MATCH</button>
+                <label class="pub-row">
+                  <input id="public-room" type="checkbox" />
+                  <span>List publicly</span>
+                </label>
+              </div>
+              <div class="join-row">
+                <input id="code-input" type="text" maxlength="4" placeholder="CODE" autocomplete="off" spellcheck="false" />
+                <button id="btn-join">JOIN</button>
+              </div>
+              <p id="menu-error" role="alert"></p>
+            </section>
 
-          <button id="btn-quick" class="primary">QUICK MATCH</button>
-          <div id="room-browser" class="hidden">
-            <p class="browser-label">Open public matches</p>
-            <ul id="room-list"></ul>
+            <aside class="panel" id="panel-side">
+              <div class="side-block" id="room-browser">
+                <p class="browser-label">Open matches</p>
+                <ul id="room-list"></ul>
+                <p id="room-empty">No public matches right now.<br />Quick Match starts one.</p>
+              </div>
+              <div class="side-block">
+                <p class="browser-label">Settings</p>
+                <div class="preferences">
+                  <label class="preference-row">
+                    <span>Mouse sensitivity</span>
+                    <input id="sensitivity" type="range" min="1" max="10" value="4" step="1" />
+                    <output id="sensitivity-val" for="sensitivity">4</output>
+                  </label>
+                  <label class="preference-row">
+                    <span>Sound volume</span>
+                    <input id="volume" type="range" min="0" max="100" value="55" step="5" />
+                    <output id="volume-val" for="volume">55%</output>
+                  </label>
+                  <label class="preference-row">
+                    <span>Render resolution</span>
+                    <input id="resolution" type="range" min="30" max="100" value="100" step="5" />
+                    <output id="resolution-val" for="resolution">100%</output>
+                  </label>
+                  <label class="preference-row">
+                    <span>Auto FPS boost</span>
+                    <input id="auto-res" type="checkbox" checked />
+                    <output id="auto-res-val" for="auto-res">On</output>
+                  </label>
+                </div>
+              </div>
+            </aside>
           </div>
-          <div class="or">or host your own</div>
-          <label class="pub-row">
-            <input id="public-room" type="checkbox" />
-            <span>List publicly — anyone can join from the browser</span>
-          </label>
-          <button id="btn-create" class="primary">CREATE MATCH</button>
-          <div class="or">or</div>
-          <div class="join-row">
-            <input id="code-input" type="text" maxlength="4" placeholder="CODE" autocomplete="off" spellcheck="false" />
-            <button id="btn-join">JOIN</button>
-          </div>
-          <p id="menu-error" role="alert"></p>
         </div>
 
         <div id="menu-lobby" class="hidden">

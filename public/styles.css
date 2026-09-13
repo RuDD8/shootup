@@ -56,15 +56,62 @@ canvas#scene {
 }
 
 #menu-card {
-  width: min(440px, 92vw);
+  width: min(880px, 94vw);
   margin: auto;
-  padding: 34px 32px 26px;
+  padding: 30px 30px 24px;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 16px;
   backdrop-filter: blur(14px);
   box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
   text-align: center;
+}
+
+/* Two panels: play options on the left, live rooms + settings on the right. */
+.menu-cols {
+  display: grid;
+  grid-template-columns: 1.35fr 1fr;
+  gap: 16px;
+  text-align: left;
+}
+
+.panel {
+  padding: 18px 18px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(8, 13, 22, 0.55);
+  min-width: 0;
+}
+
+#panel-side {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.side-block {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+#room-browser {
+  flex: 1;
+  min-height: 150px;
+}
+
+#room-empty {
+  margin: 10px 2px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--dim);
+}
+
+/* Lobby / result views live inside the wide shell but stay compact. */
+#menu-lobby,
+#menu-result {
+  max-width: 430px;
+  margin: 0 auto;
 }
 
 #menu-card h1 {
@@ -244,27 +291,37 @@ button.secondary:hover {
   background: rgba(56, 189, 248, 0.08);
 }
 
-.or {
-  margin: 16px 0 12px;
-  font-size: 11px;
-  letter-spacing: 2px;
-  text-transform: uppercase;
-  color: var(--dim);
+/* CREATE MATCH with its "list publicly" toggle beside it. */
+.host-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.host-row button {
+  font-size: 13px;
 }
 
 .join-row {
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 10px;
+  margin-top: 10px;
 }
 
-#room-browser {
-  margin-top: 12px;
-  text-align: left;
+.join-row input {
+  padding-top: 9px;
+  padding-bottom: 9px;
+}
+
+.join-row button {
+  font-size: 13px;
 }
 
 .browser-label {
-  margin: 0 0 6px;
+  margin: 0 0 8px;
   font-size: 11px;
   letter-spacing: 2px;
   text-transform: uppercase;
@@ -275,7 +332,7 @@ button.secondary:hover {
   list-style: none;
   margin: 0;
   padding: 0;
-  max-height: 168px;
+  max-height: 240px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -314,12 +371,12 @@ button.secondary:hover {
 .pub-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 10px;
-  font-size: 12px;
+  gap: 7px;
+  font-size: 11.5px;
   color: var(--dim);
   cursor: pointer;
   text-align: left;
+  white-space: nowrap;
 }
 
 .pub-row input {
@@ -1326,21 +1383,44 @@ button.secondary:hover {
 
 .mode-select {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   gap: 8px;
 }
 
 .mode-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
   width: 100%;
-  padding: 11px 10px;
-  letter-spacing: 1.2px;
-  font-size: 12px;
+  padding: 10px 11px;
+  text-align: left;
+  letter-spacing: 0.3px;
+  background: rgba(6, 10, 18, 0.6);
+}
+
+.mode-btn b {
+  font-size: 13px;
+  letter-spacing: 0.8px;
+}
+
+.mode-btn small {
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.2px;
+  color: var(--dim);
+  line-height: 1.25;
 }
 
 .mode-btn.active {
-  background: linear-gradient(180deg, #0ea5e9, #0284c7);
-  border-color: #38bdf8;
-  color: #04121d;
+  border-color: var(--cyan);
+  background: rgba(56, 189, 248, 0.14);
+  color: #e0f2fe;
+  box-shadow: 0 0 14px rgba(56, 189, 248, 0.18) inset;
+}
+
+.mode-btn.active small {
+  color: rgba(186, 230, 253, 0.75);
 }
 
 #dm-minutes {
@@ -1349,21 +1429,72 @@ button.secondary:hover {
   accent-color: var(--cyan);
 }
 
-.map-select {
-  width: 100%;
-  padding: 12px 14px;
-  font-family: inherit;
-  font-size: 14px;
-  color: var(--text);
-  background: rgba(6, 10, 18, 0.9);
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  outline: none;
-  cursor: pointer;
+/* The real <select> stays in the DOM as the source of truth but the visual
+   picker is the card grid. */
+#map-select {
+  display: none;
 }
 
-.map-select:focus {
-  border-color: var(--cyan);
+#map-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 7px;
+}
+
+.map-card {
+  --accent: #38bdf8;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 6px 7px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: rgba(6, 10, 18, 0.6);
+  font-size: 11px;
+  letter-spacing: 0.2px;
+  transition: border-color 0.15s, background 0.15s, transform 0.1s;
+}
+
+.map-card:hover {
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  background: rgba(20, 28, 44, 0.8);
+  transform: translateY(-1px);
+}
+
+.map-card.active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 13%, rgba(6, 10, 18, 0.7));
+  box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 22%, transparent) inset;
+}
+
+.map-thumb {
+  width: 100%;
+  max-width: 84px;
+  aspect-ratio: 1;
+  border-radius: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  image-rendering: pixelated;
+}
+
+.map-card-name {
+  font-weight: 600;
+  font-size: 11px;
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.map-card-tag {
+  font-size: 8.5px;
+  letter-spacing: 1.6px;
+  color: var(--dim);
+}
+
+.map-card.active .map-card-tag {
+  color: color-mix(in srgb, var(--accent) 80%, #fff);
 }
 
 .lobby-mode {
@@ -1505,10 +1636,38 @@ button.secondary:hover {
   color: var(--dim);
 }
 
+@media (max-width: 840px) {
+  .menu-cols {
+    grid-template-columns: 1fr;
+  }
+
+  #room-list {
+    max-height: 150px;
+  }
+}
+
 @media (max-width: 700px) {
   #menu-card {
-    width: min(440px, 100%);
-    padding: 24px 18px 20px;
+    width: min(480px, 100%);
+    padding: 24px 16px 20px;
+  }
+
+  .panel {
+    padding: 14px 12px 12px;
+  }
+
+  #map-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .mode-select {
+    grid-template-columns: 1fr;
+  }
+
+  .mode-btn {
+    flex-direction: row;
+    align-items: baseline;
+    gap: 8px;
   }
 
   #controls-help {

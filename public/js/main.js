@@ -5,13 +5,19 @@ import {
   MAX_HEALTH,
   MATCH_STATE,
   GAME_MODE,
+  TILE_WALL,
+  TILE_COVER,
+  TILE_LOW,
+  TILE_HIGH,
+  TILE_DECK,
   playerColor,
   playerEyeHeight,
   playerHeight,
   playerHeadHeight,
 } from '/shared/constants.js';
 
-import { deserializeArena } from '/shared/arena.js';
+import { deserializeArena, gridSize } from '/shared/arena.js';
+import { MAPS, STATIC_MAPS, loadArena } from '/shared/maps/index.js';
 import { stepPlayer, raycastWorld, rayCylinder } from '/shared/physics.js';
 import {
   WEAPONS,
@@ -2031,6 +2037,108 @@ function setMode(mode) {
   $('dm-options').classList.toggle('hidden', mode !== 'deathmatch' && mode !== 'gungame');
 }
 
+// --------------------------------------------------------- map picker cards
+// Visual cards with a real top-down thumbnail of each layout, drawn straight
+// from the shared grid data. The hidden <select> stays the single source of
+// truth so preferences and the create/join flows are untouched.
+
+const MAP_ACCENTS = {
+  random: '#38bdf8',
+  fy_snow: '#cfe4f4',
+  dust_bowl: '#d9b36c',
+  neon_alley: '#c084fc',
+  temple: '#8fbb86',
+  foundry: '#fb923c',
+  harbor: '#5fa8e8',
+};
+
+// Height-graded like the HUD minimap: the brighter the blip, the taller the
+// column, so layouts read at a glance.
+const THUMB_TILE_COLORS = {
+  [TILE_WALL]: 'rgba(216, 229, 246, 0.92)',
+  [TILE_COVER]: 'rgba(130, 150, 175, 0.55)',
+  [TILE_LOW]: 'rgba(105, 125, 150, 0.4)',
+  [TILE_HIGH]: 'rgba(165, 185, 212, 0.68)',
+  [TILE_DECK]: 'rgba(232, 238, 250, 0.82)',
+};
+
+function drawMapThumb(canvas, mapId) {
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width;
+  ctx.fillStyle = 'rgba(5, 9, 16, 0.92)';
+  ctx.fillRect(0, 0, w, w);
+  if (!STATIC_MAPS[mapId]) {
+    // Random: a question mark instead of a layout that doesn't exist yet.
+    ctx.fillStyle = 'rgba(56, 189, 248, 0.8)';
+    ctx.font = `700 ${Math.round(w * 0.52)}px system-ui, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('?', w / 2, w / 2 + 1);
+    return;
+  }
+  const arena = loadArena(mapId, 0);
+  const size = gridSize(arena.grid);
+  const px = w / size;
+  for (let r = 0; r < size; r++) {
+    for (let c = 0; c < size; c++) {
+      const color = THUMB_TILE_COLORS[arena.grid[r * size + c]];
+      if (!color) continue;
+      ctx.fillStyle = color;
+      ctx.fillRect(c * px, r * px, Math.ceil(px), Math.ceil(px));
+    }
+  }
+}
+
+function mapSizeTag(mapId) {
+  const data = STATIC_MAPS[mapId];
+  if (!data) return 'VARIES';
+  const size = Math.round(Math.sqrt(data.g.length));
+  return size <= 12 ? 'SMALL' : size <= 16 ? 'MEDIUM' : 'BIG';
+}
+
+function syncMapCards() {
+  const value = $('map-select').value;
+  document.querySelectorAll('.map-card').forEach((b) => {
+    const active = b.dataset.map === value;
+    b.classList.toggle('active', active);
+    b.setAttribute('aria-pressed', String(active));
+  });
+}
+
+function buildMapCards() {
+  const grid = $('map-grid');
+  for (const map of MAPS) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'map-card';
+    btn.dataset.map = map.id;
+    btn.style.setProperty('--accent', MAP_ACCENTS[map.id] || '#38bdf8');
+
+    const thumb = document.createElement('canvas');
+    thumb.width = 96;
+    thumb.height = 96;
+    thumb.className = 'map-thumb';
+    drawMapThumb(thumb, map.id);
+
+    const name = document.createElement('span');
+    name.className = 'map-card-name';
+    name.textContent = map.name;
+
+    const tag = document.createElement('span');
+    tag.className = 'map-card-tag';
+    tag.textContent = mapSizeTag(map.id);
+
+    btn.append(thumb, name, tag);
+    btn.addEventListener('click', () => {
+      $('map-select').value = map.id;
+      $('map-select').dispatchEvent(new Event('change')); // persists the pick
+      syncMapCards();
+    });
+    grid.appendChild(btn);
+  }
+  syncMapCards();
+}
+
 for (const btn of document.querySelectorAll('.mode-btn')) {
   btn.addEventListener('click', () => {
     setMode(btn.dataset.mode);
@@ -2132,7 +2240,7 @@ net.on('rooms', (msg) => {
     li.append(info, count, btn);
     list.appendChild(li);
   }
-  $('room-browser').classList.toggle('hidden', rooms.length === 0);
+  $('room-empty').classList.toggle('hidden', rooms.length > 0);
 });
 
 // Keep the browser fresh while the main menu is on screen.
@@ -2216,7 +2324,9 @@ window.addEventListener('resize', () => {
 });
 
 viewModel.resize(window.innerWidth / window.innerHeight);
+buildMapCards();
 loadPreferences();
+syncMapCards();
 
 // Prefill the code when arriving from a shared link.
 const codeParam = new URLSearchParams(location.search).get('code');

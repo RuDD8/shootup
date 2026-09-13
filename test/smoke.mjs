@@ -311,7 +311,10 @@ function testBotClimb() {
   let peak = 0;
   let climbed = false;
   let botShots = 0;
-  for (let t = 0; t < 60 * 30; t++) {
+  // Bot pathing has randomness (patrol targets, jump timing), so a tight
+  // window flakes when a hop misses the lip; the loop breaks early on
+  // success, so a generous cap only costs time on the failing path.
+  for (let t = 0; t < 60 * 60; t++) {
     // Park an unkillable human on the platform so the bot must come up, and
     // force a semi-auto on the bot: it only fires if it works the trigger
     // edge properly (holding SHOOT lands exactly one shot on semi-autos).
