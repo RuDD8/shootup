@@ -310,8 +310,11 @@ function testBotClimb() {
   const platform = cellCenter(5, 5, 12);
   let peak = 0;
   let climbed = false;
+  let botShots = 0;
   for (let t = 0; t < 60 * 30; t++) {
-    // Park an unkillable human on the platform so the bot must come up.
+    // Park an unkillable human on the platform so the bot must come up, and
+    // force a semi-auto on the bot: it only fires if it works the trigger
+    // edge properly (holding SHOOT lands exactly one shot on semi-autos).
     human.x = platform.x;
     human.z = platform.z;
     human.y = HIGH_H;
@@ -320,17 +323,26 @@ function testBotClimb() {
     human.vz = 0;
     human.health = 1e9;
     human.alive = true;
+    bot.weaponId = 'pistol';
+    bot.ammo = 12;
+    bot.reloadUntilTick = 0;
     match.update();
+    // Ammo drain is the fire signal: the events array is flushed into the
+    // snapshot payload inside update(), so it can read as empty out here.
+    if (bot.ammo < 12) botShots++;
     peak = Math.max(peak, bot.y);
-    if (bot.onGround && bot.y >= HIGH_H - 0.01) {
-      climbed = true;
-      break;
-    }
+    if (!climbed && bot.onGround && bot.y >= HIGH_H - 0.01) climbed = true;
+    if (climbed && botShots >= 3) break;
   }
   check(
     'bot climbs the Dust Bowl platform to contest high ground',
     climbed,
     `bot y=${bot.y.toFixed(2)} peak=${peak.toFixed(2)} (platform is ${HIGH_H})`,
+  );
+  check(
+    'bot repeatedly fires a semi-auto weapon at a visible target',
+    botShots >= 3,
+    `saw ${botShots} pistol shots`,
   );
 }
 

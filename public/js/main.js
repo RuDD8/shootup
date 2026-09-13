@@ -356,6 +356,26 @@ function updateFootsteps(dt) {
   audio.footstep(surface, state.local.crouching ? 0.55 : sprinting ? 1 : 0.78);
 }
 
+// Other players' footsteps play at their world position, so a flanker can be
+// heard coming. Crouch-walking stays silent — sneaking is meant to work.
+function updateRemoteFootsteps(dt) {
+  if (state.matchState !== MATCH_STATE.LIVE) return;
+  const surface = state.mapId === 'fy_snow' ? 'snow' : 'default';
+  for (const [id, player] of state.players) {
+    if (id === state.myId) continue;
+    const r = player.render;
+    const walking = r && r.alive && r.onGround && r.speed > 1.2 && !player.crouching;
+    if (!walking) {
+      player.stepTimer = 0;
+      continue;
+    }
+    player.stepTimer = (player.stepTimer ?? 0) - dt;
+    if (player.stepTimer > 0) continue;
+    player.stepTimer = r.speed > 5.2 ? 0.28 : 0.4;
+    audio.footstep(surface, r.speed > 5.2 ? 1 : 0.78, { x: r.x, y: r.y + 0.1, z: r.z });
+  }
+}
+
 function wantsWeaponPick() {
   return (
     isDM() &&
@@ -784,6 +804,7 @@ net.on('round', (msg) => {
   applyMapTheme(scene, state.mapId);
   if (state.arenaMesh) state.arenaMesh.dispose();
   state.arenaMesh = buildArena(scene, state.arena, state.mapId);
+  hud.minimapSetArena(state.arena);
 
   for (const p of state.players.values()) if (p.avatar) p.avatar.dispose();
   state.players.clear();
@@ -1168,6 +1189,8 @@ function handleEvents(events) {
   for (const ev of events) {
     if (ev.k === 'shot' || ev.k === 'beam') {
       const w = WEAPONS[ev.w] || WEAPONS.pistol;
+      // Gunfire reveals the shooter on the minimap for a moment.
+      if (ev.p !== state.myId && ev.o) hud.minimapPing(ev.o[0], ev.o[2]);
       if (w.id === 'pee') {
         const [ox, oy, oz] = ev.o;
         const mine = ev.p === state.myId;
@@ -1273,6 +1296,7 @@ function handleEvents(events) {
         const thrower = state.players.get(ev.p);
         if (thrower?.avatar) thrower.avatar.playThrow();
       }
+      if (ev.p !== state.myId) hud.minimapPing(ev.x, ev.z);
     } else if (ev.k === 'fart') {
       // The local player already farts in sync with its own reload animation.
       if (ev.p !== state.myId) {
@@ -1322,6 +1346,13 @@ function handleEvents(events) {
         hud.damageFlash(0.28 + (ev.dmg / MAX_HEALTH) * 0.7);
         state.shake = Math.min(3, state.shake + 0.8);
         audio.hurt();
+        // Wedge around the crosshair pointing at the attacker.
+        const attacker = state.players.get(ev.by);
+        if (attacker?.render && ev.by !== state.myId) {
+          const dx = attacker.render.x - state.local.x;
+          const dz = attacker.render.z - state.local.z;
+          if (Math.hypot(dx, dz) > 0.5) hud.damageFrom(Math.atan2(-dx, -dz));
+        }
       } else if (ev.by === state.myId) {
         hud.hitmarker(ev.head);
         if (ev.head) audio.headshot();
@@ -1526,7 +1557,15 @@ function applyRemoteInterpolation() {
     const crouching = b ? (a.cr || 0) + ((b.cr || 0) - (a.cr || 0)) * t >= 0.5 : a.cr === 1;
     const sliding = b ? (a.sl || 0) + ((b.sl || 0) - (a.sl || 0)) * t >= 0.5 : a.sl === 1;
 
-    player.render = { x: extrap.x, y: extrapolatedY, z: extrap.z, yaw };
+    player.render = {
+      x: extrap.x,
+      y: extrapolatedY,
+      z: extrap.z,
+      yaw,
+      speed: Math.hypot(vx || 0, vz || 0),
+      onGround: (b && t >= 0.5 ? b.g : a.g) === 1,
+      alive: a.al === 1,
+    };
     player.crouching = crouching;
     player.sliding = sliding;
 
@@ -1534,8 +1573,7 @@ function applyRemoteInterpolation() {
       player.avatar.group.position.set(extrap.x, extrapolatedY, extrap.z);
       player.avatar.group.rotation.y = yaw;
       player.avatar.group.visible = a.al === 1;
-      const moveSpeed = Math.hypot(vx || 0, vz || 0);
-      player.avatar.setPose(crouching, sliding, moveSpeed);
+      player.avatar.setPose(crouching, sliding, player.render.speed);
     }
   }
 }
@@ -1668,8 +1706,16 @@ function frame(now) {
   }
 
   updateFootsteps(dt);
+  updateRemoteFootsteps(dt);
   hud.update(dt);
   updateHud(reloading, reloadProgress);
+  {
+    const view = input.viewAngles();
+    hud.updateDamageDirs(view.yaw, dt);
+    if (state.phase === 'game' && state.arena) {
+      hud.minimapDraw(state.local.x, state.local.z, view.yaw);
+    }
+  }
 
   // Auto FPS boost: trade render resolution for frame rate. Steps down hard
   // while the GPU can't keep up, then probes back up once there is headroom.

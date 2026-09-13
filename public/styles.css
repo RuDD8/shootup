@@ -370,6 +370,38 @@ button.secondary:hover {
   height: 0;
 }
 
+#minimap {
+  width: 148px;
+  height: 148px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(8, 12, 20, 0.55);
+  box-shadow: var(--hud-shadow);
+}
+
+/* Damage direction wedges orbit the crosshair, pointing at whoever shot us. */
+#dmg-dirs {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.dmg-dir {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  border-left: 13px solid transparent;
+  border-right: 13px solid transparent;
+  border-bottom: 20px solid rgba(255, 64, 64, 0.9);
+  filter: drop-shadow(0 0 6px rgba(255, 40, 40, 0.55));
+  will-change: transform, opacity;
+}
+
 .ch {
   position: absolute;
   background: rgba(240, 250, 255, 0.95);

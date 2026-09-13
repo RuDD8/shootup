@@ -271,8 +271,11 @@ export class Audio {
     src.stop(t + 0.1);
   }
 
-  footstep(surface = 'default', gain = 1) {
+  // Pass `at` ({x, y, z}) to place another player's footstep in the world so
+  // it pans and fades with distance — hearing someone flank is real intel.
+  footstep(surface = 'default', gain = 1, at = null) {
     if (!this.ctx) return;
+    const out = at ? this.spatial(at.x, at.y, at.z, 26) : this.master;
     const t = this.now;
     const src = this.ctx.createBufferSource();
     src.buffer = this.noise;
@@ -286,7 +289,7 @@ export class Audio {
     const env = this.ctx.createGain();
     env.gain.setValueAtTime(0.12 * gain, t);
     env.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
-    src.connect(filter).connect(env).connect(this.master);
+    src.connect(filter).connect(env).connect(out);
     src.start(t);
     src.stop(t + 0.1);
   }

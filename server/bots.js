@@ -16,7 +16,7 @@ import {
   tileHeight,
 } from '../shared/arena.js';
 import { raycastWorld } from '../shared/physics.js';
-import { PRIMARY_WEAPON_IDS } from '../shared/weapons.js';
+import { PRIMARY_WEAPON_IDS, WEAPONS } from '../shared/weapons.js';
 
 const KEY = {
   FORWARD: 1,
@@ -250,9 +250,12 @@ function computeBotInput(match, player) {
   // Navigate the walkable graph when sight is blocked (chase memory, then
   // patrol) — and also when the target visibly holds ground too high to hop
   // straight up, in which case the route is the climb ladder toward them.
-  // Strafing at the base of a platform never wins that fight.
+  // Strafing at the base of a platform never wins that fight. While the
+  // target is visible the bot keeps AIMING at them and steers with movement
+  // keys instead, so it can trade shots on the way up like a human would.
   const targetTooHigh = canSee && target.y - player.y > MAX_MOUNT;
   let navigating = false;
+  let navYaw = 0;
   if (!canSee || targetTooHigh) {
     const arenaSize = gridSize(match.arena.grid);
     const currentCell = cellOf(player.x, player.z, arenaSize);
@@ -277,9 +280,13 @@ function computeBotInput(match, player) {
       const navDx = point.x - player.x;
       const navDz = point.z - player.z;
       if (Math.hypot(navDx, navDz) > 0.35) {
-        wantYaw = Math.atan2(-navDx, -navDz);
-        wantPitch = 0;
+        navYaw = Math.atan2(-navDx, -navDz);
         navigating = true;
+        if (!canSee) {
+          // Blind travel: face where we're going.
+          wantYaw = navYaw;
+          wantPitch = 0;
+        }
       }
     }
   }
@@ -296,7 +303,15 @@ function computeBotInput(match, player) {
 
   let mask = 0;
 
-  if (navigating || horiz > 10) {
+  if (navigating && canSee) {
+    // Steer toward the waypoint with movement keys while the eyes (and gun)
+    // stay on the target above.
+    const rel = normalizeAngle(navYaw - yaw);
+    if (Math.abs(rel) <= Math.PI * 0.375) mask |= KEY.FORWARD;
+    else if (Math.abs(rel) >= Math.PI * 0.625) mask |= KEY.BACK;
+    if (rel > Math.PI * 0.125 && rel < Math.PI * 0.875) mask |= KEY.LEFT;
+    else if (rel < -Math.PI * 0.125 && rel > -Math.PI * 0.875) mask |= KEY.RIGHT;
+  } else if (navigating || horiz > 10) {
     mask |= KEY.FORWARD;
   } else if (horiz < 4) {
     mask |= KEY.BACK;
@@ -311,20 +326,21 @@ function computeBotInput(match, player) {
     mask |= KEY.JUMP;
   }
 
-  // Hop climbable ledges: when the column just ahead of the facing direction
+  // Hop climbable ledges: when the column just ahead of the travel direction
   // is a mountable step up (crate, stair, platform edge), jump instead of
-  // shuffling against the face — and keep pushing forward through the whole
+  // shuffling against the face — and keep pushing that way through the whole
   // arc, or the hop stalls mid-air and drops back onto the lower tier.
-  if (player.onGround && (mask & (KEY.FORWARD | KEY.LEFT | KEY.RIGHT))) {
-    const aheadX = player.x - Math.sin(yaw) * 1.1;
-    const aheadZ = player.z - Math.cos(yaw) * 1.1;
+  const moveYaw = navigating ? navYaw : yaw;
+  if (player.onGround && (mask & (KEY.FORWARD | KEY.BACK | KEY.LEFT | KEY.RIGHT))) {
+    const aheadX = player.x - Math.sin(moveYaw) * 1.1;
+    const aheadZ = player.z - Math.cos(moveYaw) * 1.1;
     const aheadH = solidHeightAt(match.arena.grid, aheadX, aheadZ);
     if (aheadH > player.y + STEP_UP && aheadH <= player.y + MAX_MOUNT) {
       mask |= KEY.JUMP;
       if (navigating || dy > STEP_UP) bs.climbUntil = match.tick + 30;
     }
   }
-  if (match.tick < bs.climbUntil) mask |= KEY.FORWARD;
+  if (match.tick < bs.climbUntil && !(navigating && canSee)) mask |= KEY.FORWARD;
 
   if (player.ammo <= 0 && player.reloadUntilTick === 0) {
     mask |= KEY.RELOAD;
@@ -332,7 +348,17 @@ function computeBotInput(match, player) {
     const onTarget = aimError(yaw, pitch, dx, dy, dz, horiz) < AIM_THRESHOLD;
     const reacted = match.tick >= bs.reactAfterTick;
     if (onTarget && reacted) {
-      mask |= KEY.SHOOT;
+      // Work the trigger the way the weapon expects. Semi-autos fire on the
+      // press edge, so holding SHOOT forever lands exactly one shot; the bow
+      // fires on release, so holding it forever never looses at all.
+      const w = WEAPONS[player.weaponId];
+      if (w?.charge) {
+        if (match.tick % 56 < 48) mask |= KEY.SHOOT; // draw ~0.8s, then loose
+      } else if (w && !w.auto) {
+        if (match.tick % 2 === 0) mask |= KEY.SHOOT; // pulse the trigger
+      } else {
+        mask |= KEY.SHOOT;
+      }
       if (player.weaponId === 'sniper' && horiz > 12 && onTarget) {
         mask |= KEY.ZOOM;
       }
