@@ -9,13 +9,19 @@ function loadTemplate(url) {
   if (templates.has(url)) return Promise.resolve(templates.get(url));
   if (loading.has(url)) return loading.get(url);
 
-  const promise = loader.loadAsync(url).then((gltf) => {
-    const scene = gltf.scene;
-    scene.updateMatrixWorld(true);
-    templates.set(url, scene);
-    loading.delete(url);
-    return scene;
-  });
+  const promise = loader
+    .loadAsync(url)
+    .then((gltf) => {
+      const scene = gltf.scene;
+      scene.updateMatrixWorld(true);
+      templates.set(url, scene);
+      loading.delete(url);
+      return scene;
+    })
+    .catch((error) => {
+      loading.delete(url);
+      throw error;
+    });
   loading.set(url, promise);
   return promise;
 }
@@ -143,8 +149,52 @@ export const WEAPON_MODEL_URLS = [
 ];
 
 /** Warm the GLB template cache so the first equip doesn't flash a fallback. */
-export function preloadWeaponModels() {
-  return Promise.all(WEAPON_MODEL_URLS.map((url) => loadTemplate(url).catch(() => null)));
+export async function preloadWeaponModels({
+  onProgress = null,
+  concurrency = 3,
+} = {}) {
+  const urls = WEAPON_MODEL_URLS.slice();
+  const total = urls.length;
+  let done = 0;
+  let failed = 0;
+  let cursor = 0;
+
+  const notify = (url, ok) => {
+    done += 1;
+    if (!ok) failed += 1;
+    onProgress?.({
+      loaded: done,
+      total,
+      failed,
+      url,
+      fraction: total ? done / total : 1,
+    });
+  };
+
+  async function worker() {
+    while (cursor < urls.length) {
+      const url = urls[cursor++];
+      try {
+        await loadTemplate(url);
+        notify(url, true);
+      } catch {
+        try {
+          await loadTemplate(url);
+          notify(url, true);
+        } catch {
+          console.error(`Weapon preload failed: ${url}`);
+          notify(url, false);
+        }
+      }
+    }
+  }
+
+  const workers = Array.from(
+    { length: Math.max(1, Math.min(concurrency, total || 1)) },
+    () => worker(),
+  );
+  await Promise.all(workers);
+  return { total, failed };
 }
 
 /**

@@ -41,6 +41,78 @@ canvas#scene {
   display: none !important;
 }
 
+/* ------------------------------------------------------------------ boot */
+
+#boot-load {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at 50% 40%, #101827 0%, #05070c 70%);
+}
+
+#boot-load.hidden {
+  display: none;
+}
+
+.boot-card {
+  width: min(420px, 90vw);
+  padding: 28px 26px 22px;
+  text-align: center;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55);
+}
+
+.boot-card h1 {
+  margin: 0 0 8px;
+  font-size: 2rem;
+  letter-spacing: 0.08em;
+}
+
+.boot-card h1 span {
+  color: var(--cyan);
+}
+
+#boot-status {
+  margin: 0 0 16px;
+  color: var(--dim);
+  font-size: 0.95rem;
+}
+
+#boot-track {
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+#boot-fill {
+  width: 0%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #38bdf8, #7dd3fc);
+  transition: width 0.15s ease-out;
+}
+
+#boot-count {
+  margin: 10px 0 0;
+  font-size: 0.8rem;
+  color: rgba(226, 232, 240, 0.65);
+  font-variant-numeric: tabular-nums;
+}
+
+#menu.assets-loading .panel button,
+#menu.assets-loading .join-row button,
+#menu.assets-loading #room-list {
+  pointer-events: none;
+  opacity: 0.45;
+}
+
 /* ------------------------------------------------------------------ menu */
 
 #menu {

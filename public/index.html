@@ -10,6 +10,15 @@
   <body>
     <canvas id="scene"></canvas>
 
+    <div id="boot-load" aria-live="polite" aria-busy="true">
+      <div class="boot-card">
+        <h1>SHOOT<span>UP</span></h1>
+        <p id="boot-status">Loading weapons…</p>
+        <div id="boot-track"><div id="boot-fill"></div></div>
+        <p id="boot-count">0 / 0</p>
+      </div>
+    </div>
+
     <!-- In-game overlay -->
     <div id="hud" class="hidden">
       <div id="hud-scrim"></div>

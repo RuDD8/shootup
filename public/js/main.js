@@ -39,10 +39,6 @@ import { INTERP_DELAY_MS, MAX_LAG_COMP_MS, extrapolateRender } from '/shared/lag
 import { installVmTune } from './vm-tune.js';
 import { preloadWeaponModels } from './model-assets.js';
 
-// Warm gun GLBs in the background so the first equip / Gun Game upgrade
-// doesn't flash the procedural fallback for a frame.
-preloadWeaponModels();
-
 // Render remote players this far in the past, then extrapolate forward so avatars
 // line up with the server hitboxes players are aiming at.
 const BASE_FOV = 82;
@@ -50,6 +46,58 @@ const HIT_RADIUS = 0.45;
 const MAX_RANGE = 400;
 
 const $ = (id) => document.getElementById(id);
+
+let assetsReady = false;
+
+function setPlayLocked(locked) {
+  for (const id of ['btn-create', 'btn-quick', 'btn-join', 'code-input']) {
+    const el = $(id);
+    if (el) el.disabled = locked;
+  }
+  $('menu')?.classList.toggle('assets-loading', locked);
+}
+
+function updateBootProgress({ loaded, total, failed, fraction }) {
+  const pct = Math.round((fraction || 0) * 100);
+  $('boot-fill').style.width = `${pct}%`;
+  $('boot-count').textContent = failed
+    ? `${loaded} / ${total}  ·  ${failed} failed`
+    : `${loaded} / ${total}`;
+  $('boot-status').textContent =
+    loaded < total ? 'Loading weapons…' : failed ? 'Almost ready…' : 'Ready!';
+}
+
+async function bootLoadAssets() {
+  setPlayLocked(true);
+  $('boot-load').classList.remove('hidden');
+  $('boot-load').setAttribute('aria-busy', 'true');
+  try {
+    const result = await preloadWeaponModels({
+      concurrency: 3,
+      onProgress: updateBootProgress,
+    });
+    assetsReady = true;
+    if (result.failed > 0) {
+      $('boot-status').textContent =
+        `Loaded with ${result.failed} missing model${result.failed === 1 ? '' : 's'}.`;
+    } else {
+      $('boot-status').textContent = 'Weapons ready.';
+    }
+  } catch (err) {
+    console.error('Weapon preload failed', err);
+    // Don't soft-lock the whole game if preload blows up.
+    assetsReady = true;
+    $('boot-status').textContent = 'Could not preload every gun — continuing anyway.';
+  }
+  $('boot-fill').style.width = '100%';
+  $('boot-load').setAttribute('aria-busy', 'false');
+  // Brief beat so "Ready" is readable, then open the menu.
+  await new Promise((r) => setTimeout(r, 280));
+  $('boot-load').classList.add('hidden');
+  setPlayLocked(false);
+}
+
+bootLoadAssets();
 
 const canvas = $('scene');
 const renderer = createRenderer(canvas);
@@ -2440,6 +2488,7 @@ $('map-select').addEventListener('change', savePreferences);
 $('public-room').addEventListener('change', savePreferences);
 
 $('btn-create').addEventListener('click', () => {
+  if (!assetsReady) return;
   state.myName = $('name-input').value.trim() || 'Player';
   audio.unlock();
   net.send({
@@ -2453,6 +2502,7 @@ $('btn-create').addEventListener('click', () => {
 });
 
 $('btn-quick').addEventListener('click', () => {
+  if (!assetsReady) return;
   state.myName = $('name-input').value.trim() || 'Player';
   $('menu-error').textContent = '';
   audio.unlock();
@@ -2466,6 +2516,7 @@ $('btn-quick').addEventListener('click', () => {
 });
 
 $('btn-join').addEventListener('click', () => {
+  if (!assetsReady) return;
   const code = $('code-input').value.trim().toUpperCase();
   if (code.length < 4) {
     $('menu-error').textContent = 'Enter the 4-character code.';
@@ -2503,6 +2554,7 @@ net.on('rooms', (msg) => {
     btn.type = 'button';
     btn.textContent = 'JOIN';
     btn.addEventListener('click', () => {
+      if (!assetsReady) return;
       state.myName = $('name-input').value.trim() || 'Player';
       $('menu-error').textContent = '';
       audio.unlock();
