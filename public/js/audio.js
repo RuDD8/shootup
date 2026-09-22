@@ -32,7 +32,6 @@ const SHOT_PROFILES = {
 
   // ── Shotguns ──────────────────────────────────────────────────────
   autoshotgun:  { dur: 0.28, cutoff: 1350, thump: 90,  gain: 0.62, q: 0.8 },
-  slugshotgun:  { dur: 0.35, cutoff: 1100, thump: 75,  gain: 0.76, q: 0.7 },
   doublebarrel: { dur: 0.40, cutoff: 1000, thump: 65,  gain: 0.85, q: 0.6 },
 
   // ── Snipers ───────────────────────────────────────────────────────
@@ -508,10 +507,13 @@ export class Audio {
   }
 
   // Continuous beam hum for the laser gun.  Call once to start; returns a
-  // stop() handle.  The tone is a high-frequency saw filtered into a sci-fi
-  // buzz that layers naturally when shot() is also called per-tick.
-  beamLoop(gain = 0.12) {
-    if (!this.ctx) return { stop() {} };
+  // stop()/move() handle. Optional `at` places the hum in world space so
+  // opponents hear it from the shooter.
+  beamLoop(gain = 0.12, at = null) {
+    if (!this.ctx) return { stop() {}, move() {} };
+    const panner = at ? this.spatial(at.x, at.y, at.z, 40) : null;
+    const out = panner || this.master;
+
     const osc = this.ctx.createOscillator();
     osc.type = 'sawtooth';
     osc.frequency.value = 580;
@@ -531,11 +533,21 @@ export class Audio {
     const env = this.ctx.createGain();
     env.gain.value = gain;
 
-    osc.connect(filter).connect(env).connect(this.master);
+    osc.connect(filter).connect(env).connect(out);
     osc.start();
     lfo.start();
 
     return {
+      move: (x, y, z) => {
+        if (!panner) return;
+        if (panner.positionX) {
+          panner.positionX.value = x;
+          panner.positionY.value = y;
+          panner.positionZ.value = z;
+        } else if (panner.setPosition) {
+          panner.setPosition(x, y, z);
+        }
+      },
       stop: () => {
         const t = this.ctx.currentTime;
         env.gain.setTargetAtTime(0, t, 0.03);

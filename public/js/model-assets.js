@@ -24,7 +24,9 @@ function cloneTemplate(template, castShadow) {
   const clone = template.clone(true);
   clone.traverse((child) => {
     if (!child.isMesh) return;
-    child.geometry = child.geometry.clone();
+    // Keep the cached template's geometry buffers — cloning them on every
+    // weapon swap was hitching the main thread (Gun Game upgrades especially).
+    child.userData.sharedGeometry = true;
     child.material = Array.isArray(child.material)
       ? child.material.map((material) => material.clone())
       : child.material.clone();
@@ -34,10 +36,25 @@ function cloneTemplate(template, castShadow) {
   return clone;
 }
 
+function templateBaseLength(template) {
+  if (template.userData.baseLength) return template.userData.baseLength;
+  template.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(template);
+  const size = new THREE.Vector3();
+  box.getSize(size);
+  const length = Math.max(size.x, size.y, size.z, 0.001);
+  template.userData.baseLength = length;
+  return length;
+}
+
 /**
  * Mount a Blender-authored weapon GLB into a weapon group.
  * glTF flips Blender's -Y forward to +Z, so we rotate 180° around Y for the
  * game's -Z convention, then normalize length so FPS and avatar sizes stay stable.
+ *
+ * Pass `fallback` to hide the procedural stand-in as soon as the GLB attaches
+ * (synchronously when the template is already cached), so swaps don't flash
+ * the old blocky mesh for a frame.
  */
 async function mountWeaponModel(
   parent,
@@ -47,30 +64,87 @@ async function mountWeaponModel(
     targetLength = 0.78,
     castShadow = false,
     offset = { x: 0, y: 0, z: 0 },
+    // Default: most Blender guns face +Z; flip so the muzzle points -Z (into the world).
     yaw = Math.PI,
+    pitch = 0,
+    roll = 0,
+    fallback = null,
   },
 ) {
   try {
-    const template = await loadTemplate(url);
+    const template = templates.has(url) ? templates.get(url) : await loadTemplate(url);
     if (parent.userData.disposed) return false;
 
     const model = cloneTemplate(template, castShadow);
     model.name = name;
-    model.rotation.y = yaw;
+    model.rotation.set(pitch, yaw, roll);
 
-    model.updateMatrixWorld(true);
-    const box = new THREE.Box3().setFromObject(model);
-    const size = new THREE.Vector3();
-    box.getSize(size);
-    const length = Math.max(size.z, size.y, 0.001);
+    const length = templateBaseLength(template);
     model.scale.setScalar(targetLength / length);
     model.position.set(offset.x, offset.y, offset.z);
+    model.userData.mountTune = {
+      baseLength: length,
+      targetLength,
+      offset: { ...offset },
+      pitch,
+      yaw,
+      roll,
+    };
     parent.add(model);
+    if (fallback) fallback.visible = false;
     return true;
   } catch (error) {
     console.error(`Could not load weapon model ${url}:`, error);
+    if (fallback) fallback.visible = true;
     return false;
   }
+}
+
+/** Every first-person / world gun GLB we expect to swap in during a match. */
+export const WEAPON_MODEL_URLS = [
+  '/models/assault_rifle.glb',
+  '/models/bayonet.glb',
+  '/models/poop.glb',
+  '/models/fahh_gun.glb',
+  '/models/fahh_text.glb',
+  '/models/banana.glb',
+  '/models/banana_peel.glb',
+  '/models/chancla.glb',
+  '/models/airhorn.glb',
+  '/models/pistol.glb',
+  '/models/shotgun.glb',
+  '/models/sniper.glb',
+  '/models/revolver.glb',
+  '/models/machinepistol.glb',
+  '/models/deagle.glb',
+  '/models/smg.glb',
+  '/models/p90.glb',
+  '/models/vector.glb',
+  '/models/battlerifle.glb',
+  '/models/burstrifle.glb',
+  '/models/dmr.glb',
+  '/models/carbine.glb',
+  '/models/autoshotgun.glb',
+  '/models/doublebarrel.glb',
+  '/models/sawedoff.glb',
+  '/models/scout.glb',
+  '/models/awp.glb',
+  '/models/lmg.glb',
+  '/models/minigun.glb',
+  '/models/crossbow.glb',
+  '/models/leveraction.glb',
+  '/models/laser.glb',
+  '/models/bow.glb',
+  '/models/arrow.glb',
+  '/models/water_bottle.glb',
+  '/models/napkin.glb',
+  '/models/knife_viewmodel.glb',
+  '/models/player_block.glb',
+];
+
+/** Warm the GLB template cache so the first equip doesn't flash a fallback. */
+export function preloadWeaponModels() {
+  return Promise.all(WEAPON_MODEL_URLS.map((url) => loadTemplate(url).catch(() => null)));
 }
 
 /**
@@ -232,7 +306,9 @@ export function mountDeagle(parent, options = {}) {
   return mountWeaponModel(parent, {
     url: '/models/deagle.glb',
     name: 'Blender_Deagle',
-    targetLength: 0.6,
+    targetLength: 0.42,
+    // Asset is authored with the barrel on +X; rotate so muzzle faces -Z.
+    yaw: -Math.PI / 2,
     ...options,
   });
 }
@@ -309,14 +385,6 @@ export function mountAutoshotgun(parent, options = {}) {
   });
 }
 
-export function mountSlugshotgun(parent, options = {}) {
-  return mountWeaponModel(parent, {
-    url: '/models/slugshotgun.glb',
-    name: 'Blender_Slugshotgun',
-    targetLength: 1.1,
-    ...options,
-  });
-}
 
 export function mountDoublebarrel(parent, options = {}) {
   return mountWeaponModel(parent, {
@@ -441,21 +509,22 @@ export function mountNapkin(parent, options = {}) {
   });
 }
 
-/** The flying "FAHH" projectile text; targetLength normalizes glyph height. */
+/** The flying "FAHH" projectile text; targetLength normalizes glyph width. */
 export function mountFahhText(parent, options = {}) {
   return mountWeaponModel(parent, {
     url: '/models/fahh_text.glb',
     name: 'Blender_FAHH_Text',
-    targetLength: 0.4,
+    targetLength: 1.35,
     yaw: 0,
     ...options,
   });
 }
 
 /** Mount the complete Blender-authored first-person knife and arm composition. */
-export async function mountKnifeViewModel(parent, { scale = 0.72 } = {}) {
+export async function mountKnifeViewModel(parent, { scale = 0.72, fallback = null } = {}) {
+  const url = '/models/knife_viewmodel.glb';
   try {
-    const template = await loadTemplate('/models/knife_viewmodel.glb');
+    const template = templates.has(url) ? templates.get(url) : await loadTemplate(url);
     if (parent.userData.disposed) return false;
 
     const model = cloneTemplate(template, false);
@@ -472,9 +541,11 @@ export async function mountKnifeViewModel(parent, { scale = 0.72 } = {}) {
       child.renderOrder = 3;
     });
     parent.add(model);
+    if (fallback) fallback.visible = false;
     return model;
   } catch (error) {
     console.error('Could not load Blender knife viewmodel:', error);
+    if (fallback) fallback.visible = true;
     return false;
   }
 }

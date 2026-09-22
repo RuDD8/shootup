@@ -14,6 +14,7 @@ import {
   playerEyeHeight,
   playerHeight,
   playerHeadHeight,
+  GUNGAME_UPGRADE_FIRE_DELAY_SECONDS,
 } from '/shared/constants.js';
 
 import { deserializeArena, gridSize } from '/shared/arena.js';
@@ -35,6 +36,12 @@ import { ViewModel } from './viewmodel.js';
 import { Effects } from './effects.js';
 import { createRenderer, createScene, buildArena, createAvatar, applyMapTheme } from './world.js';
 import { INTERP_DELAY_MS, MAX_LAG_COMP_MS, extrapolateRender } from '/shared/lagcomp.js';
+import { installVmTune } from './vm-tune.js';
+import { preloadWeaponModels } from './model-assets.js';
+
+// Warm gun GLBs in the background so the first equip / Gun Game upgrade
+// doesn't flash the procedural fallback for a frame.
+preloadWeaponModels();
 
 // Render remote players this far in the past, then extrapolate forward so avatars
 // line up with the server hitboxes players are aiming at.
@@ -50,7 +57,12 @@ const scene = createScene();
 const camera = new THREE.PerspectiveCamera(BASE_FOV, window.innerWidth / window.innerHeight, 0.05, 400);
 camera.rotation.order = 'YXZ';
 
+const SANDBOX_PASSWORD = 'Katalizatori8';
+
 const viewModel = new ViewModel();
+installVmTune(viewModel, {
+  getPassword: () => SANDBOX_PASSWORD,
+});
 const effects = new Effects(scene);
 const hud = new Hud();
 const audio = new Audio();
@@ -85,12 +97,16 @@ const projSounds = new Map();
 // One positional pee-stream loop per remote shooter; entries expire in the
 // render loop once their beam events stop arriving.
 const remotePee = new Map();
+// Same idea for remote laser hums.
+const remoteBeam = new Map();
 
 function clearProjSounds() {
   for (const sound of projSounds.values()) sound.stop();
   projSounds.clear();
   for (const entry of remotePee.values()) entry.sound?.stop();
   remotePee.clear();
+  for (const entry of remoteBeam.values()) entry.sound?.stop();
+  remoteBeam.clear();
 }
 const input = new InputController(canvas);
 const net = new Net();
@@ -142,6 +158,8 @@ const state = {
   lastLeaderboardAt: 0,
   gunGameOrder: [],
   gunGameLevel: 0,
+  sandbox: false,
+  sandboxPickOpen: false,
 };
 
 let selectedMode = GAME_MODE.DUEL;
@@ -158,9 +176,16 @@ const localGun = {
   reloadEndsAt: 0,
   prevShoot: false,
   heat: 0,
+  heatLocked: false,
   overheatedUntil: 0,
   chargeStartAt: 0,
   chargeFrac: 0,
+  // Burst rifle: remaining automatic follow-up shots after a press.
+  burstRemaining: 0,
+  burstNextAt: 0,
+  burstShotIndex: 0,
+  // After click-to-respawn / upgrade, ignore shoot until the button is released.
+  fireSuppress: false,
   // Single shared hum for the laser beam; stopped when beam shots cease.
   beamSound: null,
   lastBeamShotAt: 0,
@@ -169,10 +194,31 @@ const localGun = {
   lastPeeShotAt: 0,
 };
 
+function clearBurstState() {
+  localGun.burstRemaining = 0;
+  localGun.burstNextAt = 0;
+  localGun.burstShotIndex = 0;
+}
+
+function armFireSuppress() {
+  localGun.fireSuppress = true;
+  localGun.prevShoot = true;
+  clearBurstState();
+}
+
+function deductLocalAmmo() {
+  localGun.ammo -= 1;
+  if (isDM()) {
+    if (state.activeSlot === 'primary') localGun.primaryAmmo = localGun.ammo;
+    else localGun.secondaryAmmo = localGun.ammo;
+  }
+}
+
 const tmpOrigin = new THREE.Vector3();
 const tmpDir = new THREE.Vector3();
 const tmpEnd = new THREE.Vector3();
 const tmpMuzzle = new THREE.Vector3();
+const tmpMuzzleLocal = new THREE.Vector3();
 const forward = new THREE.Vector3();
 const right = new THREE.Vector3();
 
@@ -289,9 +335,14 @@ function updateLoadoutUI() {
     return;
   }
   const primary = WEAPONS[state.primaryWeaponId] || WEAPONS.assault;
+  let primaryAmmo = localGun.primaryAmmo;
+  if (primary.overheat) {
+    const locked = localGun.heatLocked;
+    primaryAmmo = locked ? 'RELOAD' : `${Math.round(localGun.heat * 100)}%`;
+  }
   hud.setLoadout({
     primaryName: primary.name,
-    primaryAmmo: localGun.primaryAmmo,
+    primaryAmmo,
     secondaryAmmo: localGun.secondaryAmmo,
     activeSlot: state.activeSlot,
     visible: true,
@@ -408,6 +459,7 @@ function updateRemoteFootsteps(dt) {
 }
 
 function wantsWeaponPick() {
+  if (state.sandbox && state.phase === 'game' && state.sandboxPickOpen) return true;
   return (
     isDM() &&
     !isGunGame() &&
@@ -422,13 +474,15 @@ function needsWeaponPick() {
 
 function syncWeaponPickPointer() {
   const show = needsWeaponPick();
+  const click = $('click-to-play');
+  click.classList.toggle('sandbox-clear', Boolean(state.sandbox));
   $('weapon-pick').classList.toggle('hidden', !show);
   if (show) {
     // Unlock so weapon buttons are clickable; hide the full-screen lock overlay.
     input.exitLock();
-    $('click-to-play').classList.add('hidden');
+    click.classList.add('hidden');
   } else if (state.phase === 'game' && !input.locked) {
-    $('click-to-play').classList.remove('hidden');
+    click.classList.remove('hidden');
   }
 }
 
@@ -455,6 +509,7 @@ function sendPrimaryPick(id) {
     localGun.ammo = localGun.primaryAmmo;
     localGun.reloadEndsAt = 0;
     localGun.nextShotAt = 0;
+    clearBurstState();
     viewModel.setWeapon(id);
   }
   updateWeaponPickUI();
@@ -464,8 +519,9 @@ function sendPrimaryPick(id) {
     savePreferences();
   }
   updateLoadoutUI();
-  if (state.matchState === MATCH_STATE.COUNTDOWN) {
+  if (state.matchState === MATCH_STATE.COUNTDOWN || state.sandbox) {
     state.weaponPickDismissed = true;
+    state.sandboxPickOpen = false;
     syncWeaponPickPointer();
   }
 }
@@ -481,6 +537,7 @@ function switchToSlot(slot) {
   syncActiveWeaponFromSlot();
   localGun.reloadEndsAt = 0;
   localGun.nextShotAt = 0;
+  clearBurstState();
   viewModel.setWeapon(state.weaponId);
   updateLoadoutUI();
 }
@@ -534,9 +591,22 @@ function localTrace(ox, oy, oz, dir) {
   return { dist, kind };
 }
 
-// Approximate world position of the gun barrel, so tracers leave the weapon
-// rather than the middle of the screen.
+// World position of the gun barrel tip. Uses the viewmodel muzzle so sandbox
+// tuning actually moves flashes/tracers. Viewmodel FOV ≠ world FOV, so we
+// match the muzzle's *screen* position (same pixel as the red bead) then place
+// it at the correct depth in front of the main camera.
 function muzzleWorld(out) {
+  const muzzle = viewModel.weapon?.userData?.muzzle;
+  if (muzzle) {
+    viewModel.holder.updateMatrixWorld(true);
+    viewModel.camera.updateMatrixWorld(true);
+    muzzle.getWorldPosition(tmpMuzzleLocal);
+    const dist = Math.max(0.15, tmpMuzzleLocal.length());
+    tmpMuzzleLocal.project(viewModel.camera);
+    out.set(tmpMuzzleLocal.x, tmpMuzzleLocal.y, 0.5).unproject(camera);
+    out.sub(camera.position).normalize().multiplyScalar(dist).add(camera.position);
+    return out;
+  }
   camera.getWorldDirection(forward);
   right.crossVectors(forward, camera.up).normalize();
   return out
@@ -596,13 +666,16 @@ function fireLocal({ chargeFrac = 1, beam = false, melee = false, projectile = f
     viewModel.playSneeze();
   }
 
-  const spreadBase = shotSpread(w, state.bloom, state.zooming, chargeFrac);
+  const spreadBase =
+    shotSpread(w, state.bloom, state.zooming, chargeFrac) +
+    (w.burst ? (w.burstSpreadStep || 0) * (localGun.burstShotIndex || 0) : 0);
+  const burstClimb = w.burst ? (w.burstClimb || 0) * (localGun.burstShotIndex || 0) : 0;
 
   for (let i = 0; i < w.pellets; i++) {
     const angle = Math.random() * Math.PI * 2;
     const radius = Math.sqrt(Math.random()) * spreadBase;
     const yaw = view.yaw + Math.cos(angle) * radius;
-    const pitch = view.pitch + Math.sin(angle) * radius;
+    const pitch = view.pitch + Math.sin(angle) * radius + burstClimb;
     aimDirection(yaw, pitch, tmpDir);
 
     if (isPee) {
@@ -620,7 +693,9 @@ function fireLocal({ chargeFrac = 1, beam = false, melee = false, projectile = f
     const { dist, kind } = localTrace(ox, oy, oz, tmpDir);
     tmpEnd.set(ox, oy, oz).addScaledVector(tmpDir, dist);
 
-    if (!beam && !isSneeze && !isAirhorn) {
+    if (beam) {
+      effects.beam(tmpMuzzle, tmpEnd, 'local');
+    } else if (!isSneeze && !isAirhorn) {
       effects.tracer(tmpMuzzle, tmpEnd, w.id === 'sniper' ? 0.03 : 0.02);
     }
     if (kind !== 'air') {
@@ -631,7 +706,12 @@ function fireLocal({ chargeFrac = 1, beam = false, melee = false, projectile = f
   state.bloom = Math.min(w.maxBloom, state.bloom + w.bloom);
   state.shake = Math.min(2.4, state.shake + w.shake * 0.5);
   viewModel.addRecoil(w.recoil * 0.32);
-  input.addKick((Math.random() - 0.5) * w.recoil * 0.004, w.recoil * 0.006);
+  {
+    const burstI = w.burst ? localGun.burstShotIndex || 0 : 0;
+    const yawKick = (Math.random() - 0.5) * w.recoil * (0.004 + burstI * 0.003);
+    const pitchKick = w.recoil * (0.006 + burstI * 0.005);
+    input.addKick(yawKick, pitchKick);
+  }
   if (isPee) {
     // One shared water loop for the whole spray, mirroring the beam hum.
     localGun.lastPeeShotAt = performance.now();
@@ -672,8 +752,8 @@ function updateLocalGun(mask) {
 
   const canAct = state.matchState === MATCH_STATE.LIVE && state.alive;
 
-  // Match server: heat always cools during lockout, and when not firing.
-  if (w.overheat && (!pressed || now < localGun.overheatedUntil)) {
+  // Match server: cool only while unlocked and not firing.
+  if (w.overheat && !localGun.heatLocked && !pressed) {
     localGun.heat = Math.max(0, localGun.heat - (w.heatDecay || 0.02));
   }
 
@@ -685,6 +765,11 @@ function updateLocalGun(mask) {
         else localGun.secondaryAmmo = localGun.ammo;
       }
       localGun.reloadEndsAt = 0;
+      if (w.overheat) {
+        localGun.heat = 0;
+        localGun.heatLocked = false;
+        localGun.overheatedUntil = 0;
+      }
     } else {
       localGun.prevShoot = pressed;
       return;
@@ -698,11 +783,15 @@ function updateLocalGun(mask) {
     return;
   }
 
+  if (localGun.fireSuppress && !pressed) {
+    localGun.fireSuppress = false;
+  }
+
   if (
     (mask & KEY.RELOAD) !== 0 &&
-    !w.overheat &&
     !w.melee &&
-    localGun.ammo < w.magazine
+    ((w.overheat && localGun.heatLocked) ||
+      (!w.overheat && localGun.ammo < w.magazine))
   ) {
     localGun.reloadEndsAt = now + w.reload * 1000;
     localGun.chargeStartAt = 0;
@@ -713,7 +802,7 @@ function updateLocalGun(mask) {
     return;
   }
 
-  if (w.overheat && now < localGun.overheatedUntil) {
+  if (w.overheat && localGun.heatLocked) {
     localGun.prevShoot = pressed;
     return;
   }
@@ -726,11 +815,7 @@ function updateLocalGun(mask) {
       const chargeFrac = Math.min(1, (now - localGun.chargeStartAt) / ((w.chargeTime || 1) * 1000));
       localGun.chargeStartAt = 0;
       localGun.chargeFrac = 0;
-      localGun.ammo -= 1;
-      if (isDM()) {
-        if (state.activeSlot === 'primary') localGun.primaryAmmo = localGun.ammo;
-        else localGun.secondaryAmmo = localGun.ammo;
-      }
+      deductLocalAmmo();
       localGun.nextShotAt = now + shotInterval(w) * 1000;
       fireLocal({ chargeFrac, projectile: Boolean(w.projectile) });
       viewModel.playBowShot();
@@ -748,10 +833,40 @@ function updateLocalGun(mask) {
     return;
   }
 
+  // Holding the respawn/upgrade click must not dump a mag the instant we revive.
+  if (localGun.fireSuppress) {
+    localGun.prevShoot = pressed;
+    return;
+  }
+
+  // Burst follow-ups keep firing even if the trigger was released (FAMAS-style).
+  if (localGun.burstRemaining > 0 && now >= localGun.burstNextAt) {
+    if (localGun.ammo > 0) {
+      deductLocalAmmo();
+      fireLocal({
+        melee: Boolean(w.melee),
+        projectile: Boolean(w.projectile),
+      });
+      localGun.burstRemaining -= 1;
+      localGun.burstShotIndex += 1;
+      if (localGun.burstRemaining > 0) {
+        localGun.burstNextAt = now + shotInterval(w) * 1000;
+      } else {
+        localGun.nextShotAt = now + (w.burstCooldown || 0.3) * 1000;
+        localGun.burstShotIndex = 0;
+      }
+    } else {
+      clearBurstState();
+    }
+    localGun.prevShoot = pressed;
+    return;
+  }
+
   const may = w.auto ? pressed : fresh;
   localGun.prevShoot = pressed;
   if (!may) return;
   if (now < localGun.nextShotAt) return;
+  if (localGun.burstRemaining > 0) return;
 
   if (!w.melee && !w.overheat && localGun.ammo <= 0) {
     if (w.reload > 0) {
@@ -767,19 +882,29 @@ function updateLocalGun(mask) {
     localGun.heat += w.heatPerTick || 0.012;
     if (localGun.heat >= 1) {
       localGun.heat = 1;
-      localGun.overheatedUntil = now + (w.overheatCooldown || 2) * 1000;
+      localGun.heatLocked = true;
+      localGun.overheatedUntil = 0;
       return;
     }
     fireLocal({ beam: true });
     return;
   }
 
+  if (w.burst && w.burst > 1) {
+    localGun.burstShotIndex = 0;
+    deductLocalAmmo();
+    fireLocal({
+      melee: Boolean(w.melee),
+      projectile: Boolean(w.projectile),
+    });
+    localGun.burstRemaining = w.burst - 1;
+    localGun.burstShotIndex = 1;
+    localGun.burstNextAt = now + shotInterval(w) * 1000;
+    return;
+  }
+
   if (!w.melee && !w.overheat) {
-    localGun.ammo -= 1;
-    if (isDM()) {
-      if (state.activeSlot === 'primary') localGun.primaryAmmo = localGun.ammo;
-      else localGun.secondaryAmmo = localGun.ammo;
-    }
+    deductLocalAmmo();
   }
 
   localGun.nextShotAt = now + shotInterval(w) * 1000;
@@ -816,6 +941,8 @@ net.on('joined', (msg) => {
   state.isHost = Boolean(msg.isHost);
   state.maxPlayers = msg.maxPlayers || 2;
   state.myColor = msg.color || playerColor(msg.slot);
+  state.sandbox = Boolean(msg.sandbox);
+  state.sandboxPickOpen = false;
   showLobby(msg.code, msg);
 });
 
@@ -833,6 +960,7 @@ net.on('error', (msg) => {
 
 net.on('round', (msg) => {
   state.mode = msg.mode || state.mode;
+  state.sandbox = Boolean(msg.sandbox) || state.sandbox;
   state.arena = deserializeArena(msg.arena);
   state.roundNumber = msg.n;
   state.target = msg.target;
@@ -841,6 +969,7 @@ net.on('round', (msg) => {
   state.matchState = MATCH_STATE.COUNTDOWN;
   state.lastCountdownStep = -1;
   state.weaponPickDismissed = false;
+  state.sandboxPickOpen = Boolean(state.sandbox);
   clearProjSounds();
   if (msg.gunGameOrder) state.gunGameOrder = msg.gunGameOrder;
 
@@ -918,9 +1047,11 @@ net.on('round', (msg) => {
   effects.reset();
 
   localGun.nextShotAt = 0;
+  clearBurstState();
   localGun.reloadEndsAt = 0;
   localGun.prevShoot = false;
   localGun.heat = 0;
+  localGun.heatLocked = false;
   localGun.overheatedUntil = 0;
   localGun.chargeStartAt = 0;
   localGun.chargeFrac = 0;
@@ -943,7 +1074,11 @@ net.on('round', (msg) => {
     hud.setDeathmatchLabel(state.dmMinutes);
     hud.updateDmLeaderboard(buildLeaderboard());
     const primary = WEAPONS[state.primaryWeaponId] || WEAPONS.assault;
-    hud.banner(primary.name.toUpperCase(), 'Deathmatch · pistol is [2]', 2.2);
+    if (state.sandbox) {
+      hud.banner('SANDBOX', 'F = weapons · tune panel on the left', 2.6);
+    } else {
+      hud.banner(primary.name.toUpperCase(), 'Deathmatch · pistol is [2]', 2.2);
+    }
   } else if (isGunGame()) {
     hud.setGunGameLabel();
     hud.updateDmLeaderboard(buildLeaderboard());
@@ -1013,6 +1148,7 @@ net.on('matchover', (msg) => {
   state.phase = 'result';
   input.setPlaying(false);
   input.enabled = false;
+  window.vmTuneClose?.();
 });
 
 net.on('opponentleft', (msg) => {
@@ -1082,6 +1218,7 @@ function onSnapshot(msg) {
       player.alive = entry.al === 1;
       player.crouching = entry.cr === 1;
       player.sliding = entry.sl === 1;
+      const prevWeapon = player.weaponId;
       player.weaponId = entry.w;
       player.score = entry.sc;
       player.kills = entry.kl || 0;
@@ -1093,8 +1230,7 @@ function onSnapshot(msg) {
       if (entry.i !== state.myId && !player.avatar && entry.al === 1) {
         player.avatar = createAvatar(scene, entry.slot);
         player.avatar.setWeapon(entry.w || 'pistol');
-      }
-      if (player.avatar) {
+      } else if (player.avatar && prevWeapon !== entry.w) {
         player.avatar.setWeapon(entry.w || 'pistol');
       }
     }
@@ -1111,10 +1247,9 @@ function onSnapshot(msg) {
       : 0;
 
     if (Number.isFinite(entry.ht)) localGun.heat = entry.ht;
-    if (entry.oh > 0) {
-      localGun.overheatedUntil = performance.now() + (entry.oh / TICK_RATE) * 1000;
-    } else if (entry.oh === 0) {
-      localGun.overheatedUntil = Math.min(localGun.overheatedUntil, performance.now());
+    if (entry.oh !== undefined) {
+      localGun.heatLocked = entry.oh > 0;
+      if (!localGun.heatLocked) localGun.overheatedUntil = 0;
     }
     if (entry.cs > 0 && !localGun.chargeStartAt) {
       localGun.chargeStartAt = performance.now() - (entry.cs / TICK_RATE) * 1000;
@@ -1130,7 +1265,10 @@ function onSnapshot(msg) {
       state.weaponPickDismissed = false;
       syncWeaponPickPointer();
     }
-    if (isDM() && !wasAlive && state.alive) syncWeaponPickPointer();
+    if ((isDM() || isGunGame()) && !wasAlive && state.alive) {
+      armFireSuppress();
+      if (isDM()) syncWeaponPickPointer();
+    }
 
     if (isDM()) {
       if (entry.pw) state.primaryWeaponId = entry.pw;
@@ -1276,6 +1414,34 @@ function handleEvents(events) {
           if (!entry) {
             entry = { sound: audio.peeLoop(0.5, { x: ox, y: oy, z: oz }), lastAt: nowMs };
             remotePee.set(ev.p, entry);
+          } else {
+            entry.sound?.move(ox, oy, oz);
+            entry.lastAt = nowMs;
+          }
+        }
+        continue;
+      }
+      if (ev.k === 'beam' && w.beam) {
+        const [ox, oy, oz] = ev.o;
+        const mine = ev.p === state.myId;
+        const hit = ev.hits?.[0];
+        if (hit) {
+          tmpOrigin.set(ox, oy, oz);
+          tmpEnd.set(hit.x, hit.y, hit.z);
+          if (!mine) effects.beam(tmpOrigin, tmpEnd, ev.p);
+          if (hit.s !== 'air') {
+            effects.spark(hit.x, hit.y, hit.z, hit.s, hit.s === 'player' ? 6 : 4);
+          }
+        }
+        if (!mine) {
+          const nowMs = performance.now();
+          let entry = remoteBeam.get(ev.p);
+          if (!entry) {
+            entry = {
+              sound: audio.beamLoop(0.12, { x: ox, y: oy, z: oz }),
+              lastAt: nowMs,
+            };
+            remoteBeam.set(ev.p, entry);
           } else {
             entry.sound?.move(ox, oy, oz);
             entry.lastAt = nowMs;
@@ -1480,6 +1646,7 @@ function handleEvents(events) {
           localGun.primaryAmmo = localGun.ammo;
           localGun.reloadEndsAt = 0;
           localGun.nextShotAt = 0;
+          armFireSuppress();
           viewModel.setWeapon(state.weaponId);
           updateLoadoutUI();
           syncWeaponPickPointer();
@@ -1493,6 +1660,7 @@ function handleEvents(events) {
           localGun.ammo = localGun.primaryAmmo;
           localGun.reloadEndsAt = 0;
           localGun.nextShotAt = 0;
+          armFireSuppress();
           viewModel.setWeapon(state.weaponId);
           updateLoadoutUI();
           updateWeaponPickUI();
@@ -1508,7 +1676,8 @@ function handleEvents(events) {
         localGun.ammo = w.magazine;
         localGun.primaryAmmo = localGun.ammo;
         localGun.reloadEndsAt = 0;
-        localGun.nextShotAt = 0;
+        localGun.nextShotAt = performance.now() + GUNGAME_UPGRADE_FIRE_DELAY_SECONDS * 1000;
+        armFireSuppress();
         viewModel.setWeapon(ev.w);
         hud.banner(ev.wName.toUpperCase(), `Level ${ev.lv + 1} / ${state.gunGameOrder.length}`, 1.5);
         audio.roundWin();
@@ -1571,16 +1740,23 @@ function updateLobby(msg) {
   $('btn-add-bot').classList.toggle('hidden', !canAddBot);
 
   if (isDM()) {
-    $('lobby-mode-label').textContent =
-      `Deathmatch · ${state.dmMinutes} min · ${state.mapName} · up to ${state.maxPlayers} players`;
-    if (players.length < 2) {
-      $('lobby-status').textContent = `Need at least 2 players (${players.length}/${state.maxPlayers})`;
-    } else if (state.isHost) {
-      $('lobby-status').textContent = 'Ready — click START when everyone is in';
+    $('lobby-mode-label').textContent = state.sandbox
+      ? `Sandbox · ${state.mapName} · viewmodel workshop`
+      : `Deathmatch · ${state.dmMinutes} min · ${state.mapName} · up to ${state.maxPlayers} players`;
+    if (state.sandbox) {
+      $('lobby-status').textContent = 'Starting sandbox…';
+      $('btn-start').classList.add('hidden');
+      $('btn-add-bot').classList.add('hidden');
     } else {
-      $('lobby-status').textContent = `Waiting for host to start (${players.length}/${state.maxPlayers})`;
+      if (players.length < 2) {
+        $('lobby-status').textContent = `Need at least 2 players (${players.length}/${state.maxPlayers})`;
+      } else if (state.isHost) {
+        $('lobby-status').textContent = 'Ready — click START when everyone is in';
+      } else {
+        $('lobby-status').textContent = `Waiting for host to start (${players.length}/${state.maxPlayers})`;
+      }
+      $('btn-start').classList.toggle('hidden', !state.isHost || players.length < 2);
     }
-    $('btn-start').classList.toggle('hidden', !state.isHost || players.length < 2);
   } else if (isGunGame()) {
     $('lobby-mode-label').textContent =
       `Gun Game · ${state.mapName} · up to ${state.maxPlayers} players`;
@@ -1787,6 +1963,13 @@ function frame(now) {
     }
   }
 
+  for (const [id, entry] of remoteBeam) {
+    if (performance.now() - entry.lastAt > 120) {
+      entry.sound?.stop();
+      remoteBeam.delete(id);
+    }
+  }
+
   // Keep each rocket's scream glued to its projectile; drop sounds whose
   // projectile is gone (flew out of the world without an impact event).
   for (const [id, sound] of projSounds) {
@@ -1916,7 +2099,17 @@ function updateCamera(dt) {
 function updateHud(reloading, reloadProgress) {
   const w = weapon();
   hud.setHealth(state.health);
-  hud.setWeapon(w.name, localGun.ammo, w.magazine, reloading, reloadProgress);
+  const overheated = w.overheat && localGun.heatLocked;
+  hud.setWeapon(
+    w.name,
+    localGun.ammo,
+    w.magazine,
+    reloading,
+    reloadProgress,
+    w.overheat
+      ? { heat: localGun.heat, overheated }
+      : null,
+  );
   if (isDM()) updateLoadoutUI();
   updateWeaponPickVisibility();
   hud.setPing(net.ping);
@@ -1927,6 +2120,27 @@ function updateHud(reloading, reloadProgress) {
 
   const spread = (w.spread + state.bloom) * (state.zooming ? 0.25 : 1);
   hud.setCrosshairGap(5 + spread * 620);
+
+  // Semi / pump / bolt recovery: show a short bar only while the chamber is locked.
+  const now = performance.now();
+  const waitMs = localGun.nextShotAt - now;
+  const showShotReady =
+    state.alive &&
+    state.matchState === MATCH_STATE.LIVE &&
+    !reloading &&
+    !w.auto &&
+    !w.melee &&
+    !w.overheat &&
+    !w.charge &&
+    localGun.burstRemaining <= 0 &&
+    waitMs > 0 &&
+    localGun.nextShotAt > 0;
+  if (showShotReady) {
+    const totalMs = shotInterval(w) * 1000;
+    hud.setShotReady(totalMs > 0 ? 1 - waitMs / totalMs : 1);
+  } else {
+    hud.setShotReady(null);
+  }
 
   if (state.matchState === MATCH_STATE.COUNTDOWN) {
     const step = Math.ceil(state.timer);
@@ -1967,6 +2181,14 @@ function enterGame() {
   input.enabled = true;
   input.setPlaying(true);
   syncWeaponPickPointer();
+  if (state.sandbox) {
+    // Keep the mouse free for the tune panel + weapon picker.
+    input.exitLock();
+    $('click-to-play').classList.add('hidden');
+    window.vmTune?.();
+  } else {
+    window.vmTuneClose?.();
+  }
 }
 
 function beginPlay() {
@@ -1982,7 +2204,7 @@ function beginPlay() {
 const WEAPON_CATEGORIES = [
   ['Rifles', ['assault', 'battlerifle', 'carbine', 'burstrifle']],
   ['SMGs', ['smg', 'machinepistol', 'p90', 'vector']],
-  ['Shotguns', ['shotgun', 'autoshotgun', 'slugshotgun', 'doublebarrel', 'sawedoff']],
+  ['Shotguns', ['shotgun', 'autoshotgun', 'doublebarrel', 'sawedoff']],
   ['Marksman', ['dmr', 'leveraction', 'scout', 'sniper', 'awp', 'crossbow', 'bow']],
   ['Heavy', ['lmg', 'minigun', 'laser']],
   ['Sidearms', ['revolver', 'deagle']],
@@ -2352,15 +2574,17 @@ canvas.addEventListener('click', () => {
 });
 
 input.onLockChange = (locked) => {
+  const click = $('click-to-play');
+  click.classList.toggle('sandbox-clear', Boolean(state.sandbox));
   if (locked || state.phase !== 'game') {
-    $('click-to-play').classList.add('hidden');
+    click.classList.add('hidden');
     return;
   }
   if (needsWeaponPick()) {
-    $('click-to-play').classList.add('hidden');
+    click.classList.add('hidden');
     return;
   }
-  $('click-to-play').classList.remove('hidden');
+  click.classList.remove('hidden');
 };
 
 window.addEventListener('resize', () => {
@@ -2376,6 +2600,60 @@ viewModel.resize(window.innerWidth / window.innerHeight);
 buildMapCards();
 loadPreferences();
 syncMapCards();
+
+function onMainMenu() {
+  return (
+    state.phase === 'menu' &&
+    !$('menu').classList.contains('hidden') &&
+    !$('menu-main').classList.contains('hidden')
+  );
+}
+
+function enterSandbox() {
+  state.myName = $('name-input').value.trim() || 'Player';
+  $('menu-error').textContent = '';
+  audio.unlock();
+  net.send({
+    t: 'sandbox',
+    password: SANDBOX_PASSWORD,
+    name: state.myName,
+    mapId: $('map-select').value,
+  });
+}
+
+window.addEventListener('keydown', (e) => {
+  if (e.repeat) return;
+
+  if (e.code === 'F2') {
+    e.preventDefault();
+    if (onMainMenu()) {
+      const pw = window.prompt('Sandbox password');
+      if (pw == null) return;
+      if (pw !== SANDBOX_PASSWORD) {
+        $('menu-error').textContent = 'Wrong sandbox password.';
+        return;
+      }
+      enterSandbox();
+      return;
+    }
+    if (state.sandbox && state.phase === 'game') {
+      window.toggleVmTune?.();
+      input.exitLock();
+      $('click-to-play').classList.add('hidden');
+    }
+    return;
+  }
+
+  if (e.code === 'KeyF' && state.sandbox && state.phase === 'game') {
+    // Don't steal typing if the tune panel/range has focus.
+    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+    e.preventDefault();
+    state.sandboxPickOpen = !state.sandboxPickOpen;
+    state.weaponPickDismissed = !state.sandboxPickOpen;
+    syncWeaponPickPointer();
+    if (!state.sandboxPickOpen && !input.locked) beginPlay();
+  }
+});
 
 // Prefill the code when arriving from a shared link.
 const codeParam = new URLSearchParams(location.search).get('code');

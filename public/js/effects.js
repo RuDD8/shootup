@@ -16,9 +16,14 @@ const SPARK_COUNT = 220;
 const FLASH_COUNT = 12;
 const PROJECTILE_COUNT = 8;
 const HAZARD_COUNT = 12;
+const BEAM_COUNT = 10;
 
 const TRACER_LIFE = 0.075;
 const FLASH_LIFE = 0.06;
+// Refreshed every server tick while the trigger is held (~16 ms).
+const BEAM_LIFE = 0.09;
+const BEAM_COLOR = 0x38bdf8;
+const BEAM_CORE = 0xe0fdff;
 
 const SPARK_COLORS = {
   wall: 0xffd9a0,
@@ -146,9 +151,10 @@ export class Effects {
         emissiveIntensity: 1.4,
         roughness: 0.4,
       });
-      const fahhFallback = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.32, 0.1), fahhFallbackMat);
+      const fahhFallback = new THREE.Mesh(new THREE.BoxGeometry(1.35, 0.48, 0.14), fahhFallbackMat);
       fahhHost.add(fahhFallback);
-      mountFahhText(fahhHost, { targetLength: 0.42, castShadow: true }).then((mounted) => {
+      // Longest axis is the word width; keep it chunky so it reads across the map.
+      mountFahhText(fahhHost, { targetLength: 1.35, castShadow: true }).then((mounted) => {
         if (mounted) fahhFallback.visible = false;
       });
       fahhHost.visible = false;
@@ -248,6 +254,85 @@ export class Effects {
 
     // Banana peels are created per-spawn (few, long-lived) rather than pooled.
     this.peels = new Map();
+
+    // Continuous laser beams keyed by shooter id (one active beam per owner).
+    this.beams = [];
+    this.beamByOwner = new Map();
+    const beamGeo = new THREE.BoxGeometry(1, 1, 1);
+    for (let i = 0; i < BEAM_COUNT; i++) {
+      const group = new THREE.Group();
+      group.visible = false;
+      group.frustumCulled = false;
+
+      const glowMat = new THREE.MeshBasicMaterial({
+        color: BEAM_COLOR,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      });
+      const glow = new THREE.Mesh(beamGeo, glowMat);
+      glow.scale.set(0.055, 0.055, 1);
+
+      const coreMat = new THREE.MeshBasicMaterial({
+        color: BEAM_CORE,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      });
+      const core = new THREE.Mesh(beamGeo, coreMat);
+      core.scale.set(0.014, 0.014, 1);
+
+      group.add(glow);
+      group.add(core);
+      scene.add(group);
+      this.beams.push({
+        group,
+        glow,
+        core,
+        glowMat,
+        coreMat,
+        life: 0,
+        ownerId: null,
+      });
+    }
+  }
+
+  /** Solid laser column from muzzle to impact; refresh each tick to keep it alive. */
+  beam(from, to, ownerId = 'local') {
+    let slot = null;
+    const existing = this.beamByOwner.get(ownerId);
+    if (existing !== undefined) slot = this.beams[existing];
+    if (!slot) {
+      slot = this.beams.find((b) => b.life <= 0) || this.beams[0];
+      if (slot.ownerId != null) this.beamByOwner.delete(slot.ownerId);
+      const idx = this.beams.indexOf(slot);
+      this.beamByOwner.set(ownerId, idx);
+      slot.ownerId = ownerId;
+    }
+
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const dz = to.z - from.z;
+    const length = Math.hypot(dx, dy, dz);
+    if (length < 0.05) {
+      slot.group.visible = false;
+      slot.life = 0;
+      return;
+    }
+
+    slot.group.visible = true;
+    slot.group.position.set(
+      (from.x + to.x) / 2,
+      (from.y + to.y) / 2,
+      (from.z + to.z) / 2,
+    );
+    slot.group.lookAt(to.x, to.y, to.z);
+    slot.group.scale.set(1, 1, length);
+    slot.glowMat.opacity = 0.55;
+    slot.coreMat.opacity = 0.95;
+    slot.life = BEAM_LIFE;
   }
 
   tracer(from, to, width = 0.022) {
@@ -503,6 +588,22 @@ export class Effects {
       }
     }
 
+    for (const slot of this.beams) {
+      if (slot.life <= 0) continue;
+      slot.life -= dt;
+      if (slot.life <= 0) {
+        slot.group.visible = false;
+        slot.glowMat.opacity = 0;
+        slot.coreMat.opacity = 0;
+        if (slot.ownerId != null) this.beamByOwner.delete(slot.ownerId);
+        slot.ownerId = null;
+      } else {
+        const t = Math.min(1, slot.life / BEAM_LIFE);
+        slot.glowMat.opacity = 0.55 * t;
+        slot.coreMat.opacity = 0.95 * t;
+      }
+    }
+
     for (const slot of this.sparks) {
       if (slot.life <= 0) continue;
       slot.life -= dt;
@@ -597,6 +698,14 @@ export class Effects {
       slot.mesh.visible = false;
       slot.material.opacity = 0;
     }
+    for (const slot of this.beams) {
+      slot.life = 0;
+      slot.group.visible = false;
+      slot.glowMat.opacity = 0;
+      slot.coreMat.opacity = 0;
+      slot.ownerId = null;
+    }
+    this.beamByOwner.clear();
     this.flashLight.intensity = 0;
     this.flashLightLife = 0;
     for (const slot of this.projectilePool) {

@@ -1128,17 +1128,24 @@ export function createAvatar(scene, slot) {
   function disposeGun() {
     if (!gun) return;
     gunHold.remove(gun);
-    gun.traverse((child) => {
+    gun.visible = false;
+    if (gunId) gunCache.set(gunId, gun);
+    gun = null;
+    gunId = null;
+  }
+
+  function disposeGunTree(root) {
+    root.traverse((child) => {
       child.userData.disposed = true;
-      if (child.geometry) child.geometry.dispose();
+      if (child.geometry && !child.userData.sharedGeometry) child.geometry.dispose();
       if (child.material) {
         const mats = Array.isArray(child.material) ? child.material : [child.material];
         for (const m of mats) m.dispose();
       }
     });
-    gun = null;
-    gunId = null;
   }
+
+  const gunCache = new Map();
 
   function setWeapon(id) {
     const next = AVATAR_GUN_BUILDERS[id] ? id : 'pistol';
@@ -1146,8 +1153,14 @@ export function createAvatar(scene, slot) {
     disposeGun();
     throwAnim = 0;
     sneezeAnim = 0;
-    const build = AVATAR_GUN_BUILDERS[next] || AVATAR_GUN_BUILDERS.pistol;
-    gun = build();
+    let nextGun = gunCache.get(next);
+    if (!nextGun) {
+      const build = AVATAR_GUN_BUILDERS[next] || AVATAR_GUN_BUILDERS.pistol;
+      nextGun = build();
+      gunCache.set(next, nextGun);
+    }
+    nextGun.visible = true;
+    gun = nextGun;
     gunId = next;
     gunHold.add(gun);
     applyHold();
@@ -1246,10 +1259,12 @@ export function createAvatar(scene, slot) {
     },
     dispose() {
       disposeGun();
+      for (const cached of gunCache.values()) disposeGunTree(cached);
+      gunCache.clear();
       group.userData.disposed = true;
       scene.remove(group);
       group.traverse((child) => {
-        if (child.geometry) child.geometry.dispose();
+        if (child.geometry && !child.userData.sharedGeometry) child.geometry.dispose();
         if (child.material) {
           const mats = Array.isArray(child.material) ? child.material : [child.material];
           for (const mat of mats) {

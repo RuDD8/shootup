@@ -98,6 +98,8 @@ export const GAME_MODE = {
 export const GUNGAME_RESPAWN_SECONDS = 3;
 export const GUNGAME_SPAWN_PROTECT_SECONDS = 2;
 export const GUNGAME_DEMOTE_ON_KNIFE_DEATH = true;
+/** After a Gun Game level-up weapon swap, block firing this long. */
+export const GUNGAME_UPGRADE_FIRE_DELAY_SECONDS = 1;
 
 export const MAX_PLAYERS_DUEL = 2;
 export const MAX_PLAYERS_DM = 10;

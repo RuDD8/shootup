@@ -980,7 +980,6 @@ async function testServer() {
       'dmr',
       'carbine',
       'autoshotgun',
-      'slugshotgun',
       'doublebarrel',
       'sawedoff',
       'scout',

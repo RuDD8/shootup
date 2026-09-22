@@ -24,7 +24,7 @@ export class RoomManager {
     throw new Error('room code space exhausted');
   }
 
-  create({ mode = GAME_MODE.DUEL, dmMinutes = 5, mapId = MAP_RANDOM, isPublic = false } = {}) {
+  create({ mode = GAME_MODE.DUEL, dmMinutes = 5, mapId = MAP_RANDOM, isPublic = false, sandbox = false } = {}) {
     if (this.rooms.size >= MAX_ROOMS) return null;
     const code = this.makeCode();
     const room = {
@@ -34,9 +34,15 @@ export class RoomManager {
       mode: mode === GAME_MODE.DEATHMATCH ? GAME_MODE.DEATHMATCH : mode === GAME_MODE.GUNGAME ? GAME_MODE.GUNGAME : GAME_MODE.DUEL,
       dmMinutes: clampDmMinutes(dmMinutes),
       mapId: normalizeMapId(mapId),
-      isPublic: Boolean(isPublic),
+      isPublic: Boolean(isPublic) && !sandbox,
+      sandbox: Boolean(sandbox),
     };
-    room.match = new Match(room, { mode: room.mode, dmMinutes: room.dmMinutes, mapId: room.mapId });
+    room.match = new Match(room, {
+      mode: room.mode,
+      dmMinutes: room.dmMinutes,
+      mapId: room.mapId,
+      sandbox: room.sandbox,
+    });
     this.rooms.set(code, room);
     return room;
   }
@@ -124,6 +130,9 @@ export class RoomManager {
   }
 
   addBot(room, requesterId) {
+    if (room.match.sandbox) {
+      return { error: 'Sandbox rooms do not allow bots.' };
+    }
     if (requesterId !== room.match.hostId) {
       return { error: 'Only the host can add bots.' };
     }

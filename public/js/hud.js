@@ -40,6 +40,8 @@ export class Hud {
     this.root = $('hud');
     this.crosshairParts = Array.from(document.querySelectorAll('.ch'));
     this.hitmarkerEl = $('hitmarker');
+    this.shotReady = $('shot-ready');
+    this.shotReadyFill = $('shot-ready-fill');
     this.bannerEl = $('banner');
     this.feedEl = $('killfeed');
     this.vignette = $('damage-vignette');
@@ -252,11 +254,36 @@ export class Hud {
     $('health-num').textContent = Math.round(clamped);
   }
 
-  setWeapon(name, ammo, magazine, reloading, reloadProgress = 0) {
+  setWeapon(name, ammo, magazine, reloading, reloadProgress = 0, heat = null) {
     $('weapon-name').textContent = name.toUpperCase();
+    const ammoEl = this.ammoEl;
+    const heatEl = $('heat');
+    const useHeat = Boolean(heat);
+
+    ammoEl.classList.toggle('hidden', useHeat);
+    heatEl.classList.toggle('hidden', !useHeat);
+
+    if (useHeat) {
+      const pct = Math.max(0, Math.min(1, heat.heat || 0));
+      const locked = Boolean(heat.overheated);
+      $('heat-pct').textContent = locked
+        ? reloading
+          ? 'COOLING'
+          : 'RELOAD'
+        : `${Math.round(pct * 100)}%`;
+      $('heat-fill').style.width = `${Math.round(pct * 100)}%`;
+      heatEl.classList.toggle('hot', pct >= 0.7 && !locked);
+      heatEl.classList.toggle('locked', locked);
+      $('reload-note').classList.toggle('hidden', !reloading);
+      if (reloading) {
+        $('reload-fill').style.width = `${Math.round(reloadProgress * 100)}%`;
+      }
+      return;
+    }
+
     $('ammo-cur').textContent = ammo;
-    $('ammo-max').textContent = `/${magazine}`;
-    this.ammoEl.classList.toggle('empty', ammo === 0);
+    $('ammo-max').textContent = `/${magazine > 900 ? '∞' : magazine}`;
+    ammoEl.classList.toggle('empty', ammo === 0);
     $('reload-note').classList.toggle('hidden', !reloading);
     if (reloading) {
       this.reloadFill.style.width = `${Math.round(Math.max(0, Math.min(1, reloadProgress)) * 100)}%`;
@@ -279,6 +306,16 @@ export class Hud {
     if (gap === this.lastGap) return;
     this.lastGap = gap;
     for (const part of this.crosshairParts) part.style.setProperty('--gap', `${gap}px`);
+  }
+
+  /** Tiny under-crosshair wait meter. Pass null/undefined to hide. */
+  setShotReady(progress) {
+    if (progress == null || progress >= 1) {
+      this.shotReady.classList.add('hidden');
+      return;
+    }
+    this.shotReady.classList.remove('hidden');
+    this.shotReadyFill.style.width = `${Math.round(Math.max(0, progress) * 100)}%`;
   }
 
   setScope(on) {

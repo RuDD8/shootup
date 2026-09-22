@@ -587,6 +587,32 @@ button.secondary:hover {
   filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.9));
 }
 
+/* Inter-shot wait for semi / pump / bolt guns — only while cooling down. */
+#shot-ready {
+  position: absolute;
+  left: -18px;
+  top: 28px;
+  width: 36px;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.45);
+  outline: 1px solid rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+  pointer-events: none;
+}
+
+#shot-ready.hidden {
+  display: none;
+}
+
+#shot-ready-fill {
+  width: 0%;
+  height: 100%;
+  background: rgba(240, 250, 255, 0.92);
+  box-shadow: 0 0 6px rgba(56, 189, 248, 0.45);
+  border-radius: 2px;
+}
+
 /* ------------------------------------------------------------ top center */
 
 #top-center {
@@ -1259,6 +1285,79 @@ button.secondary:hover {
   color: var(--dim);
 }
 
+#heat {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+  min-width: 118px;
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.85);
+}
+
+#heat.hidden {
+  display: none;
+}
+
+.heat-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+
+.heat-label {
+  font-size: 11px;
+  letter-spacing: 2.6px;
+  color: var(--dim);
+}
+
+#heat-pct {
+  font-family: var(--mono);
+  font-size: 18px;
+  font-weight: 800;
+  color: #fff;
+  transition: color 0.12s;
+}
+
+#heat-track {
+  width: 100%;
+  height: 8px;
+  border-radius: 3px;
+  background: rgba(120, 160, 210, 0.18);
+  border: 1px solid rgba(180, 210, 255, 0.16);
+  overflow: hidden;
+  box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.35);
+}
+
+#heat-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #38bdf8, #fbbf24 55%, #f43f5e);
+  box-shadow: 0 0 10px rgba(251, 191, 36, 0.35);
+  transition: width 0.05s linear, filter 0.15s;
+}
+
+#heat.hot #heat-pct {
+  color: #fb7185;
+}
+
+#heat.hot #heat-fill {
+  filter: saturate(1.25) brightness(1.08);
+}
+
+#heat.locked .heat-label,
+#heat.locked #heat-pct {
+  color: #fb7185;
+  animation: pulse 0.7s ease-in-out infinite;
+}
+
+#heat.locked #heat-fill {
+  background: #f43f5e;
+  box-shadow: 0 0 12px rgba(244, 63, 94, 0.55);
+}
+
 #reload-note {
   display: flex;
   flex-direction: column;
@@ -1373,6 +1472,18 @@ button.secondary:hover {
 #disconnected small {
   color: var(--dim);
   font-size: 13px;
+}
+
+/* Sandbox workshop: keep the unlock prompt clickable but don't black out the gun. */
+#click-to-play.sandbox-clear {
+  background: transparent;
+  backdrop-filter: none;
+}
+
+#click-to-play.sandbox-clear strong,
+#click-to-play.sandbox-clear small {
+  opacity: 0.4;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.85);
 }
 
 #disconnected {

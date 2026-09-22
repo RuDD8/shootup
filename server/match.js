@@ -18,6 +18,7 @@ import {
   GUNGAME_RESPAWN_SECONDS,
   GUNGAME_SPAWN_PROTECT_SECONDS,
   GUNGAME_DEMOTE_ON_KNIFE_DEATH,
+  GUNGAME_UPGRADE_FIRE_DELAY_SECONDS,
   playerColor,
   playerEyeHeight,
   playerHeight,
@@ -102,11 +103,12 @@ function decodeInput(mask, yaw, pitch) {
 const IDLE_INPUT = decodeInput(0, 0, 0);
 
 export class Match {
-  constructor(room, { mode = GAME_MODE.DUEL, dmMinutes = 5, mapId = MAP_RANDOM } = {}) {
+  constructor(room, { mode = GAME_MODE.DUEL, dmMinutes = 5, mapId = MAP_RANDOM, sandbox = false } = {}) {
     this.room = room;
     this.mode = mode;
     this.dmMinutes = dmMinutes;
     this.mapId = normalizeMapId(mapId);
+    this.sandbox = Boolean(sandbox);
     this.arenaSeed = 0;
     this.hostId = null;
     this.players = [];
@@ -178,6 +180,8 @@ export class Match {
       respawnAtTick: 0,
       wantsRespawn: false,
       spawnProtectUntil: 0,
+      // After click-to-respawn, ignore shoot until the button is released once.
+      fireSuppress: false,
       history: [],
       inputQueue: [],
       lastInput: { ...IDLE_INPUT },
@@ -186,8 +190,10 @@ export class Match {
       chargeStartTick: 0,
       heat: 0,
       overheatedUntilTick: 0,
+      heatLocked: false,
       burstRemaining: 0,
       burstNextTick: 0,
+      burstShotIndex: 0,
       gunGameLevel: 0,
     };
     this.players.push(player);
@@ -220,7 +226,7 @@ export class Match {
       if (this.players.length === 0) {
         this.state = MATCH_STATE.WAITING;
         this.stateTimer = 0;
-      } else if (this.state === MATCH_STATE.LIVE && this.players.length < 2) {
+      } else if (!this.sandbox && this.state === MATCH_STATE.LIVE && this.players.length < 2) {
         if (this.isGunGame) this.endGunGame(this.players[0] || null);
         else this.endDeathmatch('players_left');
       }
@@ -241,7 +247,8 @@ export class Match {
   tryStart(requesterId) {
     if (!(this.isDM || this.isGunGame) || this.state !== MATCH_STATE.WAITING) return false;
     if (requesterId !== this.hostId) return false;
-    if (this.players.length < 2) return false;
+    const minPlayers = this.sandbox ? 1 : 2;
+    if (this.players.length < minPlayers) return false;
     this.beginMatch();
     return true;
   }
@@ -396,9 +403,11 @@ export class Match {
       p.spawnProtectUntil = 0;
       p.heat = 0;
       p.overheatedUntilTick = 0;
+      p.heatLocked = false;
       p.chargeStartTick = 0;
       p.burstRemaining = 0;
       p.burstNextTick = 0;
+      p.burstShotIndex = 0;
       p.inputQueue.length = 0;
       p.lastInput = { ...IDLE_INPUT, yaw: p.yaw, pitch: 0 };
     }
@@ -418,9 +427,11 @@ export class Match {
     player.secondaryAmmo = 0;
     player.heat = 0;
     player.overheatedUntilTick = 0;
+    player.heatLocked = false;
     player.chargeStartTick = 0;
     player.burstRemaining = 0;
     player.burstNextTick = 0;
+    player.burstShotIndex = 0;
   }
 
   endGunGame(winner) {
@@ -471,10 +482,12 @@ export class Match {
       p.spawnProtectUntil = 0;
       p.heat = 0;
       p.overheatedUntilTick = 0;
+      p.heatLocked = false;
       p.chargeStartTick = 0;
       p.chargeFrac = 0;
       p.burstRemaining = 0;
       p.burstNextTick = 0;
+      p.burstShotIndex = 0;
       p.inputQueue.length = 0;
       p.lastInput = { ...IDLE_INPUT, yaw: p.yaw, pitch: 0 };
     }
@@ -519,7 +532,8 @@ export class Match {
 
     if (player.alive && player.activeSlot === 'primary') {
       player.weaponId = weaponId;
-      if (this.state === MATCH_STATE.COUNTDOWN) {
+      // Sandbox / pre-round picks get a full mag so you can try the gun immediately.
+      if (this.sandbox || this.state === MATCH_STATE.COUNTDOWN) {
         player.primaryAmmo = WEAPONS[weaponId].magazine;
         player.ammo = player.primaryAmmo;
       } else {
@@ -556,6 +570,7 @@ export class Match {
       t: 'round',
       mode: this.mode,
       dmMinutes: this.dmMinutes,
+      sandbox: this.sandbox,
       n: this.roundNumber,
       mapId: this.mapId,
       mapName: mapName(this.mapId),
@@ -658,6 +673,8 @@ export class Match {
         if (this.stateTimer <= 0) {
           this.state = MATCH_STATE.LIVE;
           if (this.isGunGame) {
+            this.stateTimer = Infinity;
+          } else if (this.sandbox) {
             this.stateTimer = Infinity;
           } else {
             this.stateTimer = this.isDM ? this.dmMinutes * 60 : ROUND_TIME_LIMIT;
@@ -769,7 +786,9 @@ export class Match {
     player.bloom = 0;
     player.reloadUntilTick = 0;
     player.nextShotTick = 0;
-    player.prevShoot = false;
+    // Treat the respawn click as an already-held press so it can't fire a shot.
+    player.prevShoot = true;
+    player.fireSuppress = true;
     player.zooming = false;
     player.crouching = false;
     player.sliding = false;
@@ -838,10 +857,14 @@ export class Match {
       player.bloom = Math.max(0, player.bloom - weapon.bloomDecay * TICK_DT);
     }
 
-    // Cool while not firing, and always during an overheat lockout so holding
-    // fire through the cooldown cannot immediately re-lock the weapon.
-    if (weapon.overheat && (!input.shoot || this.tick < player.overheatedUntilTick)) {
+    // Cool when idle — but a full trip locks the gun until the player reloads.
+    if (weapon.overheat && !player.heatLocked && !input.shoot) {
       player.heat = Math.max(0, player.heat - weapon.heatDecay);
+    }
+
+    // Respawn / lock-gesture: wait for a full release before shots are allowed.
+    if (player.fireSuppress && !input.shoot) {
+      player.fireSuppress = false;
     }
 
     if (player.reloadUntilTick && this.tick >= player.reloadUntilTick) {
@@ -852,6 +875,11 @@ export class Match {
       }
       if (this.isGunGame) player.primaryAmmo = player.ammo;
       player.reloadUntilTick = 0;
+      if (weapon.overheat) {
+        player.heat = 0;
+        player.heatLocked = false;
+        player.overheatedUntilTick = 0;
+      }
     }
 
     // Poopgun reload gag: broadcast a fart when the reaching hand arrives at
@@ -877,16 +905,23 @@ export class Match {
 
     // Process burst continuation (fires remaining burst shots automatically)
     if (player.burstRemaining > 0 && shoot && this.tick >= player.burstNextTick) {
+      if (player.fireSuppress) {
+        player.prevShoot = Boolean(input.shoot);
+        return;
+      }
       if (player.ammo > 0) {
         this.fire(player, weapon);
         player.burstRemaining -= 1;
+        player.burstShotIndex += 1;
         if (player.burstRemaining > 0) {
           player.burstNextTick = this.tick + Math.max(1, Math.round(shotInterval(weapon) * TICK_RATE));
         } else {
           player.nextShotTick = this.tick + Math.round((weapon.burstCooldown || 0.3) * TICK_RATE);
+          player.burstShotIndex = 0;
         }
       } else {
         player.burstRemaining = 0;
+        player.burstShotIndex = 0;
       }
       player.prevShoot = Boolean(input.shoot);
       return;
@@ -897,16 +932,21 @@ export class Match {
       return;
     }
 
-    // Overheat lockout
-    if (weapon.overheat && this.tick < player.overheatedUntilTick) {
+    const reloading = player.reloadUntilTick > 0;
+    const wantsReload =
+      input.reload &&
+      !reloading &&
+      !weapon.melee &&
+      ((weapon.overheat && player.heatLocked) ||
+        (!weapon.overheat && player.ammo < weapon.magazine));
+    if (wantsReload) {
+      player.reloadUntilTick = this.tick + Math.round(weapon.reload * TICK_RATE);
       player.prevShoot = Boolean(input.shoot);
       return;
     }
 
-    const reloading = player.reloadUntilTick > 0;
-    const wantsReload = input.reload && !reloading && player.ammo < weapon.magazine && !weapon.overheat && !weapon.melee;
-    if (wantsReload) {
-      player.reloadUntilTick = this.tick + Math.round(weapon.reload * TICK_RATE);
+    // Overheat lockout — full dump requires a reload, not a timed wait.
+    if (weapon.overheat && player.heatLocked) {
       player.prevShoot = Boolean(input.shoot);
       return;
     }
@@ -936,6 +976,7 @@ export class Match {
     const mayFire = weapon.auto ? pressed : freshPress && !repeat;
     player.prevShoot = pressed;
 
+    if (player.fireSuppress) return;
     if (!mayFire || reloading) return;
     if (this.tick < player.nextShotTick) return;
 
@@ -951,7 +992,8 @@ export class Match {
       player.heat += weapon.heatPerTick;
       if (player.heat >= 1) {
         player.heat = 1;
-        player.overheatedUntilTick = this.tick + Math.round(weapon.overheatCooldown * TICK_RATE);
+        player.heatLocked = true;
+        player.overheatedUntilTick = 0;
         this.events.push({ k: 'overheat', p: player.id });
         return;
       }
@@ -959,8 +1001,10 @@ export class Match {
 
     // Burst weapon: start burst
     if (weapon.burst && weapon.burst > 1) {
+      player.burstShotIndex = 0;
       this.fire(player, weapon);
       player.burstRemaining = weapon.burst - 1;
+      player.burstShotIndex = 1;
       player.burstNextTick = this.tick + Math.max(1, Math.round(shotInterval(weapon) * TICK_RATE));
       return;
     }
@@ -1008,7 +1052,10 @@ export class Match {
     const targets = (this.isDM || this.isGunGame) ? this.opponentsOf(player) : [this.opponentOf(player)].filter(Boolean);
 
     const chargeFrac = weapon.charge ? (player.chargeFrac || 0) : 1;
-    const spread = shotSpread(weapon, player.bloom, player.zooming, chargeFrac);
+    const burstIndex = weapon.burst ? (player.burstShotIndex || 0) : 0;
+    const spread =
+      shotSpread(weapon, player.bloom, player.zooming, chargeFrac) +
+      (weapon.burstSpreadStep || 0) * burstIndex;
 
     const impacts = [];
     const damageByTarget = new Map();
@@ -1016,10 +1063,11 @@ export class Match {
     for (let i = 0; i < weapon.pellets; i++) {
       const angle = Math.random() * Math.PI * 2;
       const radius = Math.sqrt(Math.random()) * spread;
+      const climb = (weapon.burstClimb || 0) * burstIndex;
       const yaw = player.yaw + Math.cos(angle) * radius;
       const pitch = Math.max(
         -MAX_PITCH,
-        Math.min(MAX_PITCH, player.pitch + Math.sin(angle) * radius),
+        Math.min(MAX_PITCH, player.pitch + Math.sin(angle) * radius + climb),
       );
 
       const cp = Math.cos(pitch);
@@ -1748,13 +1796,18 @@ export class Match {
       killer.ammo = w.magazine;
       killer.primaryAmmo = killer.ammo;
       killer.reloadUntilTick = 0;
-      killer.nextShotTick = 0;
+      killer.nextShotTick =
+        this.tick + Math.round(GUNGAME_UPGRADE_FIRE_DELAY_SECONDS * TICK_RATE);
       killer.heat = 0;
       killer.overheatedUntilTick = 0;
+      killer.heatLocked = false;
       killer.chargeStartTick = 0;
       killer.burstRemaining = 0;
       killer.burstNextTick = 0;
+      killer.burstShotIndex = 0;
       killer.bloom = 0;
+      killer.fireSuppress = true;
+      killer.prevShoot = true;
       this.events.push({
         k: 'ggLevelUp',
         p: killer.id,
@@ -1827,7 +1880,7 @@ export class Match {
         rs: p.respawnAtTick ? Math.max(0, p.respawnAtTick - this.tick) : 0,
         sp: p.spawnProtectUntil > this.tick ? p.spawnProtectUntil - this.tick : 0,
         ht: round(p.heat, 3),
-        oh: p.overheatedUntilTick > this.tick ? p.overheatedUntilTick - this.tick : 0,
+        oh: p.heatLocked || p.overheatedUntilTick > this.tick ? 1 : 0,
         cs: p.chargeStartTick > 0 ? this.tick - p.chargeStartTick : 0,
         ggLv: p.gunGameLevel,
       })),

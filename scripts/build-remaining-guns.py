@@ -256,18 +256,6 @@ def build_autoshotgun(col, root):
     box("Bead", col, (0, -0.5, 0.075), (0.014, 0.014, 0.02), GLOW, root)
 
 
-def build_slugshotgun(col, root):
-    box("Receiver", col, (0, -0.02, 0.025), (0.078, 0.28, 0.088), BODY, root)
-    cyl("Barrel", col, (0, -0.46, 0.035), 0.024, 0.46, STEEL, root, rot=(math.pi / 2, 0, 0))
-    cyl("Muzzle", col, (0, -0.7, 0.035), 0.028, 0.04, BRASS, root, rot=(math.pi / 2, 0, 0))
-    cyl("Tube", col, (0, -0.36, -0.01), 0.015, 0.32, BODY, root, rot=(math.pi / 2, 0, 0))
-    box("Pump", col, (0, -0.3, -0.03), (0.082, 0.14, 0.065), WOOD, root)
-    grip_box(col, root, 0.1, -0.06, WOOD)
-    stock(col, root, 0.26, WOOD)
-    box("RearSightL", col, (-0.014, 0.04, 0.095), (0.012, 0.012, 0.025), STEEL, root)
-    box("RearSightR", col, (0.014, 0.04, 0.095), (0.012, 0.012, 0.025), STEEL, root)
-    box("FrontSight", col, (0, -0.64, 0.075), (0.014, 0.014, 0.024), BRASS, root)
-
 
 def build_doublebarrel(col, root):
     box("Receiver", col, (0, 0.0, 0.025), (0.09, 0.16, 0.08), BODY, root)
@@ -406,7 +394,6 @@ WEAPONS = [
     ("dmr", build_dmr),
     ("carbine", build_carbine),
     ("autoshotgun", build_autoshotgun),
-    ("slugshotgun", build_slugshotgun),
     ("doublebarrel", build_doublebarrel),
     ("sawedoff", build_sawedoff),
     ("scout", build_scout),

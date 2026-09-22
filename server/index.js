@@ -8,6 +8,7 @@ import { attachWebSocket } from './wsserver.js';
 import { RoomManager } from './rooms.js';
 import { playerColor } from '../shared/constants.js';
 import { mapName } from '../shared/maps/index.js';
+import { saveViewmodelTune, viewmodelPathFromRoot } from './viewmodel-save.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -15,6 +16,7 @@ const PUBLIC_DIR = path.join(ROOT, 'public');
 const SHARED_DIR = path.join(ROOT, 'shared');
 
 const PORT = Number(process.env.PORT) || 8787;
+const SANDBOX_PASSWORD = 'Katalizatori8';
 
 // Newest source mtime is the build fingerprint. A server process left running
 // across a code edit keeps simulating with the rules it loaded at boot while
@@ -80,9 +82,71 @@ function resolveFile(urlPath) {
   return target;
 }
 
+function readJsonBody(req, limit = 64 * 1024) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    req.on('data', (chunk) => {
+      size += chunk.length;
+      if (size > limit) {
+        reject(Object.assign(new Error('Body too large'), { statusCode: 413 }));
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on('end', () => {
+      try {
+        const raw = Buffer.concat(chunks).toString('utf8');
+        resolve(raw ? JSON.parse(raw) : {});
+      } catch (err) {
+        reject(Object.assign(new Error('Invalid JSON'), { statusCode: 400 }));
+      }
+    });
+    req.on('error', reject);
+  });
+}
+
+function sendJson(res, status, payload) {
+  const body = JSON.stringify(payload);
+  res.writeHead(status, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Content-Length': Buffer.byteLength(body),
+    'Cache-Control': 'no-store',
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'DENY',
+  });
+  res.end(body);
+}
+
 const server = http.createServer((req, res) => {
+  const urlPath = (req.url || '').split('?')[0];
+
+  if (req.method === 'POST' && urlPath === '/api/sandbox/save-viewmodel') {
+    readJsonBody(req)
+      .then((payload) => {
+        if (payload.password !== SANDBOX_PASSWORD) {
+          sendJson(res, 403, { ok: false, error: 'Wrong sandbox password.' });
+          return;
+        }
+        const result = saveViewmodelTune(
+          viewmodelPathFromRoot(ROOT),
+          payload.weaponId,
+          payload.tune || {},
+        );
+        sendJson(res, 200, { ok: true, ...result });
+      })
+      .catch((err) => {
+        sendJson(res, err.statusCode || 500, {
+          ok: false,
+          error: err.message || 'Save failed',
+        });
+      });
+    return;
+  }
+
   if (req.method !== 'GET' && req.method !== 'HEAD') {
-    res.writeHead(405, { Allow: 'GET, HEAD' });
+    res.writeHead(405, { Allow: 'GET, HEAD, POST' });
     res.end('Method Not Allowed');
     return;
   }
@@ -185,6 +249,7 @@ const connections = attachWebSocket(server, (conn) => {
         isHost: player.id === room.match.hostId,
         maxPlayers: room.match.maxPlayers,
         color: playerColor(player.slot),
+        sandbox: Boolean(room.match.sandbox),
         players: roster,
       });
       room.match.broadcast({ t: 'peers', players: roster });
@@ -206,6 +271,30 @@ const connections = attachWebSocket(server, (conn) => {
         }
         const { player } = rooms.seat(room, cleanName(msg.name), conn);
         seatSession(room, player);
+        break;
+      }
+
+      case 'sandbox': {
+        if (session.room) return;
+        if (msg.password !== SANDBOX_PASSWORD) {
+          conn.sendJSON({ t: 'error', msg: 'Wrong sandbox password.' });
+          return;
+        }
+        const room = rooms.create({
+          mode: 'deathmatch',
+          dmMinutes: 20,
+          mapId: msg.mapId,
+          isPublic: false,
+          sandbox: true,
+        });
+        if (!room) {
+          conn.sendJSON({ t: 'error', msg: 'Server is at room capacity. Try again shortly.' });
+          return;
+        }
+        const { player } = rooms.seat(room, cleanName(msg.name), conn);
+        seatSession(room, player);
+        // Solo viewmodel workshop — start immediately, no bots needed.
+        room.match.tryStart(player.id);
         break;
       }
 

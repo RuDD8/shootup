@@ -31,7 +31,6 @@ import {
   mountSawedoff,
   mountScout,
   mountShotgun,
-  mountSlugshotgun,
   mountSmg,
   mountSniper,
   mountVector,
@@ -72,7 +71,18 @@ function cyl(r, h, material, x = 0, y = 0, z = 0, axis = 'z') {
 
 function addMuzzle(g, x, y, z, length) {
   const muzzle = new THREE.Object3D();
+  muzzle.name = 'Muzzle';
+  muzzle.userData.muzzleTune = true;
   muzzle.position.set(x, y, z);
+  // Tiny red bead — hidden until the sandbox tune panel needs it.
+  const marker = new THREE.Mesh(
+    new THREE.SphereGeometry(0.014, 10, 10),
+    new THREE.MeshBasicMaterial({ color: 0xff2d55, depthTest: false, transparent: true, opacity: 0.95 }),
+  );
+  marker.name = 'MuzzleMarker';
+  marker.renderOrder = 999;
+  marker.visible = false;
+  muzzle.add(marker);
   g.add(muzzle);
   g.userData.muzzle = muzzle;
   g.userData.length = length;
@@ -222,14 +232,6 @@ const THEMES = {
     mag: mat(0x2a3038, { roughness: 0.5, metalness: 0.3 }),
     barrel: mat(0x3a4050, { roughness: 0.35, metalness: 0.5 }),
     glow: mat(0x0b1220, { emissive: 0xff6b4a, emissiveIntensity: 1.35, roughness: 0.4 }),
-  }),
-  slugshotgun: () => ({
-    body: mat(0x3e4e68, { roughness: 0.34, metalness: 0.52 }),
-    wood: mat(0x7a4a22, { roughness: 0.78, metalness: 0.05 }),
-    woodDark: mat(0x4e2e12, { roughness: 0.82, metalness: 0.04 }),
-    steel: mat(0x9aa3b0, { roughness: 0.3, metalness: 0.55 }),
-    brass: mat(0xd4a24c, { roughness: 0.4, metalness: 0.55 }),
-    glow: mat(0x0b1220, { emissive: 0xfbbf24, emissiveIntensity: 1.3, roughness: 0.4 }),
   }),
   doublebarrel: () => ({
     body: mat(0x3a4858, { roughness: 0.36, metalness: 0.5 }),
@@ -452,6 +454,9 @@ function supportHand({ x, y, z, rise = 0.05, spread = 0, armPitch = 0.95, armYaw
   const fingerMat = FINGER();
   const cuff = CUFF();
   const g = new THREE.Group();
+  g.name = 'SupportHand';
+  g.userData.handTune = 'support';
+  g.userData.handTuneArgs = { x, y, z, rise, spread, armPitch, armYaw, armLength };
   g.position.set(x, y, z);
 
   const handX = -0.008 - spread;
@@ -496,6 +501,9 @@ function triggerHand({
   const fingerMat = FINGER();
   const cuff = CUFF();
   const g = new THREE.Group();
+  g.name = 'TriggerHand';
+  g.userData.handTune = 'trigger';
+  g.userData.handTuneArgs = { x, y, z, armPitch, armYaw, armLength, verticalGrip };
   g.position.set(x, y, z);
 
   // Block palm plus distinct fingers wrapping the grip.
@@ -586,13 +594,37 @@ const BUILDERS = {
     pistolIronSights(fallback, t.slide, t.glow);
 
     // Right hand on the grip; left hand cups it from below-left.
-    g.add(triggerHand({ x: 0, y: -0.085, z: 0.015, armPitch: 0.82, armYaw: 0.28, armLength: 0.32 }));
-    g.add(supportHand({ x: 0, y: -0.15, z: 0.045, rise: 0.05, armPitch: 0.9, armYaw: -0.24, armLength: 0.34 }));
-
-    addMuzzle(g, 0, 0.02, -0.3, 0.5);
-    mountPistol(modelHost, { targetLength: 0.5 }).then((loaded) => {
-      if (loaded) fallback.visible = false;
+    const trigger = triggerHand({
+      x: -0.009,
+      y: -0.111,
+      z: 0.055,
+      armPitch: 0.82,
+      armYaw: 0.28,
+      armLength: 0.32,
     });
+    trigger.scale.setScalar(0.78);
+    g.add(trigger);
+
+    const support = supportHand({
+      x: 0,
+      y: -0.35,
+      z: 0.045,
+      rise: 0.05,
+      armPitch: 0.9,
+      armYaw: -0.24,
+      armLength: 0.34,
+    });
+    g.add(support);
+
+    addMuzzle(g, 0.12, 0.02, -0.3, 0.285);
+    mountPistol(modelHost, {
+      targetLength: 0.285,
+      yaw: -1.88,
+      pitch: 0.11,
+      offset: { x: 0, y: -0.03, z: 0 },
+      fallback,
+    });
+
     return g;
   },
 
@@ -630,16 +662,38 @@ const BUILDERS = {
     // Backup front sight (folded look)
     fallback.add(box(0.014, 0.028, 0.012, t.steel, 0, 0.08, -0.48));
 
-    g.add(triggerHand({ x: 0, y: -0.085, z: 0.05 }));
-    g.add(supportHand({ x: 0, y: -0.015, z: -0.2, rise: 0.045 }));
-
-    addMuzzle(g, 0, 0.04, -0.42, 0.55);
-    mountAssaultRifle(modelHost, {
-      targetLength: 0.55,
-      offset: { x: 0, y: -0.02, z: 0.02 },
-    }).then((loaded) => {
-      if (loaded) fallback.visible = false;
+    const trigger = triggerHand({
+      x: -0.043,
+      y: -0.102,
+      z: 0.104,
+      armPitch: 0.78,
+      armYaw: 0.32,
+      armLength: 0.36,
     });
+    trigger.scale.setScalar(0.66);
+    g.add(trigger);
+
+    const support = supportHand({
+      x: -0.038,
+      y: 0.017,
+      z: -0.2,
+      rise: 0.045,
+      armPitch: 0.95,
+      armYaw: -0.42,
+      armLength: 0.5,
+    });
+    support.scale.setScalar(0.62);
+    g.add(support);
+
+    addMuzzle(g, -0.021, 0.04, -0.42, 0.76);
+    mountAssaultRifle(modelHost, {
+      targetLength: 0.76,
+      yaw: 3.14,
+      pitch: 0.04,
+      offset: { x: -0.051, y: -0.02, z: 0.02 },
+      fallback,
+    });
+
     return g;
   },
 
@@ -673,13 +727,39 @@ const BUILDERS = {
     // Front bead
     fallback.add(box(0.014, 0.018, 0.014, t.brass, 0, 0.07, -0.58));
 
-    g.add(triggerHand({ x: 0, y: -0.085, z: 0.06 }));
-    g.add(supportHand({ x: 0, y: -0.07, z: -0.28, rise: 0.05, spread: 0.008 }));
-
-    addMuzzle(g, 0, 0.035, -0.66, 1.05);
-    mountShotgun(modelHost, { targetLength: 1.05 }).then((loaded) => {
-      if (loaded) fallback.visible = false;
+    const trigger = triggerHand({
+      x: 0.021,
+      y: -0.158,
+      z: 0.06,
+      armPitch: 0.78,
+      armYaw: 0.32,
+      armLength: 0.36,
     });
+    trigger.scale.setScalar(0.81);
+    g.add(trigger);
+
+    const support = supportHand({
+      x: -0.013,
+      y: -0.017,
+      z: -0.373,
+      rise: 0.05,
+      armPitch: 0.95,
+      armYaw: -0.42,
+      armLength: 0.5,
+    });
+    support.rotation.set(0.08, 0, 0);
+    support.scale.setScalar(0.75);
+    g.add(support);
+
+    addMuzzle(g, -0.026, 0.06, -0.66, 1.09);
+    mountShotgun(modelHost, {
+      targetLength: 1.09,
+      yaw: 1.61,
+      pitch: 0.11,
+      offset: { x: 0, y: -0.077, z: -0.148 },
+      fallback,
+    });
+
     return g;
   },
 
@@ -721,13 +801,38 @@ const BUILDERS = {
     fallback.add(box(0.012, 0.072, 0.012, t.black, -0.024, -0.039, bipodZ));
     fallback.add(box(0.012, 0.072, 0.012, t.black, 0.024, -0.039, bipodZ));
 
-    g.add(triggerHand({ x: 0, y: -0.115, z: 0.095 }));
-    g.add(supportHand({ x: 0, y: -0.06, z: -0.17, rise: 0.046 }));
-
-    addMuzzle(g, 0, 0.02, -0.95, 1.4);
-    mountSniper(modelHost, { targetLength: 1.35 }).then((loaded) => {
-      if (loaded) fallback.visible = false;
+    const trigger = triggerHand({
+      x: 0,
+      y: -0.115,
+      z: 0.093,
+      armPitch: 0.78,
+      armYaw: 0.32,
+      armLength: 0.36,
     });
+    trigger.scale.setScalar(0.66);
+    g.add(trigger);
+
+    const support = supportHand({
+      x: 0.038,
+      y: -0.026,
+      z: -0.203,
+      rise: 0.046,
+      armPitch: 0.95,
+      armYaw: -0.42,
+      armLength: 0.5,
+    });
+    support.scale.setScalar(0.9);
+    g.add(support);
+
+    addMuzzle(g, 0.03, 0.034, -0.7, 0.995);
+    mountSniper(modelHost, {
+      targetLength: 0.995,
+      yaw: 3.14,
+      pitch: 0.04,
+      offset: { x: 0, y: 0, z: -0.126 },
+      fallback,
+    });
+
     return g;
   },
 
@@ -761,12 +866,38 @@ const BUILDERS = {
     fallback.add(box(0.012, 0.042, 0.012, t.frame, -0.014, -0.042, -0.01));
     fallback.add(box(0.012, 0.042, 0.012, t.frame, 0.014, -0.042, -0.01));
 
-    g.add(triggerHand({ x: 0, y: -0.085, z: 0.02, armPitch: 0.82, armYaw: 0.28, armLength: 0.32 }));
-    g.add(supportHand({ x: 0, y: -0.14, z: 0.04, rise: 0.05, armPitch: 0.9, armYaw: -0.24, armLength: 0.34 }));
-    addMuzzle(g, 0, 0.04, -0.35, 0.55);
-    mountRevolver(modelHost, { targetLength: 0.55 }).then((loaded) => {
-      if (loaded) fallback.visible = false;
+    const trigger = triggerHand({
+      x: 0,
+      y: -0.166,
+      z: 0.02,
+      armPitch: 0.82,
+      armYaw: 0.28,
+      armLength: 0.32,
     });
+    trigger.scale.setScalar(1.07);
+    g.add(trigger);
+
+    const support = supportHand({
+      x: 0,
+      y: -0.14,
+      z: 0.04,
+      rise: 0.05,
+      armPitch: 0.9,
+      armYaw: -0.24,
+      armLength: 0.34,
+    });
+    support.scale.setScalar(0.4);
+    g.add(support);
+
+    addMuzzle(g, -0.004, 0.055, -0.546, 0.55);
+    mountRevolver(modelHost, {
+      targetLength: 0.55,
+      yaw: -1.49,
+      roll: -0.04,
+      offset: { x: -0.064, y: -0.051, z: -0.121 },
+      fallback,
+    });
+
     return g;
   },
 
@@ -798,12 +929,38 @@ const BUILDERS = {
     // Cocking handle
     fallback.add(box(0.09, 0.016, 0.02, t.body, 0, 0.06, 0.02));
 
-    g.add(triggerHand({ x: 0, y: -0.085, z: 0.015, armPitch: 0.82, armYaw: 0.28, armLength: 0.32 }));
-    g.add(supportHand({ x: 0, y: -0.12, z: -0.06, rise: 0.05, armPitch: 0.88, armYaw: -0.26, armLength: 0.34 }));
-    addMuzzle(g, 0, 0.02, -0.27, 0.45);
-    mountMachinePistol(modelHost, { targetLength: 0.45 }).then((loaded) => {
-      if (loaded) fallback.visible = false;
+    const trigger = triggerHand({
+      x: 0.073,
+      y: -0.166,
+      z: -0.055,
+      armPitch: 0.82,
+      armYaw: 0.28,
+      armLength: 0.32,
     });
+    trigger.scale.setScalar(0.91);
+    g.add(trigger);
+
+    const support = supportHand({
+      x: 0,
+      y: -0.35,
+      z: -0.06,
+      rise: 0.05,
+      armPitch: 0.88,
+      armYaw: -0.26,
+      armLength: 0.34,
+    });
+    support.scale.setScalar(0.4);
+    g.add(support);
+
+    addMuzzle(g, -0.03, 0.068, -0.27, 0.45);
+    mountMachinePistol(modelHost, {
+      targetLength: 0.45,
+      yaw: 1.65,
+      pitch: 0.11,
+      offset: { x: 0.051, y: -0.077, z: -0.203 },
+      fallback,
+    });
+
     return g;
   },
 
@@ -835,11 +992,37 @@ const BUILDERS = {
     // Iron sights
     pistolIronSights(fallback, t.slide, t.glow, 0.094);
 
-    g.add(triggerHand({ x: 0, y: -0.09, z: 0.02, armPitch: 0.82, armYaw: 0.28, armLength: 0.34 }));
-    g.add(supportHand({ x: 0, y: -0.16, z: 0.04, rise: 0.055, armPitch: 0.9, armYaw: -0.24, armLength: 0.34 }));
-    addMuzzle(g, 0, 0.025, -0.36, 0.6);
-    mountDeagle(modelHost, { targetLength: 0.6 }).then((loaded) => {
-      if (loaded) fallback.visible = false;
+    const trigger = triggerHand({
+      x: 0,
+      y: -0.123,
+      z: 0.129,
+      armPitch: 0.82,
+      armYaw: 0.28,
+      armLength: 0.34,
+    });
+    trigger.rotation.set(0, -0.04, 0.08);
+    trigger.scale.setScalar(0.97);
+    g.add(trigger);
+
+    const support = supportHand({
+      x: 0,
+      y: -0.16,
+      z: 0.04,
+      rise: 0.055,
+      armPitch: 0.9,
+      armYaw: -0.24,
+      armLength: 0.34,
+    });
+    support.scale.setScalar(0.4);
+    g.add(support);
+
+    // Tuned muzzle exit — red bead lined up with the barrel tip in sandbox.
+    addMuzzle(g, 0.35, -0.035, -0.7, 0.42);
+    mountDeagle(modelHost, {
+      targetLength: 0.42,
+      yaw: -Math.PI / 2,
+      offset: { x: 0, y: -0.055, z: 0.04 },
+      fallback,
     });
     return g;
   },
@@ -876,11 +1059,37 @@ const BUILDERS = {
     fallback.add(box(0.012, 0.028, 0.012, t.steel, 0.016, 0.088, 0.03));
     fallback.add(box(0.012, 0.03, 0.012, t.glow, 0, 0.09, -0.3));
 
-    g.add(triggerHand({ x: 0, y: -0.085, z: 0.05 }));
-    g.add(supportHand({ x: 0, y: -0.02, z: -0.18, rise: 0.045 }));
-    addMuzzle(g, 0, 0.02, -0.54, 0.5);
-    mountSmg(modelHost, { targetLength: 0.5 }).then((loaded) => {
-      if (loaded) fallback.visible = false;
+    const trigger = triggerHand({
+      x: -0.047,
+      y: -0.077,
+      z: 0.05,
+      armPitch: 0.78,
+      armYaw: 0.32,
+      armLength: 0.36,
+    });
+    trigger.scale.setScalar(0.85);
+    g.add(trigger);
+
+    const support = supportHand({
+      x: -0.034,
+      y: 0.017,
+      z: -0.165,
+      rise: 0.045,
+      armPitch: 0.95,
+      armYaw: -0.42,
+      armLength: 0.5,
+    });
+    support.rotation.set(0, -0.04, -0.46);
+    support.scale.setScalar(0.62);
+    g.add(support);
+
+    addMuzzle(g, 0.085, 0.06, -0.54, 0.5);
+    mountSmg(modelHost, {
+      targetLength: 0.5,
+      yaw: 3.14,
+      pitch: 0.08,
+      offset: { x: -0.06, y: 0, z: 0.011 },
+      fallback,
     });
 
     return g;
@@ -913,11 +1122,37 @@ const BUILDERS = {
     // Back plate
     fallback.add(box(0.06, 0.08, 0.03, t.body, 0, 0.01, 0.18));
 
-    g.add(triggerHand({ x: 0, y: -0.085, z: 0.04, armPitch: 0.8, armYaw: 0.3, armLength: 0.34 }));
-    g.add(supportHand({ x: 0, y: -0.06, z: -0.12, rise: 0.05, armPitch: 0.88, armYaw: -0.32, armLength: 0.38 }));
-    addMuzzle(g, 0, 0.015, -0.36, 0.5);
-    mountP90(modelHost, { targetLength: 0.5 }).then((loaded) => {
-      if (loaded) fallback.visible = false;
+    const trigger = triggerHand({
+      x: -0.004,
+      y: -0.209,
+      z: 0,
+      armPitch: 0.8,
+      armYaw: 0.3,
+      armLength: 0.34,
+    });
+    g.add(trigger);
+
+    const support = supportHand({
+      x: 0,
+      y: -0.098,
+      z: -0.258,
+      rise: 0.05,
+      armPitch: 0.88,
+      armYaw: -0.32,
+      armLength: 0.38,
+    });
+    support.rotation.set(0.15, 0, -0.34);
+    support.scale.setScalar(0.95);
+    g.add(support);
+
+    addMuzzle(g, -0.03, 0.009, -0.563, 0.79);
+    mountP90(modelHost, {
+      targetLength: 0.79,
+      yaw: 3.14,
+      pitch: 0.04,
+      roll: 0.08,
+      offset: { x: -0.013, y: -0.034, z: -0.137 },
+      fallback,
     });
 
     return g;
@@ -956,11 +1191,36 @@ const BUILDERS = {
     fallback.add(box(0.012, 0.024, 0.012, t.rail, 0.015, 0.1, 0.05));
     fallback.add(box(0.01, 0.026, 0.01, t.glow, 0, 0.1, -0.14));
 
-    g.add(triggerHand({ x: 0, y: -0.09, z: 0.05, armPitch: 0.8, armYaw: 0.3, armLength: 0.34 }));
-    g.add(supportHand({ x: 0, y: -0.06, z: -0.14, rise: 0.046, armPitch: 0.88, armYaw: -0.3, armLength: 0.38 }));
-    addMuzzle(g, 0, 0.035, -0.36, 0.48);
-    mountVector(modelHost, { targetLength: 0.48 }).then((loaded) => {
-      if (loaded) fallback.visible = false;
+    const trigger = triggerHand({
+      x: 0,
+      y: -0.09,
+      z: 0.05,
+      armPitch: 0.8,
+      armYaw: 0.3,
+      armLength: 0.34,
+    });
+    trigger.scale.setScalar(0.97);
+    g.add(trigger);
+
+    const support = supportHand({
+      x: 0.004,
+      y: -0.051,
+      z: -0.055,
+      rise: 0.046,
+      armPitch: 0.88,
+      armYaw: -0.3,
+      armLength: 0.38,
+    });
+    g.add(support);
+
+    addMuzzle(g, -0.004, 0.034, -0.387, 0.575);
+    mountVector(modelHost, {
+      targetLength: 0.575,
+      yaw: -1.57,
+      pitch: 0.04,
+      roll: -0.04,
+      offset: { x: -0.085, y: -0.051, z: -0.005 },
+      fallback,
     });
 
     return g;
@@ -1000,11 +1260,37 @@ const BUILDERS = {
     // Front sight
     fallback.add(box(0.014, 0.028, 0.012, t.steel, 0, 0.088, -0.44));
 
-    g.add(triggerHand({ x: 0, y: -0.09, z: 0.06 }));
-    g.add(supportHand({ x: 0, y: -0.02, z: -0.22, rise: 0.046 }));
-    addMuzzle(g, 0, 0.025, -0.8, 0.65);
-    mountBattlerifle(modelHost, { targetLength: 0.65 }).then((loaded) => {
-      if (loaded) fallback.visible = false;
+    const trigger = triggerHand({
+      x: -0.06,
+      y: -0.077,
+      z: 0.126,
+      armPitch: 0.78,
+      armYaw: 0.32,
+      armLength: 0.36,
+    });
+    trigger.scale.setScalar(0.7);
+    g.add(trigger);
+
+    const support = supportHand({
+      x: -0.013,
+      y: 0.026,
+      z: -0.154,
+      rise: 0.046,
+      armPitch: 0.95,
+      armYaw: -0.42,
+      armLength: 0.5,
+    });
+    support.rotation.set(0.19, -0.19, -0.19);
+    support.scale.setScalar(0.46);
+    g.add(support);
+
+    addMuzzle(g, 0.188, 0.026, -0.7, 0.705);
+    mountBattlerifle(modelHost, {
+      targetLength: 0.705,
+      yaw: 1.38,
+      roll: 0.04,
+      offset: { x: -0.051, y: -0.009, z: 0 },
+      fallback,
     });
 
     return g;
@@ -1045,11 +1331,36 @@ const BUILDERS = {
     // Front sight
     fallback.add(box(0.014, 0.03, 0.012, t.steel, 0, 0.085, -0.42));
 
-    g.add(triggerHand({ x: 0, y: -0.09, z: 0.05 }));
-    g.add(supportHand({ x: 0, y: -0.02, z: -0.2, rise: 0.044 }));
-    addMuzzle(g, 0, 0.02, -0.7, 0.6);
-    mountBurstrifle(modelHost, { targetLength: 0.6 }).then((loaded) => {
-      if (loaded) fallback.visible = false;
+    const trigger = triggerHand({
+      x: -0.047,
+      y: -0.107,
+      z: -0.038,
+      armPitch: 0.78,
+      armYaw: 0.32,
+      armLength: 0.36,
+    });
+    trigger.scale.setScalar(0.72);
+    g.add(trigger);
+
+    const support = supportHand({
+      x: -0.073,
+      y: 0.03,
+      z: -0.2,
+      rise: 0.044,
+      armPitch: 0.95,
+      armYaw: -0.42,
+      armLength: 0.5,
+    });
+    support.scale.setScalar(0.6);
+    g.add(support);
+
+    addMuzzle(g, 0, 0.073, -0.7, 0.645);
+    mountBurstrifle(modelHost, {
+      targetLength: 0.645,
+      yaw: -3.03,
+      pitch: 0.15,
+      offset: { x: -0.073, y: 0.004, z: -0.055 },
+      fallback,
     });
 
     return g;
@@ -1087,11 +1398,36 @@ const BUILDERS = {
     fallback.add(box(0.012, 0.065, 0.012, t.barrel, -0.022, -0.035, -0.38));
     fallback.add(box(0.012, 0.065, 0.012, t.barrel, 0.022, -0.035, -0.38));
 
-    g.add(triggerHand({ x: 0, y: -0.11, z: 0.08 }));
-    g.add(supportHand({ x: 0, y: -0.05, z: -0.16, rise: 0.045 }));
-    addMuzzle(g, 0, 0.02, -0.78, 0.85);
-    mountDmr(modelHost, { targetLength: 0.85 }).then((loaded) => {
-      if (loaded) fallback.visible = false;
+    const trigger = triggerHand({
+      x: 0.077,
+      y: -0.175,
+      z: 0.08,
+      armPitch: 0.78,
+      armYaw: 0.32,
+      armLength: 0.36,
+    });
+    trigger.scale.setScalar(0.9);
+    g.add(trigger);
+
+    const support = supportHand({
+      x: 0.094,
+      y: -0.043,
+      z: -0.335,
+      rise: 0.045,
+      armPitch: 0.95,
+      armYaw: -0.42,
+      armLength: 0.5,
+    });
+    g.add(support);
+
+    addMuzzle(g, 0.094, -0.017, -0.7, 1.08);
+    mountDmr(modelHost, {
+      targetLength: 1.08,
+      yaw: -0.04,
+      pitch: -0.04,
+      roll: -0.04,
+      offset: { x: 0.073, y: -0.021, z: -0.165 },
+      fallback,
     });
 
     return g;
@@ -1127,11 +1463,36 @@ const BUILDERS = {
     // Front sight
     fallback.add(box(0.014, 0.026, 0.012, t.steel, 0, 0.08, -0.32));
 
-    g.add(triggerHand({ x: 0, y: -0.085, z: 0.04 }));
-    g.add(supportHand({ x: 0, y: -0.015, z: -0.16, rise: 0.044 }));
-    addMuzzle(g, 0, 0.02, -0.5, 0.5);
-    mountCarbine(modelHost, { targetLength: 0.5 }).then((loaded) => {
-      if (loaded) fallback.visible = false;
+    const trigger = triggerHand({
+      x: -0.098,
+      y: -0.085,
+      z: 0.159,
+      armPitch: 0.78,
+      armYaw: 0.32,
+      armLength: 0.36,
+    });
+    trigger.scale.setScalar(0.61);
+    g.add(trigger);
+
+    const support = supportHand({
+      x: -0.051,
+      y: -0.009,
+      z: -0.11,
+      rise: 0.044,
+      armPitch: 0.95,
+      armYaw: -0.42,
+      armLength: 0.5,
+    });
+    support.scale.setScalar(0.56);
+    g.add(support);
+
+    addMuzzle(g, 0.09, -0.021, -0.5, 0.56);
+    mountCarbine(modelHost, {
+      targetLength: 0.56,
+      yaw: 3.03,
+      roll: 0.04,
+      offset: { x: -0.098, y: 0, z: 0.077 },
+      fallback,
     });
 
     return g;
@@ -1167,54 +1528,36 @@ const BUILDERS = {
     // Ejection port
     fallback.add(box(0.02, 0.04, 0.07, t.glow, 0.045, 0.04, -0.06));
 
-    g.add(triggerHand({ x: 0, y: -0.09, z: 0.06 }));
-    g.add(supportHand({ x: 0, y: -0.05, z: -0.22, rise: 0.048, spread: 0.006 }));
-    addMuzzle(g, 0, 0.035, -0.56, 0.95);
-    mountAutoshotgun(modelHost, { targetLength: 0.95 }).then((loaded) => {
-      if (loaded) fallback.visible = false;
+    const trigger = triggerHand({
+      x: -0.026,
+      y: -0.124,
+      z: 0.115,
+      armPitch: 0.78,
+      armYaw: 0.32,
+      armLength: 0.36,
     });
+    trigger.scale.setScalar(0.83);
+    g.add(trigger);
 
-    return g;
-  },
+    const support = supportHand({
+      x: -0.017,
+      y: -0.017,
+      z: -0.22,
+      rise: 0.048,
+      armPitch: 0.95,
+      armYaw: -0.42,
+      armLength: 0.5,
+    });
+    support.scale.setScalar(0.8);
+    g.add(support);
 
-  slugshotgun() {
-    const g = new THREE.Group();
-    const t = THEMES.slugshotgun();
-    const fallback = new THREE.Group();
-    const modelHost = new THREE.Group();
-    g.add(fallback, modelHost);
-    // Long receiver
-    fallback.add(box(0.078, 0.088, 0.28, t.body, 0, 0.025, -0.04));
-    // Long barrel
-    fallback.add(cyl(0.024, 0.46, t.steel, 0, 0.035, -0.46));
-    fallback.add(cyl(0.028, 0.04, t.brass, 0, 0.035, -0.7));
-    // Tube mag
-    fallback.add(cyl(0.015, 0.32, t.body, 0, -0.01, -0.36));
-    // Pump
-    fallback.add(box(0.082, 0.065, 0.14, t.wood, 0, -0.03, -0.3));
-    fallback.add(box(0.086, 0.014, 0.12, t.woodDark, 0, 0.006, -0.3));
-    // Rifle-style rear sight
-    fallback.add(box(0.04, 0.01, 0.03, t.steel, 0, 0.08, 0.02));
-    fallback.add(box(0.012, 0.025, 0.012, t.steel, -0.014, 0.095, 0.02));
-    fallback.add(box(0.012, 0.025, 0.012, t.steel, 0.014, 0.095, 0.02));
-    // Front sight
-    fallback.add(box(0.014, 0.024, 0.014, t.brass, 0, 0.075, -0.64));
-    // Trigger guard
-    fallback.add(box(0.04, 0.01, 0.055, t.body, 0, -0.03, 0.02));
-    fallback.add(box(0.012, 0.04, 0.012, t.body, -0.014, -0.05, 0.02));
-    fallback.add(box(0.012, 0.04, 0.012, t.body, 0.014, -0.05, 0.02));
-    // Stock
-    fallback.add(grip(t.wood, t.woodDark, 0, -0.01, 0.08, 0.28));
-    fallback.add(box(0.06, 0.075, 0.22, t.wood, 0, 0.0, 0.24));
-    fallback.add(box(0.07, 0.13, 0.035, t.woodDark, 0, -0.02, 0.36));
-    // Ejection port
-    fallback.add(box(0.018, 0.035, 0.065, t.glow, 0.044, 0.04, -0.06));
-
-    g.add(triggerHand({ x: 0, y: -0.085, z: 0.06 }));
-    g.add(supportHand({ x: 0, y: -0.065, z: -0.3, rise: 0.05, spread: 0.008 }));
-    addMuzzle(g, 0, 0.035, -0.72, 1.1);
-    mountSlugshotgun(modelHost, { targetLength: 1.1 }).then((loaded) => {
-      if (loaded) fallback.visible = false;
+    addMuzzle(g, -0.021, 0.043, -0.601, 0.95);
+    mountAutoshotgun(modelHost, {
+      targetLength: 0.95,
+      yaw: 3.14,
+      pitch: 0.04,
+      offset: { x: -0.043, y: -0.034, z: -0.071 },
+      fallback,
     });
 
     return g;
@@ -1251,11 +1594,37 @@ const BUILDERS = {
     // Ejection accent
     fallback.add(box(0.06, 0.02, 0.04, t.glow, 0, 0.072, -0.06));
 
-    g.add(triggerHand({ x: 0, y: -0.085, z: 0.04 }));
-    g.add(supportHand({ x: 0, y: -0.03, z: -0.3, rise: 0.046, spread: 0.01 }));
-    addMuzzle(g, 0, 0.035, -0.62, 1.0);
-    mountDoublebarrel(modelHost, { targetLength: 1.0 }).then((loaded) => {
-      if (loaded) fallback.visible = false;
+    const trigger = triggerHand({
+      x: 0.021,
+      y: -0.094,
+      z: 0.137,
+      armPitch: 0.78,
+      armYaw: 0.32,
+      armLength: 0.36,
+    });
+    trigger.scale.setScalar(0.68);
+    g.add(trigger);
+
+    const support = supportHand({
+      x: 0.017,
+      y: 0,
+      z: -0.203,
+      rise: 0.046,
+      armPitch: 0.95,
+      armYaw: -0.42,
+      armLength: 0.5,
+    });
+    support.rotation.set(0.15, 0.04, 0);
+    support.scale.setScalar(0.55);
+    g.add(support);
+
+    addMuzzle(g, 0.064, 0.055, -0.62, 0.98);
+    mountDoublebarrel(modelHost, {
+      targetLength: 0.98,
+      yaw: 1.57,
+      roll: 0.08,
+      offset: { x: 0.009, y: -0.043, z: -0.044 },
+      fallback,
     });
 
     return g;
@@ -1293,11 +1662,37 @@ const BUILDERS = {
     fallback.add(box(0.048, 0.05, 0.2, t.tan, 0, 0.0, 0.26));
     fallback.add(box(0.055, 0.1, 0.03, t.body, 0, -0.01, 0.37));
 
-    g.add(triggerHand({ x: 0, y: -0.11, z: 0.08 }));
-    g.add(supportHand({ x: 0, y: -0.05, z: -0.14, rise: 0.044 }));
-    addMuzzle(g, 0, 0.02, -0.74, 1.1);
-    mountScout(modelHost, { targetLength: 1.1 }).then((loaded) => {
-      if (loaded) fallback.visible = false;
+    const trigger = triggerHand({
+      x: -0.03,
+      y: -0.137,
+      z: 0.165,
+      armPitch: 0.78,
+      armYaw: 0.32,
+      armLength: 0.36,
+    });
+    trigger.scale.setScalar(0.83);
+    g.add(trigger);
+
+    const support = supportHand({
+      x: -0.009,
+      y: -0.017,
+      z: -0.198,
+      rise: 0.044,
+      armPitch: 0.95,
+      armYaw: -0.42,
+      armLength: 0.5,
+    });
+    support.rotation.set(0.11, 0, 0);
+    support.scale.setScalar(0.88);
+    g.add(support);
+
+    addMuzzle(g, 0.026, 0.034, -0.656, 0.955);
+    mountScout(modelHost, {
+      targetLength: 0.955,
+      yaw: 3.14,
+      pitch: 0.04,
+      offset: { x: -0.038, y: -0.009, z: -0.027 },
+      fallback,
     });
 
     return g;
@@ -1339,11 +1734,36 @@ const BUILDERS = {
     fallback.add(box(0.012, 0.08, 0.012, t.black, -0.026, -0.044, -0.5));
     fallback.add(box(0.012, 0.08, 0.012, t.black, 0.026, -0.044, -0.5));
 
-    g.add(triggerHand({ x: 0, y: -0.12, z: 0.1 }));
-    g.add(supportHand({ x: 0, y: -0.06, z: -0.2, rise: 0.048 }));
-    addMuzzle(g, 0, 0.022, -1.04, 1.5);
-    mountAwp(modelHost, { targetLength: 1.5 }).then((loaded) => {
-      if (loaded) fallback.visible = false;
+    const trigger = triggerHand({
+      x: 0.064,
+      y: -0.149,
+      z: 0.126,
+      armPitch: 0.78,
+      armYaw: 0.32,
+      armLength: 0.36,
+    });
+    g.add(trigger);
+
+    const support = supportHand({
+      x: 0.085,
+      y: -0.055,
+      z: -0.258,
+      rise: 0.048,
+      armPitch: 0.95,
+      armYaw: -0.42,
+      armLength: 0.5,
+    });
+    support.rotation.set(0.11, 0.04, -0.57);
+    support.scale.setScalar(0.84);
+    g.add(support);
+
+    addMuzzle(g, 0.073, 0.026, -0.7, 1.2);
+    mountAwp(modelHost, {
+      targetLength: 1.2,
+      yaw: -0.04,
+      roll: -0.04,
+      offset: { x: 0.073, y: -0.004, z: -0.165 },
+      fallback,
     });
 
     return g;
@@ -1388,11 +1808,35 @@ const BUILDERS = {
     // Ejection port
     fallback.add(box(0.02, 0.04, 0.06, t.glow, 0.046, 0.04, -0.08));
 
-    g.add(triggerHand({ x: 0, y: -0.1, z: 0.06 }));
-    g.add(supportHand({ x: 0, y: -0.01, z: -0.24, rise: 0.046, spread: 0.008 }));
-    addMuzzle(g, 0, 0.025, -0.76, 0.8);
-    mountLmg(modelHost, { targetLength: 0.8 }).then((loaded) => {
-      if (loaded) fallback.visible = false;
+    const trigger = triggerHand({
+      x: 0.021,
+      y: -0.162,
+      z: 0.154,
+      armPitch: 0.78,
+      armYaw: 0.32,
+      armLength: 0.36,
+    });
+    g.add(trigger);
+
+    const support = supportHand({
+      x: 0.051,
+      y: -0.043,
+      z: -0.209,
+      rise: 0.046,
+      armPitch: 0.95,
+      armYaw: -0.42,
+      armLength: 0.5,
+    });
+    support.rotation.set(0, -0.15, -0.61);
+    g.add(support);
+
+    addMuzzle(g, 0.149, 0.107, -0.7, 0.955);
+    mountLmg(modelHost, {
+      targetLength: 0.955,
+      yaw: 3.14,
+      pitch: 0.08,
+      offset: { x: 0, y: 0, z: 0 },
+      fallback,
     });
 
     return g;
@@ -1429,11 +1873,36 @@ const BUILDERS = {
     // Trigger button
     fallback.add(cyl(0.01, 0.02, t.glow, 0, -0.02, 0.08, 'x'));
 
-    g.add(triggerHand({ x: 0.03, y: -0.14, z: 0.08, armPitch: 0.85, armYaw: 0.35, armLength: 0.36 }));
-    g.add(supportHand({ x: -0.03, y: -0.14, z: 0.08, rise: 0.04, armPitch: 0.85, armYaw: -0.35, armLength: 0.36 }));
-    addMuzzle(g, 0, 0.02, -0.52, 0.7);
-    mountMinigun(modelHost, { targetLength: 0.7 }).then((loaded) => {
-      if (loaded) fallback.visible = false;
+    const trigger = triggerHand({
+      x: -0.021,
+      y: -0.034,
+      z: 0.08,
+      armPitch: 0.85,
+      armYaw: 0.35,
+      armLength: 0.36,
+    });
+    trigger.scale.setScalar(0.9);
+    g.add(trigger);
+
+    const support = supportHand({
+      x: 0.09,
+      y: 0.085,
+      z: -0.121,
+      rise: 0.04,
+      armPitch: 0.85,
+      armYaw: -0.35,
+      armLength: 0.36,
+    });
+    support.rotation.set(0.61, 0.08, 3.14);
+    g.add(support);
+
+    addMuzzle(g, 0.132, 0.013, -0.557, 0.795);
+    mountMinigun(modelHost, {
+      targetLength: 0.795,
+      yaw: -2.34,
+      roll: -0.19,
+      offset: { x: 0.09, y: 0.03, z: -0.176 },
+      fallback,
     });
 
     return g;
@@ -1478,8 +1947,8 @@ const BUILDERS = {
     g.add(triggerHand({ x: 0, y: -0.09, z: 0.05 }));
     g.add(supportHand({ x: 0, y: -0.02, z: -0.1, rise: 0.044 }));
     addMuzzle(g, 0, 0.055, -0.36, 0.6);
-    mountCrossbow(modelHost, { targetLength: 0.6 }).then((loaded) => {
-      if (loaded) fallback.visible = false;
+    mountCrossbow(modelHost, { targetLength: 0.6,
+      fallback,
     });
 
     return g;
@@ -1510,11 +1979,35 @@ const BUILDERS = {
     // Side accent
     fallback.add(box(0.02, 0.03, 0.06, t.glow, 0.048, 0.03, -0.02));
 
-    g.add(triggerHand({ x: 0, y: -0.085, z: 0.02, armPitch: 0.82, armYaw: 0.28, armLength: 0.32 }));
-    g.add(supportHand({ x: 0, y: -0.04, z: -0.08, rise: 0.05, armPitch: 0.88, armYaw: -0.26, armLength: 0.34 }));
-    addMuzzle(g, 0, 0.035, -0.28, 0.45);
-    mountSawedoff(modelHost, { targetLength: 0.45 }).then((loaded) => {
-      if (loaded) fallback.visible = false;
+    const trigger = triggerHand({
+      x: -0.026,
+      y: -0.068,
+      z: 0.126,
+      armPitch: 0.82,
+      armYaw: 0.28,
+      armLength: 0.32,
+    });
+    trigger.scale.setScalar(0.62);
+    g.add(trigger);
+
+    const support = supportHand({
+      x: -0.03,
+      y: 0,
+      z: -0.176,
+      rise: 0.05,
+      armPitch: 0.88,
+      armYaw: -0.26,
+      armLength: 0.34,
+    });
+    support.scale.setScalar(0.55);
+    g.add(support);
+
+    addMuzzle(g, -0.026, 0.03, -0.28, 0.515);
+    mountSawedoff(modelHost, {
+      targetLength: 0.515,
+      yaw: 3.14,
+      offset: { x: -0.03, y: -0.004, z: -0.044 },
+      fallback,
     });
 
     return g;
@@ -1555,11 +2048,35 @@ const BUILDERS = {
     // Loading gate
     fallback.add(box(0.02, 0.03, 0.05, t.glow, 0.04, 0.01, -0.02));
 
-    g.add(triggerHand({ x: 0, y: -0.085, z: 0.04 }));
-    g.add(supportHand({ x: 0, y: -0.04, z: -0.26, rise: 0.046, spread: 0.006 }));
-    addMuzzle(g, 0, 0.04, -0.62, 0.9);
-    mountLeveraction(modelHost, { targetLength: 0.9 }).then((loaded) => {
-      if (loaded) fallback.visible = false;
+    const trigger = triggerHand({
+      x: -0.021,
+      y: -0.188,
+      z: 0.099,
+      armPitch: 0.78,
+      armYaw: 0.32,
+      armLength: 0.36,
+    });
+    g.add(trigger);
+
+    const support = supportHand({
+      x: -0.034,
+      y: -0.017,
+      z: -0.148,
+      rise: 0.046,
+      armPitch: 0.95,
+      armYaw: -0.42,
+      armLength: 0.5,
+    });
+    support.scale.setScalar(0.84);
+    g.add(support);
+
+    addMuzzle(g, -0.009, 0.047, -0.59, 0.9);
+    mountLeveraction(modelHost, {
+      targetLength: 0.9,
+      yaw: 3.14,
+      pitch: 0.08,
+      offset: { x: -0.055, y: -0.038, z: -0.033 },
+      fallback,
     });
 
     return g;
@@ -1582,8 +2099,8 @@ const BUILDERS = {
     fallback.add(box(0.028, 0.08, 0.03, t.wood, 0, -0.3, -0.03));
     bowHost.add(fallback);
     g.add(bowHost);
-    mountBow(bowHost, { targetLength: 0.6 }).then((mounted) => {
-      if (mounted) fallback.visible = false;
+    mountBow(bowHost, { targetLength: 0.6,
+      fallback: fallback,
     });
 
     // String: two live segments meeting at the nock point.
@@ -1694,11 +2211,35 @@ const BUILDERS = {
     fallback.add(box(0.07, 0.008, 0.02, t.cyan, 0, 0.065, -0.14));
     fallback.add(box(0.07, 0.008, 0.02, t.cyan, 0, 0.065, -0.18));
 
-    g.add(triggerHand({ x: 0, y: -0.085, z: 0.03, armPitch: 0.8, armYaw: 0.3, armLength: 0.34 }));
-    g.add(supportHand({ x: 0, y: -0.02, z: -0.12, rise: 0.045, armPitch: 0.88, armYaw: -0.3, armLength: 0.36 }));
-    addMuzzle(g, 0, 0.03, -0.34, 0.5);
-    mountLaser(modelHost, { targetLength: 0.5 }).then((loaded) => {
-      if (loaded) fallback.visible = false;
+    const trigger = triggerHand({
+      x: 0,
+      y: -0.085,
+      z: 0.03,
+      armPitch: 0.8,
+      armYaw: 0.3,
+      armLength: 0.34,
+    });
+    g.add(trigger);
+
+    const support = supportHand({
+      x: 0.004,
+      y: 0.013,
+      z: -0.307,
+      rise: 0.045,
+      armPitch: 0.88,
+      armYaw: -0.3,
+      armLength: 0.36,
+    });
+    support.scale.setScalar(0.75);
+    g.add(support);
+
+    addMuzzle(g, 0.004, 0.064, -0.541, 0.85);
+    mountLaser(modelHost, {
+      targetLength: 0.85,
+      yaw: -2.14,
+      pitch: 0.04,
+      offset: { x: 0.051, y: 0.026, z: -0.137 },
+      fallback,
     });
 
     return g;
@@ -1745,8 +2286,8 @@ const BUILDERS = {
     g.userData.throwPivot = throwPivot;
     g.userData.throwPayload = payloadHost;
 
-    mountPoopModel(payloadHost, { targetLength: 0.18 }).then((mounted) => {
-      if (mounted) fallback.visible = false;
+    mountPoopModel(payloadHost, { targetLength: 0.18,
+      fallback: fallback,
     });
     addMuzzle(g, -0.015, 0.11, -0.18, 0.3);
     return g;
@@ -1774,13 +2315,35 @@ const BUILDERS = {
     // Grip
     fallback.add(grip(t.dark, t.body, 0, -0.03, 0.06, 0.35));
 
-    g.add(triggerHand({ x: 0, y: -0.09, z: 0.08 }));
-    g.add(supportHand({ x: 0, y: -0.04, z: -0.24, rise: 0.05 }));
-
-    addMuzzle(g, 0, 0.03, -0.55, 0.85);
-    mountFahhGun(modelHost, { targetLength: 0.62 }).then((loaded) => {
-      if (loaded) fallback.visible = false;
+    const trigger = triggerHand({
+      x: 0.03,
+      y: -0.102,
+      z: 0.08,
+      armPitch: 0.78,
+      armYaw: 0.32,
+      armLength: 0.36,
     });
+    g.add(trigger);
+
+    const support = supportHand({
+      x: 0,
+      y: -0.04,
+      z: -0.24,
+      rise: 0.05,
+      armPitch: 0.95,
+      armYaw: -0.42,
+      armLength: 0.5,
+    });
+    g.add(support);
+
+    addMuzzle(g, 0, 0.03, -0.55, 0.62);
+    mountFahhGun(modelHost, {
+      targetLength: 0.62,
+      yaw: 3.142,
+      offset: { x: 0, y: 0, z: 0 },
+      fallback,
+    });
+
     return g;
   },
 
@@ -1852,8 +2415,8 @@ const BUILDERS = {
     g.add(bottlePivot);
     g.userData.bottlePivot = bottlePivot;
 
-    mountWaterBottle(bottleHost, { targetLength: 0.24 }).then((mounted) => {
-      if (mounted) fallback.visible = false;
+    mountWaterBottle(bottleHost, { targetLength: 0.24,
+      fallback: fallback,
     });
 
     addMuzzle(g, 0, -0.12, -0.3, 0.25);
@@ -1877,8 +2440,8 @@ const BUILDERS = {
     fallback.add(cyl(0.009, 0.035, t.bell, 0, 0.175, -0.035, 'z'));
     fallback.add(cyl(0.028, 0.05, t.bell, 0, 0.175, -0.08, 'z'));
 
-    mountAirhorn(modelHost, { targetLength: 0.24 }).then((loaded) => {
-      if (loaded) fallback.visible = false;
+    mountAirhorn(modelHost, { targetLength: 0.24,
+      fallback,
     });
 
     // Hand actually wrapped around the can: palm hugging the right flank,
@@ -1943,8 +2506,8 @@ const BUILDERS = {
     payloadHost.position.set(-0.015, 0.1, -0.08);
     payloadHost.rotation.set(0.2, 0.7, 0.15);
     g.add(payloadHost);
-    mountBanana(payloadHost, { targetLength: 0.3 }).then((loaded) => {
-      if (loaded) fallback.visible = false;
+    mountBanana(payloadHost, { targetLength: 0.3,
+      fallback: fallback,
     });
 
     // Same cupping hand as the other throwables: palm under, fingers behind.
@@ -1987,8 +2550,8 @@ const BUILDERS = {
     payloadHost.position.set(-0.015, 0.1, -0.06);
     payloadHost.rotation.set(0.55, -0.25, 0.15);
     throwPivot.add(payloadHost);
-    mountChancla(payloadHost, { targetLength: 0.3 }).then((loaded) => {
-      if (loaded) fallback.visible = false;
+    mountChancla(payloadHost, { targetLength: 0.3,
+      fallback: fallback,
     });
 
     // Same cupping hand as the poop throwable: palm under, fingers behind.
@@ -2059,8 +2622,8 @@ const BUILDERS = {
     napkinHost.visible = false;
     coverHand.add(napkinHost);
     g.userData.napkin = napkinHost;
-    mountNapkin(napkinHost, { targetLength: 0.1 }).then((mounted) => {
-      if (mounted) napkinFallback.visible = false;
+    mountNapkin(napkinHost, { targetLength: 0.1,
+      fallback: napkinFallback,
     });
 
     // Idle off-hand just hanging so the frame isn't empty between sneezes.
@@ -2131,9 +2694,9 @@ const BUILDERS = {
     addMuzzle(g, 0, 0.04, -0.34, 0.34);
     mountKnifeViewModel(g, {
       scale: 0.72,
+      fallback: fallbackRig,
     }).then((model) => {
       if (!model) return;
-      fallbackRig.visible = false;
       g.userData.knifeHold = model.getObjectByName('Right_Hold_Pose');
     });
     return g;
@@ -2156,8 +2719,8 @@ export const AVATAR_GUN_BUILDERS = {
     fallback.add(box(0.01, 0.02, 0.01, t.slide, -0.012, 0.075, 0.03));
     fallback.add(box(0.01, 0.02, 0.01, t.slide, 0.012, 0.075, 0.03));
     fallback.add(box(0.01, 0.022, 0.01, t.glow, 0, 0.078, -0.1));
-    mountPistol(modelHost, { targetLength: 0.5, castShadow: true }).then((loaded) => {
-      if (loaded) fallback.visible = false;
+    mountPistol(modelHost, { targetLength: 0.5, castShadow: true,
+      fallback,
     });
     g.userData.length = 0.5;
     return g;
@@ -2181,8 +2744,7 @@ export const AVATAR_GUN_BUILDERS = {
       targetLength: 0.95,
       castShadow: true,
       offset: { x: 0, y: -0.02, z: 0.02 },
-    }).then((loaded) => {
-      if (loaded) fallback.visible = false;
+      fallback,
     });
     g.userData.length = 0.95;
     return g;
@@ -2198,8 +2760,8 @@ export const AVATAR_GUN_BUILDERS = {
     fallback.add(box(0.075, 0.06, 0.12, t.wood, 0, -0.03, -0.2));
     fallback.add(box(0.06, 0.07, 0.18, t.wood, 0, 0.0, 0.2));
     fallback.add(grip(t.wood, t.woodDark, 0, -0.01, 0.08, 0.28));
-    mountShotgun(modelHost, { targetLength: 1.05, castShadow: true }).then((loaded) => {
-      if (loaded) fallback.visible = false;
+    mountShotgun(modelHost, { targetLength: 1.05, castShadow: true,
+      fallback,
     });
     g.userData.length = 1.05;
     return g;
@@ -2215,8 +2777,8 @@ export const AVATAR_GUN_BUILDERS = {
     fallback.add(cyl(0.025, 0.2, t.optic, 0, 0.09, -0.1));
     fallback.add(box(0.05, 0.05, 0.18, t.tan, 0, 0.0, 0.24));
     fallback.add(grip(t.olive, t.black, 0, -0.04, 0.1, 0.35));
-    mountSniper(modelHost, { targetLength: 1.35, castShadow: true }).then((loaded) => {
-      if (loaded) fallback.visible = false;
+    mountSniper(modelHost, { targetLength: 1.35, castShadow: true,
+      fallback,
     });
     g.userData.length = 1.35;
     return g;
@@ -2235,8 +2797,8 @@ export const AVATAR_GUN_BUILDERS = {
     fallback.add(box(0.035, 0.03, 0.15, t.frame, 0, 0.05, -0.18));
     fallback.add(grip(t.wood, t.brass, 0, -0.01, 0.04, 0.33));
     fallback.add(box(0.012, 0.02, 0.012, t.brass, 0, 0.07, -0.25));
-    mountRevolver(modelHost, { targetLength: 0.55, castShadow: true }).then((loaded) => {
-      if (loaded) fallback.visible = false;
+    mountRevolver(modelHost, { targetLength: 0.55, castShadow: true,
+      fallback,
     });
     g.userData.length = 0.55;
     return g;
@@ -2254,8 +2816,8 @@ export const AVATAR_GUN_BUILDERS = {
     fallback.add(grip(t.grip, t.trim, 0, -0.01, 0.035, 0.3));
     fallback.add(box(0.01, 0.018, 0.01, t.glow, -0.012, 0.07, 0.02));
     fallback.add(box(0.01, 0.018, 0.01, t.glow, 0.012, 0.07, 0.02));
-    mountMachinePistol(modelHost, { targetLength: 0.45, castShadow: true }).then((loaded) => {
-      if (loaded) fallback.visible = false;
+    mountMachinePistol(modelHost, { targetLength: 0.45, castShadow: true,
+      fallback,
     });
     g.userData.length = 0.45;
     return g;
@@ -2272,10 +2834,10 @@ export const AVATAR_GUN_BUILDERS = {
     fallback.add(grip(t.grip, t.gold, 0, -0.01, 0.035, 0.28));
     fallback.add(box(0.082, 0.015, 0.04, t.gold, 0, 0.05, 0.0));
     fallback.add(box(0.01, 0.02, 0.01, t.glow, 0, 0.08, -0.12));
-    mountDeagle(modelHost, { targetLength: 0.6, castShadow: true }).then((loaded) => {
-      if (loaded) fallback.visible = false;
+    mountDeagle(modelHost, { targetLength: 0.42, castShadow: true,
+      fallback,
     });
-    g.userData.length = 0.6;
+    g.userData.length = 0.42;
     return g;
   },
 
@@ -2294,8 +2856,8 @@ export const AVATAR_GUN_BUILDERS = {
     fallback.add(box(0.04, 0.045, 0.08, t.body, 0, 0.0, 0.22));
     fallback.add(box(0.012, 0.024, 0.01, t.glow, 0, 0.08, -0.24));
     g.userData.length = 0.5;
-    mountSmg(modelHost, { targetLength: 0.5, castShadow: true }).then((loaded) => {
-      if (loaded) fallback.visible = false;
+    mountSmg(modelHost, { targetLength: 0.5, castShadow: true,
+      fallback,
     });
 
     return g;
@@ -2314,8 +2876,8 @@ export const AVATAR_GUN_BUILDERS = {
     fallback.add(box(0.05, 0.065, 0.025, t.body, 0, 0.008, 0.15));
     fallback.add(box(0.025, 0.02, 0.008, t.glow, 0, 0.092, -0.06));
     g.userData.length = 0.5;
-    mountP90(modelHost, { targetLength: 0.5, castShadow: true }).then((loaded) => {
-      if (loaded) fallback.visible = false;
+    mountP90(modelHost, { targetLength: 0.5, castShadow: true,
+      fallback,
     });
 
     return g;
@@ -2334,8 +2896,8 @@ export const AVATAR_GUN_BUILDERS = {
     fallback.add(box(0.03, 0.055, 0.03, t.grip, 0, -0.05, -0.1));
     fallback.add(box(0.035, 0.04, 0.1, t.stock, 0, 0.008, 0.16));
     g.userData.length = 0.48;
-    mountVector(modelHost, { targetLength: 0.48, castShadow: true }).then((loaded) => {
-      if (loaded) fallback.visible = false;
+    mountVector(modelHost, { targetLength: 0.48, castShadow: true,
+      fallback,
     });
 
     return g;
@@ -2356,8 +2918,8 @@ export const AVATAR_GUN_BUILDERS = {
     fallback.add(box(0.05, 0.055, 0.14, t.tan, 0, 0.0, 0.24));
     fallback.add(box(0.012, 0.025, 0.012, t.steel, 0, 0.085, -0.38));
     g.userData.length = 0.65;
-    mountBattlerifle(modelHost, { targetLength: 0.65, castShadow: true }).then((loaded) => {
-      if (loaded) fallback.visible = false;
+    mountBattlerifle(modelHost, { targetLength: 0.65, castShadow: true,
+      fallback,
     });
 
     return g;
@@ -2378,8 +2940,8 @@ export const AVATAR_GUN_BUILDERS = {
     fallback.add(grip(t.body, t.rail, 0, -0.035, 0.08, 0.38));
     fallback.add(box(0.045, 0.05, 0.1, t.handguard, 0, 0.0, 0.2));
     g.userData.length = 0.6;
-    mountBurstrifle(modelHost, { targetLength: 0.6, castShadow: true }).then((loaded) => {
-      if (loaded) fallback.visible = false;
+    mountBurstrifle(modelHost, { targetLength: 0.6, castShadow: true,
+      fallback,
     });
 
     return g;
@@ -2398,8 +2960,8 @@ export const AVATAR_GUN_BUILDERS = {
     fallback.add(grip(t.body, t.rail, 0, -0.035, 0.08, 0.36));
     fallback.add(box(0.045, 0.045, 0.18, t.tan, 0, 0.0, 0.22));
     g.userData.length = 0.85;
-    mountDmr(modelHost, { targetLength: 0.85, castShadow: true }).then((loaded) => {
-      if (loaded) fallback.visible = false;
+    mountDmr(modelHost, { targetLength: 0.85, castShadow: true,
+      fallback,
     });
 
     return g;
@@ -2420,8 +2982,8 @@ export const AVATAR_GUN_BUILDERS = {
     fallback.add(box(0.035, 0.04, 0.07, t.green, 0, 0.0, 0.18));
     redDotOptic(fallback, t.rail, glass, reticle, 0, 0.07, -0.02);
     g.userData.length = 0.5;
-    mountCarbine(modelHost, { targetLength: 0.5, castShadow: true }).then((loaded) => {
-      if (loaded) fallback.visible = false;
+    mountCarbine(modelHost, { targetLength: 0.5, castShadow: true,
+      fallback,
     });
 
     return g;
@@ -2442,28 +3004,8 @@ export const AVATAR_GUN_BUILDERS = {
     fallback.add(box(0.05, 0.055, 0.14, t.wood, 0, 0.0, 0.18));
     fallback.add(box(0.012, 0.018, 0.012, t.glow, 0, 0.068, -0.38));
     g.userData.length = 0.95;
-    mountAutoshotgun(modelHost, { targetLength: 0.95, castShadow: true }).then((loaded) => {
-      if (loaded) fallback.visible = false;
-    });
-
-    return g;
-  },
-  slugshotgun() {
-    const g = new THREE.Group();
-    const t = THEMES.slugshotgun();
-    const fallback = new THREE.Group();
-    const modelHost = new THREE.Group();
-    g.add(fallback, modelHost);
-    fallback.add(box(0.07, 0.08, 0.24, t.body, 0, 0.02, -0.02));
-    fallback.add(cyl(0.022, 0.36, t.steel, 0, 0.03, -0.38));
-    fallback.add(cyl(0.013, 0.26, t.body, 0, -0.01, -0.3));
-    fallback.add(box(0.072, 0.055, 0.1, t.wood, 0, -0.025, -0.22));
-    fallback.add(grip(t.wood, t.woodDark, 0, -0.01, 0.065, 0.26));
-    fallback.add(box(0.055, 0.065, 0.18, t.wood, 0, 0.0, 0.2));
-    fallback.add(box(0.012, 0.02, 0.012, t.brass, 0, 0.065, -0.52));
-    g.userData.length = 1.1;
-    mountSlugshotgun(modelHost, { targetLength: 1.1, castShadow: true }).then((loaded) => {
-      if (loaded) fallback.visible = false;
+    mountAutoshotgun(modelHost, { targetLength: 0.95, castShadow: true,
+      fallback,
     });
 
     return g;
@@ -2481,8 +3023,8 @@ export const AVATAR_GUN_BUILDERS = {
     fallback.add(box(0.058, 0.065, 0.2, t.wood, 0, 0.0, 0.18));
     fallback.add(box(0.012, 0.016, 0.012, t.brass, 0, 0.06, -0.46));
     g.userData.length = 1.0;
-    mountDoublebarrel(modelHost, { targetLength: 1.0, castShadow: true }).then((loaded) => {
-      if (loaded) fallback.visible = false;
+    mountDoublebarrel(modelHost, { targetLength: 1.0, castShadow: true,
+      fallback,
     });
 
     return g;
@@ -2503,8 +3045,8 @@ export const AVATAR_GUN_BUILDERS = {
     fallback.add(grip(t.body, t.black, 0, -0.035, 0.08, 0.34));
     fallback.add(box(0.042, 0.042, 0.16, t.tan, 0, 0.0, 0.2));
     g.userData.length = 1.1;
-    mountScout(modelHost, { targetLength: 1.1, castShadow: true }).then((loaded) => {
-      if (loaded) fallback.visible = false;
+    mountScout(modelHost, { targetLength: 1.1, castShadow: true,
+      fallback,
     });
 
     return g;
@@ -2524,8 +3066,8 @@ export const AVATAR_GUN_BUILDERS = {
     fallback.add(box(0.055, 0.055, 0.22, t.stock, 0, 0.0, 0.28));
     fallback.add(box(0.065, 0.016, 0.02, t.steel, 0.04, 0.04, 0.08));
     g.userData.length = 1.5;
-    mountAwp(modelHost, { targetLength: 1.5, castShadow: true }).then((loaded) => {
-      if (loaded) fallback.visible = false;
+    mountAwp(modelHost, { targetLength: 1.5, castShadow: true,
+      fallback,
     });
 
     return g;
@@ -2547,8 +3089,8 @@ export const AVATAR_GUN_BUILDERS = {
     fallback.add(box(0.05, 0.055, 0.14, t.body, 0, 0.0, 0.26));
     fallback.add(box(0.02, 0.01, 0.12, t.steel, 0, 0.078, -0.1));
     g.userData.length = 0.8;
-    mountLmg(modelHost, { targetLength: 0.8, castShadow: true }).then((loaded) => {
-      if (loaded) fallback.visible = false;
+    mountLmg(modelHost, { targetLength: 0.8, castShadow: true,
+      fallback,
     });
 
     return g;
@@ -2570,8 +3112,8 @@ export const AVATAR_GUN_BUILDERS = {
     fallback.add(box(0.035, 0.07, 0.05, t.grip, 0.025, -0.04, 0.06));
     fallback.add(box(0.035, 0.07, 0.05, t.grip, -0.025, -0.04, 0.06));
     g.userData.length = 0.7;
-    mountMinigun(modelHost, { targetLength: 0.7, castShadow: true }).then((loaded) => {
-      if (loaded) fallback.visible = false;
+    mountMinigun(modelHost, { targetLength: 0.7, castShadow: true,
+      fallback,
     });
 
     return g;
@@ -2591,8 +3133,8 @@ export const AVATAR_GUN_BUILDERS = {
     fallback.add(grip(t.body, t.brass, 0, -0.015, 0.06, 0.33));
     fallback.add(box(0.04, 0.04, 0.12, t.body, 0, 0.0, 0.18));
     g.userData.length = 0.6;
-    mountCrossbow(modelHost, { targetLength: 0.6, castShadow: true }).then((loaded) => {
-      if (loaded) fallback.visible = false;
+    mountCrossbow(modelHost, { targetLength: 0.6, castShadow: true,
+      fallback,
     });
 
     return g;
@@ -2609,8 +3151,8 @@ export const AVATAR_GUN_BUILDERS = {
     fallback.add(grip(t.wood, t.woodDark, 0, -0.01, 0.035, 0.28));
     fallback.add(cyl(0.012, 0.06, t.brass, 0, 0.05, -0.05, 'x'));
     g.userData.length = 0.45;
-    mountSawedoff(modelHost, { targetLength: 0.45, castShadow: true }).then((loaded) => {
-      if (loaded) fallback.visible = false;
+    mountSawedoff(modelHost, { targetLength: 0.45, castShadow: true,
+      fallback,
     });
 
     return g;
@@ -2630,8 +3172,8 @@ export const AVATAR_GUN_BUILDERS = {
     fallback.add(grip(t.wood, t.woodDark, 0, -0.008, 0.05, 0.26));
     fallback.add(box(0.055, 0.065, 0.2, t.wood, 0, 0.008, 0.2));
     g.userData.length = 0.9;
-    mountLeveraction(modelHost, { targetLength: 0.9, castShadow: true }).then((loaded) => {
-      if (loaded) fallback.visible = false;
+    mountLeveraction(modelHost, { targetLength: 0.9, castShadow: true,
+      fallback,
     });
 
     return g;
@@ -2648,8 +3190,8 @@ export const AVATAR_GUN_BUILDERS = {
     fallback.add(box(0.025, 0.16, 0.03, t.wood, 0, -0.16, -0.01));
     fallback.add(box(0.022, 0.06, 0.025, t.wood, 0, -0.26, -0.03));
     g.add(fallback);
-    mountBow(g, { targetLength: 0.62 }).then((mounted) => {
-      if (mounted) fallback.visible = false;
+    mountBow(g, { targetLength: 0.62,
+      fallback,
     });
     // Static string and nocked arrow for other players.
     g.add(box(0.005, 0.58, 0.005, t.string, 0, 0.0, 0.026));
@@ -2671,8 +3213,8 @@ export const AVATAR_GUN_BUILDERS = {
     fallback.add(grip(t.grip, t.dark, 0, -0.015, 0.05, 0.32));
     fallback.add(box(0.05, 0.05, 0.08, t.dark, 0, 0.015, 0.14));
     g.userData.length = 0.5;
-    mountLaser(modelHost, { targetLength: 0.5, castShadow: true }).then((loaded) => {
-      if (loaded) fallback.visible = false;
+    mountLaser(modelHost, { targetLength: 0.5, castShadow: true,
+      fallback,
     });
 
     return g;
@@ -2686,8 +3228,8 @@ export const AVATAR_GUN_BUILDERS = {
     fallback.add(cyl(0.05, 0.065, t.nozzle, 0.01, 0.06, 0, 'z'));
     modelHost.add(fallback);
     g.add(modelHost);
-    mountPoopModel(modelHost, { targetLength: 0.2, castShadow: true }).then((mounted) => {
-      if (mounted) fallback.visible = false;
+    mountPoopModel(modelHost, { targetLength: 0.2, castShadow: true,
+      fallback,
     });
     g.userData.length = 0.2;
     return g;
@@ -2703,8 +3245,8 @@ export const AVATAR_GUN_BUILDERS = {
     fallback.add(cyl(0.07, 0.1, t.dark, 0, 0.03, 0.32));
     fallback.add(box(0.03, 0.05, 0.12, t.dark, 0, 0.1, -0.05));
     fallback.add(grip(t.dark, t.body, 0, -0.03, 0.1, 0.3));
-    mountFahhGun(modelHost, { targetLength: 1.0, castShadow: true }).then((loaded) => {
-      if (loaded) fallback.visible = false;
+    mountFahhGun(modelHost, { targetLength: 1.0, castShadow: true,
+      fallback,
     });
     g.userData.length = 1.0;
     return g;
@@ -2721,8 +3263,8 @@ export const AVATAR_GUN_BUILDERS = {
     fallback.add(cyl(0.03, 0.1, t.can, 0, 0.05, 0));
     fallback.add(cyl(0.017, 0.025, t.cap, 0, 0.115, 0));
     fallback.add(cyl(0.02, 0.05, t.bell, 0, 0.13, -0.05, 'z'));
-    mountAirhorn(modelHost, { targetLength: 0.17, castShadow: true }).then((loaded) => {
-      if (loaded) fallback.visible = false;
+    mountAirhorn(modelHost, { targetLength: 0.17, castShadow: true,
+      fallback,
     });
     g.userData.length = 0.17;
     return g;
@@ -2734,8 +3276,8 @@ export const AVATAR_GUN_BUILDERS = {
     const modelHost = new THREE.Group();
     g.add(fallback, modelHost);
     fallback.add(box(0.06, 0.06, 0.28, t.skin, 0, 0.02, -0.02));
-    mountBanana(modelHost, { targetLength: 0.34, castShadow: true }).then((loaded) => {
-      if (loaded) fallback.visible = false;
+    mountBanana(modelHost, { targetLength: 0.34, castShadow: true,
+      fallback,
     });
     g.userData.length = 0.34;
     return g;
@@ -2747,8 +3289,8 @@ export const AVATAR_GUN_BUILDERS = {
     const modelHost = new THREE.Group();
     g.add(fallback, modelHost);
     fallback.add(box(0.09, 0.02, 0.24, t.sole, 0, 0.01, 0));
-    mountChancla(modelHost, { targetLength: 0.3, castShadow: true }).then((loaded) => {
-      if (loaded) fallback.visible = false;
+    mountChancla(modelHost, { targetLength: 0.3, castShadow: true,
+      fallback,
     });
     g.userData.length = 0.3;
     return g;
@@ -2780,8 +3322,7 @@ export const AVATAR_GUN_BUILDERS = {
       targetLength: 0.38,
       castShadow: true,
       offset: { x: 0, y: 0.01, z: -0.055 },
-    }).then((loaded) => {
-      if (loaded) fallback.visible = false;
+      fallback,
     });
     g.userData.length = 0.38;
     return g;
@@ -2903,13 +3444,6 @@ export const AVATAR_HOLDS = {
     rightArm: [1.05, 0, -0.64],
     leftArm: [1.42, 0, 0.56],
     gunOffset: [0, 0.085, -0.06],
-  },
-  slugshotgun: {
-    rightShoulder: [0.33, 1.3, 0.06],
-    leftShoulder: [-0.33, 1.18, -0.16],
-    rightArm: [1.05, 0, -0.64],
-    leftArm: [1.44, 0, 0.56],
-    gunOffset: [0, 0.082, -0.062],
   },
   doublebarrel: {
     rightShoulder: [0.33, 1.3, 0.06],
@@ -3057,6 +3591,7 @@ export class ViewModel {
 
     this.weapon = null;
     this.weaponId = null;
+    this.weaponCache = new Map();
 
     this.recoil = 0;
     this.bobTime = 0;
@@ -3073,9 +3608,26 @@ export class ViewModel {
 
   setWeapon(id) {
     if (this.weaponId === id) return;
-    this.clear();
-    const build = BUILDERS[id] || BUILDERS.pistol;
-    this.weapon = build();
+
+    // Park the current gun in the cache instead of disposing it — Gun Game
+    // and DM swaps were rebuilding (and deep-cloning) a GLB every time.
+    if (this.weapon) {
+      this.holder.remove(this.weapon);
+      this.weapon.visible = false;
+      if (this.weaponId) this.weaponCache.set(this.weaponId, this.weapon);
+      this.weapon = null;
+      this.weaponId = null;
+    }
+
+    let weapon = this.weaponCache.get(id);
+    if (!weapon) {
+      const build = BUILDERS[id] || BUILDERS.pistol;
+      weapon = build();
+      this.weaponCache.set(id, weapon);
+    }
+    weapon.visible = true;
+    this.weapon = weapon;
+    this.weapon.scale.setScalar(1);
     if (id === 'knife') {
       // Counter-Strike-style stance: vertical knife in the right hand with
       // the relaxed left hand visible near the lower centre.
@@ -3113,22 +3665,33 @@ export class ViewModel {
   }
 
   clear() {
-    if (!this.weapon) return;
-    this.holder.remove(this.weapon);
-    this.weapon.traverse((child) => {
+    if (this.weapon) {
+      this.holder.remove(this.weapon);
+      this.weapon.visible = false;
+      if (this.weaponId) this.weaponCache.set(this.weaponId, this.weapon);
+      this.weapon = null;
+      this.weaponId = null;
+    }
+    for (const cached of this.weaponCache.values()) {
+      this.disposeWeaponTree(cached);
+    }
+    this.weaponCache.clear();
+    this.swing = 0;
+    this.throwPhase = 0;
+    this.sneezePhase = 0;
+    this.honkPhase = 0;
+  }
+
+  disposeWeaponTree(root) {
+    root.traverse((child) => {
       child.userData.disposed = true;
-      if (child.geometry) child.geometry.dispose();
+      // Shared GLB buffers stay alive in the template cache.
+      if (child.geometry && !child.userData.sharedGeometry) child.geometry.dispose();
       if (child.material) {
         const mats = Array.isArray(child.material) ? child.material : [child.material];
         for (const m of mats) m.dispose();
       }
     });
-    this.weapon = null;
-    this.weaponId = null;
-    this.swing = 0;
-    this.throwPhase = 0;
-    this.sneezePhase = 0;
-    this.honkPhase = 0;
   }
 
   get barrelLength() {
@@ -3538,8 +4101,11 @@ export class ViewModel {
       home.z + this.recoil * 0.075 + holderSlash * -0.1,
     );
 
+    // Sliding used to pitch the whole gun ~0.25 rad, which lifted the muzzle
+    // tip toward the crosshair while the grip dropped — so fire FX looked like
+    // they "stayed" high. Keep a tiny lean; the drop above does the crouch-like dip.
     this.holder.rotation.set(
-      this.recoil * 0.24 + reloadDip * 0.5 + (sliding ? 0.25 : 0) + holderSlash * 0.55 + holderWind * -0.35,
+      this.recoil * 0.24 + reloadDip * 0.5 + (sliding ? 0.06 : 0) + holderSlash * 0.55 + holderWind * -0.35,
       -this.sway.x * 1.6 + holderSlash * 0.85 + holderWind * -0.45,
       this.sway.y * 0.9 + reloadDip * 0.3 + holderSlash * -1.35 + holderWind * 0.55,
     );
