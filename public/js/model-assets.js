@@ -1,28 +1,30 @@
 import * as THREE from '/vendor/three.module.js';
 import { GLTFLoader } from '/vendor/addons/loaders/GLTFLoader.js';
+import { assetUrl } from './runtime-config.js';
 
 const loader = new GLTFLoader();
 const templates = new Map();
 const loading = new Map();
 
 function loadTemplate(url) {
-  if (templates.has(url)) return Promise.resolve(templates.get(url));
-  if (loading.has(url)) return loading.get(url);
+  const resolved = assetUrl(url);
+  if (templates.has(resolved)) return Promise.resolve(templates.get(resolved));
+  if (loading.has(resolved)) return loading.get(resolved);
 
   const promise = loader
-    .loadAsync(url)
+    .loadAsync(resolved)
     .then((gltf) => {
       const scene = gltf.scene;
       scene.updateMatrixWorld(true);
-      templates.set(url, scene);
-      loading.delete(url);
+      templates.set(resolved, scene);
+      loading.delete(resolved);
       return scene;
     })
     .catch((error) => {
-      loading.delete(url);
+      loading.delete(resolved);
       throw error;
     });
-  loading.set(url, promise);
+  loading.set(resolved, promise);
   return promise;
 }
 
@@ -78,7 +80,7 @@ async function mountWeaponModel(
   },
 ) {
   try {
-    const template = templates.has(url) ? templates.get(url) : await loadTemplate(url);
+    const template = await loadTemplate(url);
     if (parent.userData.disposed) return false;
 
     const model = cloneTemplate(template, castShadow);
@@ -574,7 +576,7 @@ export function mountFahhText(parent, options = {}) {
 export async function mountKnifeViewModel(parent, { scale = 0.72, fallback = null } = {}) {
   const url = '/models/knife_viewmodel.glb';
   try {
-    const template = templates.has(url) ? templates.get(url) : await loadTemplate(url);
+    const template = await loadTemplate(url);
     if (parent.userData.disposed) return false;
 
     const model = cloneTemplate(template, false);

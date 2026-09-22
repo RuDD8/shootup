@@ -10,6 +10,7 @@
   "scripts": {
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
-    "test": "node test/smoke.mjs"
+    "test": "node test/smoke.mjs",
+    "pack:newgrounds": "node scripts/pack-newgrounds.mjs"
   }
 }

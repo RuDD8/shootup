@@ -1,6 +1,8 @@
 // Thin JSON transport over WebSocket, plus a round-trip time probe so the HUD
 // can show a real latency figure.
 
+import { wsUrl } from './runtime-config.js';
+
 export class Net {
   constructor() {
     this.socket = null;
@@ -18,8 +20,7 @@ export class Net {
   }
 
   connect() {
-    const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const socket = new WebSocket(`${protocol}//${location.host}/`);
+    const socket = new WebSocket(wsUrl());
     this.socket = socket;
 
     socket.addEventListener('message', (event) => {

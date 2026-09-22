@@ -119,8 +119,30 @@ function sendJson(res, status, payload) {
   res.end(body);
 }
 
+function corsHeaders(req) {
+  // Portal embeds load GLBs/sounds from this origin while the page itself
+  // lives on Newgrounds / CrazyGames / etc.
+  const origin = req.headers.origin;
+  if (!origin) return {};
+  return {
+    'Access-Control-Allow-Origin': origin,
+    'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+    'Access-Control-Max-Age': '86400',
+    Vary: 'Origin',
+  };
+}
+
 const server = http.createServer((req, res) => {
   const urlPath = (req.url || '').split('?')[0];
+
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204, {
+      ...corsHeaders(req),
+      'Access-Control-Allow-Headers': 'Content-Type',
+    });
+    res.end();
+    return;
+  }
 
   if (req.method === 'POST' && urlPath === '/api/sandbox/save-viewmodel') {
     readJsonBody(req)
@@ -187,12 +209,21 @@ const server = http.createServer((req, res) => {
       'Content-Type': MIME[ext] || 'application/octet-stream',
       'Content-Length': stat.size,
       'X-Content-Type-Options': 'nosniff',
-      'X-Frame-Options': 'DENY',
-      'Referrer-Policy': 'same-origin',
-      'Cross-Origin-Opener-Policy': 'same-origin',
+      // Allow portal iframes to embed a hosted preview; asset GETs still work
+      // cross-origin via CORS below.
+      'X-Frame-Options': 'SAMEORIGIN',
+      'Referrer-Policy': 'strict-origin-when-cross-origin',
+      'Cross-Origin-Resource-Policy': 'cross-origin',
+      ...corsHeaders(req),
       // The client is served fresh every load; the vendored engine is large
-      // but immutable, so let the browser keep it.
-      'Cache-Control': ext === '.js' && file.includes('vendor') ? 'max-age=604800' : 'no-cache',
+      // but immutable, so let the browser keep it. Model GLBs are huge — cache
+      // them aggressively so portal players don't re-download every session.
+      'Cache-Control':
+        ext === '.js' && file.includes('vendor')
+          ? 'max-age=604800'
+          : ext === '.glb' || ext === '.mp3'
+            ? 'public, max-age=604800, immutable'
+            : 'no-cache',
     });
     if (req.method === 'HEAD') return res.end();
     fs.createReadStream(file).pipe(res);

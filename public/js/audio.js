@@ -2,6 +2,8 @@
 // (public/sounds/fart.mp3, CC0 from bigsoundbank.com), because no oscillator
 // does a real fart justice.
 
+import { assetUrl } from './runtime-config.js';
+
 // Four over-the-top recorded sneezes (myinstants meme clips: a screamed
 // Russian APCHKHI, two violent blasts, and a wet slimy one), rotated at
 // random so the sneeze gun doesn't sound canned.
@@ -91,7 +93,7 @@ export class Audio {
   loadSample(key, url) {
     if (this.samples[key] || this.samplesLoading[key] || !this.ctx) return;
     this.samplesLoading[key] = true;
-    fetch(url)
+    fetch(assetUrl(url))
       .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(`HTTP ${r.status}`))))
       .then((data) => this.ctx.decodeAudioData(data))
       .then((buffer) => {
